@@ -1,0 +1,25 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "c2f2de50-4e8b-4f3c-9abc-ef0123456789",
+  "alias": "SmartPermissionsWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": ["SharePointWebPart"],
+  "supportsThemeVariants": true,
+  "preconfiguredEntries": [
+    {
+      "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+      "group": { "default": "Other" },
+      "title": { "default": "Smart Permissions" },
+      "description": {
+        "default": "Permissions reporting and real-time audit for SharePoint Online"
+      },
+      "officeFabricIconFontName": "Lock",
+      "properties": {
+        "defaultView": "home"
+      }
+    }
+  ]
+}

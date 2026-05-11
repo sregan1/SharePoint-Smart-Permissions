@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+lib/
+release/
+temp/
+.build/
+
+# SPFx package output
+sharepoint/solution/
+*.sppkg
+
+# Local dev server config — contains tenant-specific URLs
+config/serve.json
+
+# Environment and secrets
+.env
+.env.*
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user

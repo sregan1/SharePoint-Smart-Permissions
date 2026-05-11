@@ -1,0 +1,33 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "smart-permissions-client-side-solution",
+    "id": "a2f2de50-4e8b-4f3c-9abc-ef0123456789",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "websiteUrl": "",
+      "mpnId": "Undefined-1.18.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "SharePoint Smart Permissions — browser-based permissions reporting and real-time audit"
+      },
+      "longDescription": {
+        "default": "SharePoint Smart Permissions — browser-based permissions reporting and real-time audit"
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": []
+  },
+  "paths": {
+    "zippedPackage": "solution/smart-permissions.sppkg"
+  }
+}
