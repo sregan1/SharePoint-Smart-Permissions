@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Button,
-  Input,
   Field,
   Badge,
   Text,
@@ -10,13 +9,13 @@ import {
   Spinner,
   MessageBar,
   MessageBarBody,
+  ProgressBar,
   Select,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
 import { ArrowLeft24Regular } from '@fluentui/react-icons';
 
-import { WebPartContext } from '@microsoft/sp-webpart-base';
 import { SharePointService } from '../services/SharePointService';
 import { SiteUserInfo, PermissionEntry, ObjectType } from '../models/models';
 
@@ -34,16 +33,20 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalM,
     marginBottom: tokens.spacingVerticalL,
   },
-  connectRow: {
+  scanArea: {
     display: 'flex',
-    gap: tokens.spacingHorizontalM,
-    alignItems: 'flex-end',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalS,
+    padding: tokens.spacingVerticalM,
+    background: tokens.colorNeutralBackground3,
+    borderRadius: tokens.borderRadiusMedium,
     marginBottom: tokens.spacingVerticalM,
   },
-  urlField: {
-    flexGrow: 1,
-    minWidth: '300px',
+  scanRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalM,
+    flexWrap: 'wrap',
   },
   accessTable: {
     width: '100%',
@@ -88,19 +91,25 @@ function roleBadgeColor(
   return 'informative';
 }
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  const s = sec < 10 ? `0${sec}` : String(sec);
+  return `${m}:${s}`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export interface UserAccessViewProps {
-  context: WebPartContext;
   sp: SharePointService;
+  siteUrl: string;
   onBack: () => void;
 }
 
-export const UserAccessView: React.FC<UserAccessViewProps> = ({ context, sp, onBack }) => {
+export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
-  const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
   const [isConnecting, setIsConnecting] = React.useState(false);
   const [connectStatus, setConnectStatus] = React.useState('');
   const [connectError, setConnectError] = React.useState('');
@@ -115,7 +124,24 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ context, sp, onB
   const [isFullSiteAccess, setIsFullSiteAccess] = React.useState(false);
   const [userAccessError, setUserAccessError] = React.useState('');
 
+  // ── Scan timer ──
+  const [scanElapsed, setScanElapsed] = React.useState(0);
+  const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
   const abortRef = React.useRef<AbortController | null>(null);
+
+  React.useEffect(() => {
+    if (userAccessBusy) {
+      setScanElapsed(0);
+      timerRef.current = setInterval(() => setScanElapsed((s) => s + 1), 1000);
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [userAccessBusy]);
 
   // ── Connect ──────────────────────────────────────────────────────────────
 
@@ -207,25 +233,6 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ context, sp, onB
         <Title3>User Access</Title3>
       </div>
 
-      {/* Connect row */}
-      <div className={styles.connectRow}>
-        <Field label="Site URL" className={styles.urlField}>
-          <Input
-            value={siteUrl}
-            onChange={(_, d) => setSiteUrl(d.value)}
-            placeholder="https://contoso.sharepoint.com/sites/mysite"
-            disabled={isConnecting}
-          />
-        </Field>
-        <Button
-          appearance="primary"
-          onClick={handleConnect}
-          disabled={!siteUrl.trim() || isConnecting}
-        >
-          {isConnecting ? <><Spinner size="tiny" /> Loading…</> : 'Connect'}
-        </Button>
-      </div>
-
       {connectError && (
         <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
           <MessageBarBody>{connectError}</MessageBarBody>
@@ -265,16 +272,18 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ context, sp, onB
           </div>
 
           {userAccessBusy && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: tokens.spacingHorizontalS,
-                marginBottom: tokens.spacingVerticalM,
-              }}
-            >
-              <Spinner size="small" />
-              <Body1>{userAccessStatus}</Body1>
+            <div className={styles.scanArea}>
+              <ProgressBar />
+              <div className={styles.scanRow}>
+                <Spinner size="tiny" />
+                <Text>{userAccessStatus}</Text>
+                <Text style={{ color: tokens.colorNeutralForeground3, marginLeft: 'auto' }}>
+                  {formatElapsed(scanElapsed)}
+                </Text>
+              </div>
+              <Body1 style={{ color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 }}>
+                This scan may take several minutes depending on the size of the site.
+              </Body1>
             </div>
           )}
 

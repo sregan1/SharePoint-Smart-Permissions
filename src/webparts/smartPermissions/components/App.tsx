@@ -1,5 +1,20 @@
 import * as React from 'react';
-import { FluentProvider, webLightTheme, createDOMRenderer, RendererProvider } from '@fluentui/react-components';
+import {
+  FluentProvider,
+  webLightTheme,
+  createDOMRenderer,
+  RendererProvider,
+  Button,
+  Input,
+  Text,
+  Checkbox,
+  Tooltip,
+  Popover,
+  PopoverTrigger,
+  PopoverSurface,
+  tokens,
+} from '@fluentui/react-components';
+import { Settings24Regular, Info16Regular } from '@fluentui/react-icons';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 
 import { SharePointService } from '../services/SharePointService';
@@ -18,8 +33,6 @@ export interface AppProps {
   defaultView?: AppView;
 }
 
-// Catches rendering errors and shows them inline with full detail instead of
-// letting SPFx swallow the error and show "[object Object]".
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { error: Error | null }
@@ -73,33 +86,183 @@ try {
 
 export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => {
   const [view, setView] = React.useState<AppView>(defaultView ?? 'home');
+  const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
+  const [editUrl, setEditUrl] = React.useState(context.pageContext.web.absoluteUrl);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [includeHidden, setIncludeHidden] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+
+  const handleConnect = (): void => {
+    if (editUrl.trim()) {
+      setSiteUrl(editUrl.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleStartEdit = (): void => {
+    setEditUrl(siteUrl);
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = (): void => {
+    setEditUrl(siteUrl);
+    setIsEditing(false);
+  };
+
+  const renderSettingsSurface = () => (
+    <PopoverSurface>
+      <div style={{ padding: '12px 16px', minWidth: '280px' }}>
+        <Text weight="semibold" style={{ display: 'block', marginBottom: '12px' }}>
+          Settings
+        </Text>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Checkbox
+            label="Include hidden libraries"
+            checked={includeHidden}
+            onChange={(_, d) => setIncludeHidden(!!d.checked)}
+          />
+          <Tooltip
+            content="When checked, includes libraries marked as hidden in SharePoint — such as Style Library, Form Templates, Site Assets, and other system libraries not shown in default views."
+            relationship="description"
+            withArrow
+          >
+            <Button
+              appearance="transparent"
+              icon={<Info16Regular />}
+              size="small"
+              style={{ minWidth: 'unset', padding: '2px' }}
+              aria-label="More info about hidden libraries"
+            />
+          </Tooltip>
+        </div>
+      </div>
+    </PopoverSurface>
+  );
 
   return (
     <ErrorBoundary>
     <RendererProvider renderer={renderer} targetDocument={document}>
-    <FluentProvider theme={webLightTheme} style={{ minHeight: '400px' }}>
+    <FluentProvider theme={webLightTheme} style={{ minHeight: '400px', position: 'relative' }}>
+      {view !== 'home' ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: tokens.spacingHorizontalM,
+            paddingTop: tokens.spacingVerticalS,
+            paddingBottom: tokens.spacingVerticalS,
+            paddingLeft: tokens.spacingHorizontalL,
+            paddingRight: tokens.spacingHorizontalS,
+            background: tokens.colorBrandBackground,
+          }}
+        >
+          {isEditing ? (
+            <>
+              <Input
+                value={editUrl}
+                onChange={(_, d) => setEditUrl(d.value)}
+                placeholder="https://contoso.sharepoint.com/sites/mysite"
+                style={{ flexGrow: 1, minWidth: '200px' }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
+              />
+              <Button appearance="secondary" onClick={handleConnect} disabled={!editUrl.trim()}>
+                Connect
+              </Button>
+              <Button
+                appearance="transparent"
+                style={{ color: 'white' }}
+                onClick={handleCancelEdit}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.75)',
+                  flexShrink: 0,
+                  display: 'inline-block',
+                }}
+              />
+              <Text
+                style={{
+                  flexGrow: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: 'white',
+                }}
+              >
+                {siteUrl}
+              </Text>
+              <Button
+                appearance="transparent"
+                size="small"
+                style={{ color: 'white' }}
+                onClick={handleStartEdit}
+              >
+                Change URL
+              </Button>
+            </>
+          )}
+          <Popover open={settingsOpen} onOpenChange={(_, d) => setSettingsOpen(d.open)}>
+            <PopoverTrigger disableButtonEnhancement>
+              <Button
+                appearance="transparent"
+                icon={<Settings24Regular style={{ color: 'white' }} />}
+                aria-label="Settings"
+                title="Settings"
+              />
+            </PopoverTrigger>
+            {renderSettingsSurface()}
+          </Popover>
+        </div>
+      ) : (
+        <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }}>
+          <Popover open={settingsOpen} onOpenChange={(_, d) => setSettingsOpen(d.open)}>
+            <PopoverTrigger disableButtonEnhancement>
+              <Button
+                appearance="subtle"
+                icon={<Settings24Regular />}
+                aria-label="Settings"
+                title="Settings"
+              />
+            </PopoverTrigger>
+            {renderSettingsSurface()}
+          </Popover>
+        </div>
+      )}
+
       {view === 'home' && (
         <HomeView onNavigate={setView} />
       )}
       {view === 'report' && (
         <PermissionsReportView
-          context={context}
+          key={siteUrl}
           sp={sp}
           excel={excel}
+          siteUrl={siteUrl}
+          includeHidden={includeHidden}
           onBack={() => setView('home')}
         />
       )}
       {view === 'explorer' && (
         <PermissionsExplorerView
-          context={context}
+          key={siteUrl}
           sp={sp}
+          siteUrl={siteUrl}
           onBack={() => setView('home')}
         />
       )}
       {view === 'userAccess' && (
         <UserAccessView
-          context={context}
+          key={siteUrl}
           sp={sp}
+          siteUrl={siteUrl}
           onBack={() => setView('home')}
         />
       )}

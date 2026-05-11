@@ -9,6 +9,12 @@ import {
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
+import {
+  ShieldLock24Regular,
+  DataBarVertical24Regular,
+  FolderSearch24Regular,
+  PersonSearch24Regular,
+} from '@fluentui/react-icons';
 import { AppView } from './App';
 
 const useStyles = makeStyles({
@@ -18,13 +24,13 @@ const useStyles = makeStyles({
     margin: '0 auto',
   },
   header: {
-    marginBottom: tokens.spacingVerticalXL,
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: tokens.spacingHorizontalM,
+    marginBottom: tokens.spacingVerticalS,
   },
-  icon: {
-    fontSize: '32px',
+  subtitle: {
+    marginBottom: tokens.spacingVerticalXL,
   },
   grid: {
     display: 'grid',
@@ -48,6 +54,11 @@ const useStyles = makeStyles({
       boxShadow: tokens.shadow16,
     },
   },
+  cardTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalS,
+  },
   cardTitle: {
     fontSize: tokens.fontSizeBase500,
     fontWeight: tokens.fontWeightSemibold,
@@ -57,6 +68,12 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
     flexGrow: 1,
     marginBottom: tokens.spacingVerticalM,
+  },
+  navButton: {
+    width: '100%',
+    minHeight: '52px',
+    whiteSpace: 'normal',
+    height: 'auto',
   },
 });
 
@@ -70,20 +87,24 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <span className={styles.icon}>🔐</span>
-        <div>
-          <Title2>SharePoint Smart Permissions</Title2>
-          <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-            Browser-based permissions reporting and auditing for SharePoint Online
-          </Body1>
-        </div>
+        <ShieldLock24Regular style={{ fontSize: '32px', flexShrink: 0, marginTop: '4px' }} />
+        <Title2>SharePoint Smart Permissions</Title2>
+      </div>
+
+      <div className={styles.subtitle}>
+        <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+          Browser-based permissions reporting and auditing for SharePoint Online
+        </Body1>
       </div>
 
       <div className={styles.grid}>
         <Card className={styles.card}>
           <CardHeader
             header={
-              <Text className={styles.cardTitle}>📊 Permissions Report</Text>
+              <div className={styles.cardTitleRow}>
+                <DataBarVertical24Regular style={{ flexShrink: 0 }} />
+                <Text className={styles.cardTitle}>Permissions Report</Text>
+              </div>
             }
           />
           <Body1 className={styles.cardDesc}>
@@ -93,6 +114,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           </Body1>
           <Button
             appearance="primary"
+            className={styles.navButton}
             onClick={() => onNavigate('report')}
           >
             Run Permissions Report
@@ -102,7 +124,10 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
         <Card className={styles.card}>
           <CardHeader
             header={
-              <Text className={styles.cardTitle}>🔍 Permissions Explorer</Text>
+              <div className={styles.cardTitleRow}>
+                <FolderSearch24Regular style={{ flexShrink: 0 }} />
+                <Text className={styles.cardTitle}>Permissions Explorer</Text>
+              </div>
             }
           />
           <Body1 className={styles.cardDesc}>
@@ -112,6 +137,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           </Body1>
           <Button
             appearance="primary"
+            className={styles.navButton}
             onClick={() => onNavigate('explorer')}
           >
             Open Permissions Explorer
@@ -121,7 +147,10 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
         <Card className={styles.card}>
           <CardHeader
             header={
-              <Text className={styles.cardTitle}>👤 User Access</Text>
+              <div className={styles.cardTitleRow}>
+                <PersonSearch24Regular style={{ flexShrink: 0 }} />
+                <Text className={styles.cardTitle}>User Access</Text>
+              </div>
             }
           />
           <Body1 className={styles.cardDesc}>
@@ -131,6 +160,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
           </Body1>
           <Button
             appearance="primary"
+            className={styles.navButton}
             onClick={() => onNavigate('userAccess')}
           >
             Check User Access

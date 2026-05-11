@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
   Button,
-  Input,
   Field,
   Badge,
   Text,
@@ -12,6 +11,7 @@ import {
   MessageBar,
   MessageBarBody,
   Select,
+  Tooltip,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
@@ -23,9 +23,9 @@ import {
   People24Regular,
   ChevronRight16Regular,
   ChevronDown16Regular,
+  ArrowCircleDown16Regular,
 } from '@fluentui/react-icons';
 
-import { WebPartContext } from '@microsoft/sp-webpart-base';
 import { SharePointService } from '../services/SharePointService';
 import {
   LibraryInfo,
@@ -46,17 +46,6 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: tokens.spacingHorizontalM,
     marginBottom: tokens.spacingVerticalL,
-  },
-  connectRow: {
-    display: 'flex',
-    gap: tokens.spacingHorizontalM,
-    alignItems: 'flex-end',
-    flexWrap: 'wrap',
-    marginBottom: tokens.spacingVerticalM,
-  },
-  urlField: {
-    flexGrow: 1,
-    minWidth: '300px',
   },
   twoCol: {
     display: 'grid',
@@ -137,6 +126,69 @@ function roleBadgeColor(
   return 'informative';
 }
 
+// ── Permission table ──────────────────────────────────────────────────────────
+
+interface PermTableProps {
+  users: UserPermissionInfo[];
+  styles: ReturnType<typeof useStyles>;
+}
+
+const PermTable: React.FC<PermTableProps> = ({ users, styles }) => (
+  <table className={styles.permTable}>
+    <thead>
+      <tr>
+        <th className={styles.permTh}>User / Group</th>
+        <th className={styles.permTh}>Type</th>
+        <th className={styles.permTh}>Permission Level</th>
+      </tr>
+    </thead>
+    <tbody>
+      {users.map((u, i) => (
+        <tr key={i}>
+          <td className={styles.permTd}>
+            {u.isGroupMember ? (
+              <span style={{ paddingLeft: '16px', color: tokens.colorNeutralForeground3 }}>
+                ↳ {u.displayName}
+              </span>
+            ) : (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {u.principalType === 'User' ? (
+                  <Person24Regular style={{ fontSize: '14px' }} />
+                ) : (
+                  <People24Regular style={{ fontSize: '14px' }} />
+                )}
+                {u.displayName || u.loginName}
+              </span>
+            )}
+          </td>
+          <td className={styles.permTd}>
+            <Text style={{ fontSize: tokens.fontSizeBase200 }}>
+              {u.principalType === 'SecurityGroup'
+                ? 'Security Group'
+                : u.principalType === 'SharePointGroup'
+                ? 'SP Group'
+                : 'User'}
+            </Text>
+          </td>
+          <td className={styles.permTd}>
+            {u.roles.map((r, ri) => (
+              <Badge
+                key={ri}
+                appearance="filled"
+                color={roleBadgeColor([r])}
+                size="small"
+                style={{ marginRight: '4px', marginBottom: '2px' }}
+              >
+                {r}
+              </Badge>
+            ))}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
 // ── Folder tree node ──────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -188,15 +240,22 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         )}
 
         {node.isFolder ? (
-          <Folder24Regular style={{ fontSize: '16px', color: tokens.colorPaletteYellowForeground1, flexShrink: 0 }} />
+          <Folder24Regular style={{ fontSize: '16px', flexShrink: 0 }} />
         ) : (
-          <Document24Regular style={{ fontSize: '16px', color: tokens.colorNeutralForeground3, flexShrink: 0 }} />
+          <Document24Regular style={{ fontSize: '16px', flexShrink: 0 }} />
         )}
 
         <Text style={{ flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {node.name}
         </Text>
 
+        {node.hasUniquePermissionsBelow && (
+          <Tooltip content="Contains items with unique permissions" relationship="label">
+            <ArrowCircleDown16Regular
+              style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }}
+            />
+          </Tooltip>
+        )}
         {node.hasUniquePermissions && (
           <Badge appearance="filled" color="warning" size="small" style={{ flexShrink: 0 }}>
             Unique
@@ -224,16 +283,15 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export interface PermissionsExplorerViewProps {
-  context: WebPartContext;
   sp: SharePointService;
+  siteUrl: string;
   onBack: () => void;
 }
 
-export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ context, sp, onBack }) => {
+export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
-  const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
   const [isConnecting, setIsConnecting] = React.useState(false);
   const [connectStatus, setConnectStatus] = React.useState('');
   const [connectError, setConnectError] = React.useState('');
@@ -311,6 +369,20 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       );
       setRootNodes(nodes);
       if (nodes.length === 0) setTreeStatus('This library is empty.');
+
+      // Pre-fetch one level deep for each root folder to detect hasUniquePermissionsBelow
+      // at load time rather than requiring the user to expand each folder first.
+      const signal = abortRef.current?.signal;
+      nodes.filter((n) => n.isFolder).forEach((folder) => {
+        sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, signal)
+          .then((children) => {
+            if (children.some((c) => c.hasUniquePermissions)) {
+              folder.hasUniquePermissionsBelow = true;
+              setRootNodes((prev) => [...prev]);
+            }
+          })
+          .catch(() => { /* ignore prefetch errors */ });
+      });
     } catch (err: any) {
       setTreeStatus(`Error loading library: ${err?.message ?? String(err)}`);
     }
@@ -365,6 +437,28 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     if (node.parent) propagateUniqueBelow(node.parent);
   };
 
+  // ── Expand groups helper ──────────────────────────────────────────────────
+
+  const withGroupExpansion = async (users: UserPermissionInfo[]): Promise<UserPermissionInfo[]> => {
+    const expanded: UserPermissionInfo[] = [];
+    for (const u of users) {
+      expanded.push(u);
+      if (expandGroups && u.principalType === 'SharePointGroup') {
+        const members = await sp.getGroupMembers(
+          siteUrl.trim(),
+          u.displayName,
+          u.principalType,
+          abortRef.current?.signal,
+        );
+        members.forEach((m) => {
+          m.roles = [...u.roles];
+          expanded.push(m);
+        });
+      }
+    }
+    return expanded;
+  };
+
   // ── Select node ──────────────────────────────────────────────────────────
 
   const handleSelectNode = async (node: FolderFileNode): Promise<void> => {
@@ -385,24 +479,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         abortRef.current?.signal,
       );
       setNodeHasUnique(hasUnique);
-
-      const expanded: UserPermissionInfo[] = [];
-      for (const u of users) {
-        expanded.push(u);
-        if (hasUnique && expandGroups && u.principalType === 'SharePointGroup') {
-          const members = await sp.getGroupMembers(
-            siteUrl.trim(),
-            u.displayName,
-            u.principalType,
-            abortRef.current?.signal,
-          );
-          members.forEach((m) => {
-            m.roles = [...u.roles];
-            expanded.push(m);
-          });
-        }
-      }
-      setNodePerms(expanded);
+      setNodePerms(await withGroupExpansion(users));
     } catch (err: any) {
       setNodeError(err?.message ?? String(err));
     } finally {
@@ -420,7 +497,6 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   const handleShowParentPerms = async (): Promise<void> => {
     if (!selectedNode) return;
-    setShowParentPerms(true);
     setParentPermsLoading(true);
     setParentPermsError('');
     try {
@@ -431,7 +507,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       );
       if (result) {
         setParentPermsName(result.name);
-        setParentPerms(result.users);
+        setParentPerms(await withGroupExpansion(result.users));
       } else {
         setParentPerms([]);
         setParentPermsName('');
@@ -440,6 +516,21 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       setParentPermsError(err?.message ?? String(err));
     } finally {
       setParentPermsLoading(false);
+    }
+  };
+
+  const handleParentPermsCheckbox = (_: unknown, d: { checked: boolean | 'mixed' }): void => {
+    const checked = !!d.checked;
+    setShowParentPerms(checked);
+    if (checked) {
+      setParentPerms(null);
+      setParentPermsName('');
+      setParentPermsError('');
+      handleShowParentPerms().catch((e) => console.error('[SmartPermissions] handleShowParentPerms failed:', e));
+    } else {
+      setParentPerms(null);
+      setParentPermsName('');
+      setParentPermsError('');
     }
   };
 
@@ -463,25 +554,6 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
           Back
         </Button>
         <Title3>Permissions Explorer</Title3>
-      </div>
-
-      {/* Connect row */}
-      <div className={styles.connectRow}>
-        <Field label="Site URL" className={styles.urlField}>
-          <Input
-            value={siteUrl}
-            onChange={(_, d) => setSiteUrl(d.value)}
-            placeholder="https://contoso.sharepoint.com/sites/mysite"
-            disabled={isConnecting}
-          />
-        </Field>
-        <Button
-          appearance="primary"
-          onClick={handleConnect}
-          disabled={!siteUrl.trim() || isConnecting}
-        >
-          {isConnecting ? <><Spinner size="tiny" /> Connecting…</> : 'Connect'}
-        </Button>
       </div>
 
       {connectError && (
@@ -574,7 +646,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     label="Expand SharePoint group members"
                     checked={expandGroups}
                     onChange={(_, d) => setExpandGroups(!!d.checked)}
-                    style={{ marginBottom: tokens.spacingVerticalS }}
+                    style={{ marginBottom: tokens.spacingVerticalXS }}
                   />
 
                   {nodeLoading && <Spinner size="small" />}
@@ -586,82 +658,22 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   )}
 
                   {!nodeLoading && !nodeError && nodeHasUnique && (
-                    <table className={styles.permTable}>
-                      <thead>
-                        <tr>
-                          <th className={styles.permTh}>User / Group</th>
-                          <th className={styles.permTh}>Type</th>
-                          <th className={styles.permTh}>Permission Level</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {nodePerms.map((u, i) => (
-                          <tr key={i}>
-                            <td className={styles.permTd}>
-                              {u.isGroupMember ? (
-                                <span style={{ paddingLeft: '16px', color: tokens.colorNeutralForeground3 }}>
-                                  ↳ {u.displayName}
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  {u.principalType === 'User' ? (
-                                    <Person24Regular style={{ fontSize: '14px' }} />
-                                  ) : (
-                                    <People24Regular style={{ fontSize: '14px' }} />
-                                  )}
-                                  {u.displayName || u.loginName}
-                                </span>
-                              )}
-                            </td>
-                            <td className={styles.permTd}>
-                              <Text style={{ fontSize: tokens.fontSizeBase200 }}>
-                                {u.principalType === 'SecurityGroup'
-                                  ? 'Security Group'
-                                  : u.principalType === 'SharePointGroup'
-                                  ? 'SP Group'
-                                  : 'User'}
-                              </Text>
-                            </td>
-                            <td className={styles.permTd}>
-                              {u.roles.map((r, ri) => (
-                                <Badge
-                                  key={ri}
-                                  appearance="filled"
-                                  color={roleBadgeColor([r])}
-                                  size="small"
-                                  style={{ marginRight: '4px', marginBottom: '2px' }}
-                                >
-                                  {r}
-                                </Badge>
-                              ))}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <PermTable users={nodePerms} styles={styles} />
                   )}
 
                   {!nodeLoading && !nodeError && !nodeHasUnique && (
                     <>
-                      <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+                      <Body1 style={{ color: tokens.colorNeutralForeground3, marginBottom: tokens.spacingVerticalXS }}>
                         This item inherits permissions from its parent.
                       </Body1>
-                      {!showParentPerms && (
-                        <Button
-                          appearance="transparent"
-                          size="small"
-                          style={{ paddingLeft: 0, marginTop: tokens.spacingVerticalXS }}
-                          onClick={handleShowParentPerms}
-                        >
-                          Show parent permissions
-                        </Button>
-                      )}
+
+                      <Checkbox
+                        label="Show parent permissions"
+                        checked={showParentPerms}
+                        onChange={handleParentPermsCheckbox}
+                        style={{ marginBottom: tokens.spacingVerticalS }}
+                      />
+
                       {showParentPerms && parentPermsLoading && (
                         <Spinner size="small" style={{ marginTop: tokens.spacingVerticalS }} />
                       )}
@@ -676,7 +688,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                             size={200}
                             style={{
                               color: tokens.colorNeutralForeground3,
-                              marginTop: tokens.spacingVerticalS,
+                              marginBottom: tokens.spacingVerticalS,
                               display: 'block',
                             }}
                           >
@@ -687,53 +699,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                               No permissions found on parent.
                             </Body1>
                           ) : (
-                            <table className={styles.permTable} style={{ marginTop: tokens.spacingVerticalS }}>
-                              <thead>
-                                <tr>
-                                  <th className={styles.permTh}>User / Group</th>
-                                  <th className={styles.permTh}>Type</th>
-                                  <th className={styles.permTh}>Permission Level</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {parentPerms.map((u, i) => (
-                                  <tr key={i}>
-                                    <td className={styles.permTd}>
-                                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                        {u.principalType === 'User' ? (
-                                          <Person24Regular style={{ fontSize: '14px' }} />
-                                        ) : (
-                                          <People24Regular style={{ fontSize: '14px' }} />
-                                        )}
-                                        {u.displayName || u.loginName}
-                                      </span>
-                                    </td>
-                                    <td className={styles.permTd}>
-                                      <Text style={{ fontSize: tokens.fontSizeBase200 }}>
-                                        {u.principalType === 'SecurityGroup'
-                                          ? 'Security Group'
-                                          : u.principalType === 'SharePointGroup'
-                                          ? 'SP Group'
-                                          : 'User'}
-                                      </Text>
-                                    </td>
-                                    <td className={styles.permTd}>
-                                      {u.roles.map((r, ri) => (
-                                        <Badge
-                                          key={ri}
-                                          appearance="filled"
-                                          color={roleBadgeColor([r])}
-                                          size="small"
-                                          style={{ marginRight: '4px', marginBottom: '2px' }}
-                                        >
-                                          {r}
-                                        </Badge>
-                                      ))}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                            <PermTable users={parentPerms} styles={styles} />
                           )}
                         </>
                       )}

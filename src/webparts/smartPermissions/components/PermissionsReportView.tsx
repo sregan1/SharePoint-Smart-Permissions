@@ -1,12 +1,11 @@
 import * as React from 'react';
 import {
   Button,
-  Input,
+  Checkbox,
   Label,
   Field,
   RadioGroup,
   Radio,
-  Checkbox,
   SpinButton,
   ProgressBar,
   Text,
@@ -19,9 +18,15 @@ import {
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowLeft24Regular, DocumentArrowDown24Regular } from '@fluentui/react-icons';
+import {
+  ArrowLeft24Regular,
+  DocumentArrowDown24Regular,
+  Globe24Regular,
+  BookDatabase24Regular,
+  Folder24Regular,
+  FolderOpen24Regular,
+} from '@fluentui/react-icons';
 
-import { WebPartContext } from '@microsoft/sp-webpart-base';
 import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportOptions, ReportScope, PermissionEntry } from '../models/models';
@@ -65,41 +70,29 @@ const useStyles = makeStyles({
     background: tokens.colorStatusSuccessBackground1,
     borderRadius: tokens.borderRadiusMedium,
   },
-  statsRow: {
-    display: 'flex',
-    gap: tokens.spacingHorizontalL,
-    flexWrap: 'wrap',
-    marginTop: tokens.spacingVerticalS,
-  },
-  statItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    minWidth: '100px',
-  },
 });
 
 export interface PermissionsReportViewProps {
-  context: WebPartContext;
   sp: SharePointService;
   excel: ExcelExportService;
+  siteUrl: string;
+  includeHidden: boolean;
   onBack: () => void;
 }
 
 export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
-  context,
   sp,
   excel,
+  siteUrl,
+  includeHidden,
   onBack,
 }) => {
   const styles = useStyles();
 
   // ── Form state ──
-  const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
   const [allSites, setAllSites] = React.useState(false);
   const [scope, setScope] = React.useState<string>('Library');
   const [folderDepth, setFolderDepth] = React.useState(2);
-  const [includeHidden, setIncludeHidden] = React.useState(false);
 
   // ── Run state ──
   const [isBusy, setIsBusy] = React.useState(false);
@@ -110,7 +103,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
   const abortRef = React.useRef<AbortController | null>(null);
 
-  const canRun = siteUrl.trim().length > 0 && !isBusy;
+  const isRootSite = React.useMemo(() => {
+    try {
+      return new URL(siteUrl).pathname.replace(/\/$/, '') === '';
+    } catch {
+      return false;
+    }
+  }, [siteUrl]);
 
   const handleRun = async (): Promise<void> => {
     abortRef.current = new AbortController();
@@ -188,23 +187,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       </div>
 
       <div className={styles.form}>
-        {/* Site URL */}
-        <Field label="Site URL (or tenant root URL for all-sites scan)">
-          <Input
-            value={siteUrl}
-            onChange={(_, d) => setSiteUrl(d.value)}
-            placeholder="https://contoso.sharepoint.com/sites/mysite"
-            style={{ width: '100%' }}
-            disabled={isBusy}
-          />
-        </Field>
-
         {/* All-sites toggle */}
         <Checkbox
-          label="Scan all site collections (enter tenant root URL above)"
+          label="Scan all site collections in this tenant (only available in root site)"
           checked={allSites}
           onChange={(_, d) => setAllSites(!!d.checked)}
-          disabled={isBusy}
+          disabled={!isRootSite || isBusy}
         />
 
         <Divider />
@@ -217,10 +205,26 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             layout="horizontal"
             disabled={isBusy}
           >
-            <Radio value="Site" label="Site only" />
-            <Radio value="Library" label="Libraries" />
-            <Radio value="Folder" label="Folders" />
-            <Radio value="Item" label="Files & Folders" />
+            <Radio value="Site" label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Globe24Regular style={{ fontSize: '16px' }} />Site only
+              </span>
+            } />
+            <Radio value="Library" label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <BookDatabase24Regular style={{ fontSize: '16px' }} />Libraries
+              </span>
+            } />
+            <Radio value="Folder" label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Folder24Regular style={{ fontSize: '16px' }} />Folders
+              </span>
+            } />
+            <Radio value="Item" label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <FolderOpen24Regular style={{ fontSize: '16px' }} />Files &amp; Folders
+              </span>
+            } />
           </RadioGroup>
         </Field>
 
@@ -243,14 +247,6 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           </div>
         )}
 
-        {/* Include hidden */}
-        <Checkbox
-          label="Include hidden libraries"
-          checked={includeHidden}
-          onChange={(_, d) => setIncludeHidden(!!d.checked)}
-          disabled={isBusy}
-        />
-
         <Divider />
 
         {/* Action buttons */}
@@ -258,7 +254,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           <Button
             appearance="primary"
             onClick={handleRun}
-            disabled={!canRun}
+            disabled={isBusy}
           >
             Run Report
           </Button>
