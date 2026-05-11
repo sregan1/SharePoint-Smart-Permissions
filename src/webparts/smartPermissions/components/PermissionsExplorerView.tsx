@@ -285,7 +285,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
       if (libs.length > 0) {
         setSelectedLibrary(libs[0].serverRelativeUrl);
-        void loadLibrary(libs[0]);
+        loadLibrary(libs[0]).catch((e) => console.error('[SmartPermissions] loadLibrary failed:', e));
       }
     } catch (err: any) {
       setConnectError(`Connection failed: ${err?.message ?? String(err)}`);
@@ -411,7 +411,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   };
 
   React.useEffect(() => {
-    if (selectedNode) void handleSelectNode(selectedNode);
+    if (selectedNode) {
+      handleSelectNode(selectedNode).catch((e) => console.error('[SmartPermissions] handleSelectNode failed:', e));
+    }
   }, [expandGroups]);
 
   // ── Show parent permissions ──────────────────────────────────────────────
@@ -443,7 +445,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   // Auto-connect on mount
   React.useEffect(() => {
-    void handleConnect();
+    handleConnect().catch((e) => console.error('[SmartPermissions] handleConnect failed:', e));
   }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────

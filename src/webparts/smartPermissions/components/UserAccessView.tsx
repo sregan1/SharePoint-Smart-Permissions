@@ -147,7 +147,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ context, sp, onB
 
   // Auto-connect on mount
   React.useEffect(() => {
-    void handleConnect();
+    handleConnect().catch((e) => console.error('[SmartPermissions] UserAccess handleConnect failed:', e));
   }, []);
 
   // ── User selection ───────────────────────────────────────────────────────
