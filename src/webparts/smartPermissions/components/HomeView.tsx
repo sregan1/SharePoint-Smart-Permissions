@@ -26,7 +26,6 @@ const useStyles = makeStyles({
     paddingBottom: tokens.spacingVerticalS,
     paddingLeft: tokens.spacingHorizontalM,
     paddingRight: tokens.spacingHorizontalM,
-    background: tokens.colorBrandBackground,
   },
   root: {
     padding: tokens.spacingVerticalXL,
@@ -90,15 +89,16 @@ const useStyles = makeStyles({
 
 export interface HomeViewProps {
   onNavigate: (view: AppView) => void;
+  primaryColor: string;
 }
 
-export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
+export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor }) => {
   const styles = useStyles();
 
   return (
     <div>
       {/* Full-width banner — matches the header on all other views */}
-      <div className={styles.banner}>
+      <div className={styles.banner} style={{ background: primaryColor }}>
         <ShieldLock24Regular style={{ color: 'white', fontSize: '20px', flexShrink: 0 }} />
         <Text style={{ color: 'white', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' }}>
           SharePoint Smart Permissions

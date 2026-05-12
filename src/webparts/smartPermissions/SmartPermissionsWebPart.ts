@@ -1,10 +1,11 @@
 import { Version } from '@microsoft/sp-core-library';
 import type { IPropertyPaneConfiguration } from '@microsoft/sp-property-pane';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
+import { ThemeProvider, IReadonlyTheme } from '@microsoft/sp-component-base';
 import * as React from 'react';
 import * as ReactDom from 'react-dom';
 
-import { App, AppView } from './components/App';
+import { App, AppView, IBrandColors } from './components/App';
 import { SharePointService } from './services/SharePointService';
 import { ExcelExportService } from './services/ExcelExportService';
 
@@ -19,6 +20,14 @@ export interface ISmartPermissionsWebPartProps {
 export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmartPermissionsWebPartProps> {
   private _sp: SharePointService;
   private _excel: ExcelExportService;
+  private _brandColors: IBrandColors = {
+    primary:  '#0078d4',
+    darkAlt:  '#106ebe',
+    dark:     '#005a9e',
+    darker:   '#004578',
+    light:    '#c7e0f4',
+    lighter:  '#deecf9',
+  };
 
   protected onInit(): Promise<void> {
     // Log every unhandled rejection so the real error appears in the browser
@@ -34,6 +43,27 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
         'string:', String(r),
       );
     });
+
+    // Read the current SharePoint site theme colour and re-render when it changes.
+    try {
+      const themeProvider = this.context.serviceScope.consume(ThemeProvider.serviceKey);
+      const applyTheme = (theme: IReadonlyTheme | undefined): void => {
+        const p = theme?.palette;
+        if (p?.themePrimary) {
+          this._brandColors = {
+            primary:  p.themePrimary,
+            darkAlt:  p.themeDarkAlt  ?? p.themePrimary,
+            dark:     p.themeDark     ?? p.themePrimary,
+            darker:   p.themeDarker   ?? p.themeDark ?? p.themePrimary,
+            light:    p.themeLight    ?? '#c7e0f4',
+            lighter:  p.themeLighter  ?? '#deecf9',
+          };
+        }
+        this.render();
+      };
+      applyTheme(themeProvider.tryGetTheme());
+      themeProvider.themeChangedEvent.add(this, (args) => applyTheme(args.theme));
+    } catch { /* theme unavailable — keep default blue */ }
 
     try {
       this._sp = new SharePointService(this.context);
@@ -62,6 +92,7 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
         sp: this._sp,
         excel: this._excel,
         defaultView: this.properties.defaultView ?? 'home',
+        brandColors: this._brandColors,
       });
       ReactDom.render(element, this.domElement);
     } catch (err: any) {

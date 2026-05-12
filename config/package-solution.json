@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
   "solution": {
-    "name": "smart-permissions-client-side-solution",
+    "name": "Smart Permissions",
     "id": "a2f2de50-4e8b-4f3c-9abc-ef0123456789",
     "version": "1.0.0.0",
     "includeClientSideAssets": true,
@@ -11,7 +11,8 @@
       "name": "",
       "privacyUrl": "",
       "termsOfUseUrl": "",
-      "websiteUrl": ""
+      "websiteUrl": "",
+      "mpnId": ""
     },
     "metadata": {
       "shortDescription": {

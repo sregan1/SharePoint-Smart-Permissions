@@ -70,16 +70,18 @@ When you first open the web part, you will see the **Home Screen** with three op
 
 ## The Home Screen
 
-The home screen is your starting point. It presents the three tools as cards, each with a brief description of its purpose and a button to launch it.
+The home screen is your starting point. A blue brand banner runs across the top, followed by three feature cards — one for each tool — each with a brief description and a launch button.
 
-![Home screen showing all three feature cards](screenshots/01_home.png)
+![Home screen showing all three feature cards with the brand banner at the top](screenshots/01_home.png)
 
 **What you see:**
 - **Permissions Report** — for generating exportable audit reports
 - **Permissions Explorer** — for real-time interactive browsing
 - **User Access** — for per-user access lookups
 
-Click any button to enter that tool. You can always return to the home screen using the **Back** button at the top left of any tool screen.
+Click any button to enter that tool. Use the **Back** button at the top left of any tool screen to return to the home screen.
+
+The **gear icon** (⚙) in the top-right corner of the banner opens the global Settings panel on every screen, including the home screen.
 
 ---
 
@@ -89,14 +91,14 @@ Click any button to enter that tool. You can always return to the home screen us
 
 The Permissions Report scans a site's libraries, folders, and files and produces a comprehensive view of every location where permissions differ from the site default. It focuses on **unique permission breaks** — places where someone has explicitly changed who can access a specific item.
 
-Once the scan is complete, you can export the results as a **color-coded Excel workbook** that is suitable for sharing with stakeholders or retaining for compliance records.
+Once the scan is complete, you can export the results as a **color-coded Excel workbook** suitable for sharing with stakeholders or retaining for compliance records.
 
 ![Permissions Report configuration screen with scan depth options](screenshots/02_report_config.png)
 
 ### How to Use It
 
 1. Click **Run Permissions Report** from the home screen.
-2. Choose your **Scan Depth**:
+2. Choose your **Scan Depth** — one of four options shown as a horizontal radio group:
 
    | Option | What Is Scanned |
    |--------|----------------|
@@ -105,16 +107,22 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
    | **Folders** | All libraries and folders (configurable depth) |
    | **Files & Folders** | Everything — libraries, folders, and individual files |
 
-3. If you select **Folders**, set the **Folder depth limit** (1–10 levels deep).
-4. If you are on the root site and have tenant-wide access, you can enable **Scan all site collections in this tenant** to audit the entire organisation.
+3. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
+4. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organisation.
 5. Click **Run Report**.
 
-![Report scan in progress showing progress bar and status](screenshots/03_report_running.png)
+![Report scan in progress showing progress bar, elapsed timer, and item count](screenshots/03_report_running.png)
 
-6. Wait for the scan to complete. A summary shows the number of objects found and how many have unique permissions.
-7. Click **Export to Excel** to download the results.
+6. While the scan runs you will see:
+   - A **progress bar** advancing library-by-library
+   - The **name of the current item** being scanned
+   - An **elapsed timer** (updated every half-second)
+   - A running count of **items scanned** and **library N of N**
+   - A **Cancel** button to stop the scan at any time
 
-![Completed report with results table and Export to Excel button](screenshots/04_report_complete.png)
+7. When the scan finishes, a green result panel appears showing the total object count, the number with unique permissions, and an **Export to Excel** button.
+
+![Completed report with result summary and Export to Excel button](screenshots/04_report_complete.png)
 
 ### Understanding the Results
 
@@ -131,7 +139,7 @@ Rows for items with **unique permissions** are highlighted in the Excel workbook
 
 ### Cancelling a Long Scan
 
-If a scan is taking too long, click the **Cancel** button that appears next to the progress bar. The scan will stop after the current item completes.
+Click the **Cancel** button that appears next to the progress bar. The scan stops after the current item finishes and any results gathered so far are kept.
 
 ---
 
@@ -151,31 +159,34 @@ The Permissions Explorer lets you browse a document library interactively — fo
 4. The **left panel** shows the folder and file tree. Click any item to select it.
 5. The **right panel** shows the permissions for the selected item.
 
-![A folder selected in the tree with its permissions table on the right](screenshots/05_explorer.png)
-
 ### Understanding the Permission Panel
 
 When you select an item, the right panel shows:
 
-- A **Unique permissions** badge (orange) if the item has its own permission assignment, or an **Inherited permissions** badge (grey) if it inherits from a parent
-- A table of every user and group that has access, their type (User, SP Group, Security Group), and their permission level
-- Color-coded permission badges: **red** for Full Control, **orange** for Edit/Contribute, **green** for Read/View
+- The **item name** and a badge indicating whether it has **Unique permissions** (amber) or **Inherited** permissions (blue)
+- An **options bar** at the top of the panel (always visible) with:
+  - **Expand SharePoint group members** — reveals the individual users inside each SharePoint group
+  - **Show parent permissions** — visible only for inherited items; shows where the permissions come from
+- For **inherited items**, a blue callout banner — with a chain-link icon — reads *"This item inherits permissions from its parent."*
+- For **unique items**, a permissions table listing every user and group with access
+
+![A folder with inherited permissions showing the blue banner and parent permissions table](screenshots/05_explorer.png)
+
+Color-coded permission badges: **red** for Full Control, **amber** for Edit/Contribute, **green** for Read/View.
 
 ### Expand Group Members
 
-Check **Expand SharePoint group members** to expand each SharePoint group in the permissions table and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
+Check **Expand SharePoint group members** in the options bar to expand each SharePoint group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
 
-![Permissions table showing group members and individual users](screenshots/05_explorer.png)
+Toggling this option refreshes the permissions panel in place — if you were already showing parent permissions, those are refreshed too.
 
 ### Show Parent Permissions
 
-For items that inherit permissions, check **Show parent permissions** to immediately see where those permissions come from. The panel will display the permissions of the nearest ancestor that has unique permissions.
+For items that **inherit** permissions, check **Show parent permissions** to immediately see where those permissions come from. The panel will display the permissions of the nearest ancestor that has unique permissions, labelled *"Inherited from: [name]"*.
 
 ### Finding Unique Permissions Quickly
 
-Folders that contain items with unique permissions deeper in their tree are marked with a **down-arrow indicator** (↓) in the tree. This lets you quickly navigate to the areas of a library where permission breaks exist without having to expand every folder.
-
-![Folder tree showing down-arrow indicators on folders containing unique-permission items](screenshots/05_explorer.png)
+Folders that contain items with unique permissions deeper in their tree are marked with a **down-arrow indicator** (↓) in the tree. This lets you quickly navigate to the areas of a library where permission breaks exist without having to expand every folder manually.
 
 ---
 
@@ -191,8 +202,8 @@ User Access answers the question: *"What can this specific person actually see?"
 
 1. Click **Check User Access** from the home screen.
 2. The web part loads the list of users on the site.
-3. Select a user from the **Select a user** dropdown.
-4. The scan begins automatically. A progress bar, elapsed timer, and status message show the scan's progress.
+3. Select a user from the **Select a user** dropdown. The scan begins automatically.
+4. A progress bar, elapsed timer, and status message show the scan's progress.
 
 ![User Access scan in progress with progress bar, elapsed time, and cancel button](screenshots/06_user_access_scanning.png)
 
@@ -200,7 +211,7 @@ User Access answers the question: *"What can this specific person actually see?"
 
 ### Cancelling a Scan
 
-Because User Access scans every folder and file on the site, it can take several minutes on large sites. If you need to stop, click the **Cancel** button while the scan is running.
+Because User Access scans every folder and file on the site, it can take several minutes on large sites. Click the **Cancel** button while the scan is running to stop it and see partial results.
 
 ### Understanding the Results
 
@@ -209,23 +220,25 @@ The results table shows one row per accessible location:
 | Column | Description |
 |--------|-------------|
 | **Type** | Site, Library, Folder, or File |
-| **Name** | Display name of the location |
+| **Name** | Display name of the location (indented to reflect hierarchy) |
 | **Path** | Server-relative URL |
 | **Permission Level** | The user's effective role at this location |
 
-Permission level badges use the same colour coding as the Permissions Explorer (red = Full Control, orange = Edit, green = Read).
+Permission level badges use the same colour coding as the Permissions Explorer (red = Full Control, amber = Edit, green = Read).
 
 ### Full Site Access
 
-If a user has Full Control or Owner-level access at the site level, the tool detects this and displays a **Full Site Access** message instead of listing every individual item — because they can access everything.
+If a user has Full Control or Owner-level access at the site level, the tool detects this immediately and displays a **green confirmation message**: *"This user has Full Control or Owner-level access to the entire site — all libraries and folders are accessible."*
 
 ![Full Site Access message shown for an owner-level user](screenshots/08_user_access_full_site.png)
+
+Individual item listing is not shown for owner-level accounts because they can access everything.
 
 ---
 
 ## Settings
 
-The **Settings** panel is accessible from the gear icon (⚙) in the top-right corner of the banner on any screen, or in the top-right of the home screen.
+The **Settings** panel is accessible from the gear icon (⚙) in the top-right corner of the banner on every screen, including the home screen.
 
 ![Settings popover showing the Include system and hidden libraries checkbox](screenshots/09_settings.png)
 
@@ -242,7 +255,7 @@ When **checked**, the tools also include system and hidden libraries such as:
 
 This setting is useful during a thorough security audit where you need to account for all content, including system-managed locations.
 
-> **Note:** This setting applies to the Permissions Explorer and User Access tools. The Permissions Report has its own scan settings that control hidden library inclusion.
+> **Note:** The Permissions Report always excludes system and hidden libraries regardless of this setting.
 
 ---
 
@@ -313,12 +326,22 @@ A: By default, hidden and system libraries are excluded (Style Library, Form Tem
 ---
 
 **Q: What does "Inherited permissions" mean?**
-A: SharePoint permissions flow down from parent objects. When an item shows "Inherited permissions," it means it uses the same permissions as its parent folder, library, or site — no unique permission assignment has been made for that specific item.
+A: SharePoint permissions flow down from parent objects. When an item shows "Inherited" (indicated by the blue banner with a chain-link icon), it means it uses the same permissions as its parent folder, library, or site — no unique permission assignment has been made for that specific item.
 
 ---
 
 **Q: What is a "unique permission break"?**
-A: A unique permission break occurs when a specific item (library, folder, or file) has had its permissions explicitly changed, making them different from the parent. This is also called "breaking inheritance." The Permissions Report and Explorer both identify and highlight these breaks.
+A: A unique permission break occurs when a specific item (library, folder, or file) has had its permissions explicitly changed, making them different from the parent. This is also called "breaking inheritance." The Permissions Report and Explorer both identify and highlight these breaks with an amber **Unique permissions** badge.
+
+---
+
+**Q: Can I see what permissions an inherited item is using without checking the parent manually?**
+A: Yes. Select the item in the Permissions Explorer, then check **Show parent permissions** in the options bar. The panel will immediately show the permissions of the nearest ancestor that has unique permissions, labelled *"Inherited from: [name]"*.
+
+---
+
+**Q: If I toggle "Expand group members", will it lose the parent permissions I was viewing?**
+A: No. Toggling "Expand SharePoint group members" refreshes the permissions in place — if parent permissions were already showing, they are re-fetched with the updated expansion setting automatically.
 
 ---
 
@@ -337,8 +360,8 @@ A: Yes. The exported Excel file is a standard `.xlsx` file. It contains a snapsh
 
 ---
 
-**Q: Why does the tool show "Full Site Access" for some users instead of listing their locations?**
-A: If a user has Full Control or Owner-level access at the site level, they can access every item on the site. Rather than listing thousands of rows, the tool detects this and shows the Full Site Access message instead.
+**Q: Why does the tool show a "Full Control" message for some users instead of listing their locations?**
+A: If a user has Full Control or Owner-level access at the site level, they can access every item on the site. Rather than listing thousands of rows, the tool detects this and shows the full-access confirmation message instead.
 
 ---
 
@@ -367,12 +390,17 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 ### The scan seems to hang on one library
 
-- Large libraries with thousands of items can take time. The status message updates as each library is processed.
+- Large libraries with thousands of items can take time. The status message and elapsed timer update as each item is processed.
 - If it remains stuck for more than a few minutes, click **Cancel** and try a narrower scan scope (e.g., **Libraries** instead of **Files & Folders**).
 
 ### "You do not have permission" errors in the browser console
 
 - Your account does not have sufficient access to some areas of the site. Results for those areas will be omitted. This is expected behaviour — the tool only reports what it can see.
+
+### Some system libraries (Style Library, Form Templates) still appear
+
+- Ensure **Include system and hidden libraries** is unchecked in Settings.
+- These libraries are excluded by URL pattern as well as their metadata flags. If they still appear, check that you are running the latest version of the web part package.
 
 ---
 

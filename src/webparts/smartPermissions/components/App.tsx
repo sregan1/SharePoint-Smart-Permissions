@@ -13,6 +13,7 @@ import {
   PopoverTrigger,
   PopoverSurface,
   tokens,
+  Theme,
 } from '@fluentui/react-components';
 import { Settings24Regular, Info16Regular, ShieldLock24Regular } from '@fluentui/react-icons';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
@@ -26,11 +27,63 @@ import { UserAccessView } from './UserAccessView';
 
 export type AppView = 'home' | 'report' | 'explorer' | 'userAccess';
 
+export interface IBrandColors {
+  primary: string;
+  darkAlt: string;
+  dark: string;
+  darker: string;
+  light: string;
+  lighter: string;
+}
+
+function buildTheme(b: IBrandColors): Theme {
+  return {
+    ...webLightTheme,
+    // Background tokens (primary buttons, selected states)
+    colorBrandBackground:                    b.primary,
+    colorBrandBackgroundHover:               b.darkAlt,
+    colorBrandBackgroundPressed:             b.dark,
+    colorBrandBackgroundSelected:            b.darkAlt,
+    colorBrandBackgroundStatic:              b.primary,
+    colorBrandBackground2:                   b.lighter,
+    colorBrandBackground2Hover:              b.light,
+    colorBrandBackground2Pressed:            b.light,
+    colorBrandBackground3Static:             b.dark,
+    colorBrandBackground4Static:             b.darker,
+    // Compound brand (checkboxes, radio buttons, sliders)
+    colorCompoundBrandBackground:            b.primary,
+    colorCompoundBrandBackgroundHover:       b.darkAlt,
+    colorCompoundBrandBackgroundPressed:     b.dark,
+    // Foreground tokens (icons, text, checkmarks)
+    colorBrandForeground1:                   b.primary,
+    colorBrandForeground2:                   b.darkAlt,
+    colorBrandForeground2Hover:              b.dark,
+    colorBrandForeground2Pressed:            b.darker,
+    colorCompoundBrandForeground1:           b.primary,
+    colorCompoundBrandForeground1Hover:      b.darkAlt,
+    colorCompoundBrandForeground1Pressed:    b.dark,
+    // Link foreground tokens
+    colorBrandForegroundLink:                b.primary,
+    colorBrandForegroundLinkHover:           b.darkAlt,
+    colorBrandForegroundLinkPressed:         b.dark,
+    colorBrandForegroundLinkSelected:        b.primary,
+    // Stroke tokens (focus rings, borders)
+    colorBrandStroke1:                       b.primary,
+    colorBrandStroke2:                       b.light,
+    colorBrandStroke2Hover:                  b.primary,
+    colorBrandStroke2Pressed:                b.darkAlt,
+    colorCompoundBrandStroke:                b.primary,
+    colorCompoundBrandStrokeHover:           b.darkAlt,
+    colorCompoundBrandStrokePressed:         b.dark,
+  };
+}
+
 export interface AppProps {
   context: WebPartContext;
   sp: SharePointService;
   excel: ExcelExportService;
   defaultView?: AppView;
+  brandColors: IBrandColors;
 }
 
 class ErrorBoundary extends React.Component<
@@ -84,7 +137,8 @@ try {
   throw e;
 }
 
-export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => {
+export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brandColors }) => {
+  const theme = React.useMemo(() => buildTheme(brandColors), [brandColors.primary]);
   const [view, setView] = React.useState<AppView>(defaultView ?? 'home');
   const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
   const [editUrl, setEditUrl] = React.useState(context.pageContext.web.absoluteUrl);
@@ -142,7 +196,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
   return (
     <ErrorBoundary>
     <RendererProvider renderer={renderer} targetDocument={document}>
-    <FluentProvider theme={webLightTheme} style={{ minHeight: '400px', position: 'relative' }}>
+    <FluentProvider theme={theme} style={{ minHeight: '400px', position: 'relative' }}>
       {view !== 'home' ? (
         <div
           style={{
@@ -153,7 +207,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
             paddingBottom: tokens.spacingVerticalS,
             paddingLeft: tokens.spacingHorizontalM,
             paddingRight: tokens.spacingHorizontalS,
-            background: tokens.colorBrandBackground,
+            background: brandColors.primary,
             gap: tokens.spacingHorizontalM,
           }}
         >
@@ -247,7 +301,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
       )}
 
       {view === 'home' && (
-        <HomeView onNavigate={setView} />
+        <HomeView onNavigate={setView} primaryColor={brandColors.primary} />
       )}
       {view === 'report' && (
         <PermissionsReportView
