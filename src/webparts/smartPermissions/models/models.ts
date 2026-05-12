@@ -64,3 +64,10 @@ export interface ReportOptions {
   folderDepth: number;
   includeHidden: boolean;
 }
+
+export interface ScanProgress {
+  message: string;
+  scanned: number;    // total items added to results so far
+  libsDone: number;   // libraries fully processed
+  libsTotal: number;  // total libraries to scan (known after initial fetch)
+}

@@ -29,7 +29,7 @@ import {
 
 import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
-import { ReportOptions, ReportScope, PermissionEntry } from '../models/models';
+import { ReportOptions, ReportScope, PermissionEntry, ScanProgress } from '../models/models';
 
 const useStyles = makeStyles({
   root: {
@@ -105,12 +105,26 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
   // ── Run state ──
   const [isBusy, setIsBusy] = React.useState(false);
-  const [statusText, setStatusText] = React.useState('');
+  const [scanProgress, setScanProgress] = React.useState<ScanProgress>({ message: '', scanned: 0, libsDone: 0, libsTotal: 0 });
+  const [elapsed, setElapsed] = React.useState(0);
   const [error, setError] = React.useState('');
   const [entries, setEntries] = React.useState<PermissionEntry[] | null>(null);
   const [isExporting, setIsExporting] = React.useState(false);
 
   const abortRef = React.useRef<AbortController | null>(null);
+
+  React.useEffect(() => {
+    if (!isBusy) { setElapsed(0); return; }
+    const start = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [isBusy]);
+
+  const formatElapsed = (secs: number): string => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
 
   const isRootSite = React.useMemo(() => {
     try {
@@ -125,7 +139,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     setIsBusy(true);
     setError('');
     setEntries(null);
-    setStatusText('Starting scan…');
+    setScanProgress({ message: 'Starting scan…', scanned: 0, libsDone: 0, libsTotal: 0 });
 
     try {
       const options: ReportOptions = {
@@ -138,26 +152,28 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
       const result = await sp.scanPermissions(
         options,
-        (msg) => setStatusText(msg),
+        (progress) => setScanProgress(progress),
         abortRef.current.signal,
       );
 
       if (abortRef.current.signal.aborted) {
-        setStatusText('Cancelled.');
+        setScanProgress((prev) => ({ ...prev, message: 'Cancelled.' }));
         return;
       }
 
       setEntries(result);
-      setStatusText(
-        `Scan complete — ${result.length} object(s) found, ` +
+      setScanProgress((prev) => ({
+        ...prev,
+        message:
+          `Scan complete — ${result.length} object(s) found, ` +
           `${result.filter((e) => e.hasUniquePermissions).length} with unique permissions.`,
-      );
+      }));
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        setStatusText('Cancelled.');
+        setScanProgress((prev) => ({ ...prev, message: 'Cancelled.' }));
       } else {
         setError(`Error: ${err?.message ?? String(err)}`);
-        setStatusText('');
+        setScanProgress((prev) => ({ ...prev, message: '' }));
       }
     } finally {
       setIsBusy(false);
@@ -281,10 +297,27 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         </div>
 
         {/* Progress */}
-        {(isBusy || statusText) && !error && (
+        {(isBusy || scanProgress.message) && !error && (
           <div className={styles.progressArea}>
-            {isBusy && <ProgressBar />}
-            <Body1>{statusText}</Body1>
+            {isBusy && (
+              <ProgressBar
+                value={scanProgress.libsTotal > 0 ? scanProgress.libsDone / scanProgress.libsTotal : undefined}
+              />
+            )}
+            <div className={styles.row} style={{ justifyContent: 'space-between' }}>
+              <Body1>{scanProgress.message}</Body1>
+              {isBusy && elapsed > 0 && (
+                <Body1 style={{ color: tokens.colorNeutralForeground3, whiteSpace: 'nowrap' }}>
+                  {formatElapsed(elapsed)}
+                </Body1>
+              )}
+            </div>
+            {isBusy && scanProgress.scanned > 0 && (
+              <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+                {scanProgress.scanned} items scanned
+                {scanProgress.libsTotal > 0 && ` · Library ${scanProgress.libsDone} of ${scanProgress.libsTotal}`}
+              </Body1>
+            )}
           </div>
         )}
 
@@ -312,7 +345,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             </div>
 
             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-              {statusText}
+              {scanProgress.message}
             </Body1>
 
             <div className={styles.row}>

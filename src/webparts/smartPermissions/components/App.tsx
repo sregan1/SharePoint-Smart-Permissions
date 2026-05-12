@@ -231,12 +231,12 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
           </Popover>
         </div>
       ) : (
-        <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }}>
+        <div style={{ position: 'absolute', top: '4px', right: '8px', zIndex: 10 }}>
           <Popover open={settingsOpen} onOpenChange={(_, d) => setSettingsOpen(d.open)}>
             <PopoverTrigger disableButtonEnhancement>
               <Button
-                appearance="subtle"
-                icon={<Settings24Regular />}
+                appearance="transparent"
+                icon={<Settings24Regular style={{ color: 'white' }} />}
                 aria-label="Settings"
                 title="Settings"
               />

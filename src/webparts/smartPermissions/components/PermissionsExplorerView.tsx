@@ -24,6 +24,7 @@ import {
   ChevronRight16Regular,
   ChevronDown16Regular,
   ArrowCircleDown16Regular,
+  Link16Regular,
 } from '@fluentui/react-icons';
 
 import { SharePointService } from '../services/SharePointService';
@@ -99,6 +100,22 @@ const useStyles = makeStyles({
     padding: '5px 8px',
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     verticalAlign: 'top',
+  },
+  optionsBar: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalXS,
+    marginBottom: tokens.spacingVerticalM,
+  },
+  inheritedBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalS,
+    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+    background: tokens.colorBrandBackground2,
+    borderLeft: `3px solid ${tokens.colorBrandForeground1}`,
+    borderRadius: tokens.borderRadiusSmall,
+    marginBottom: tokens.spacingVerticalM,
   },
 });
 
@@ -489,8 +506,28 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   };
 
   React.useEffect(() => {
-    if (selectedNode) {
-      handleSelectNode(selectedNode).catch((e) => console.error('[SmartPermissions] handleSelectNode failed:', e));
+    if (!selectedNode) return;
+    // Re-fetch permissions with the new expandGroups value without resetting
+    // showParentPerms — handleSelectNode would clear it, so we refresh in place.
+    const shouldRefreshParent = showParentPerms;
+    setNodeLoading(true);
+    setNodePerms([]);
+    setNodeError('');
+    sp.getItemPermissions(siteUrl.trim(), selectedNode, abortRef.current?.signal)
+      .then(async ({ hasUnique, users }) => {
+        setNodeHasUnique(hasUnique);
+        setNodePerms(await withGroupExpansion(users));
+        setNodeLoading(false);
+      })
+      .catch((e: any) => {
+        setNodeError(e?.message ?? String(e));
+        setNodeLoading(false);
+      });
+    if (shouldRefreshParent) {
+      setParentPerms(null);
+      setParentPermsName('');
+      setParentPermsError('');
+      handleShowParentPerms().catch((e) => console.error('[SmartPermissions] handleShowParentPerms failed:', e));
     }
   }, [expandGroups]);
 
@@ -624,6 +661,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
               {selectedNode && (
                 <>
+                  {/* Item name + badge */}
                   <div
                     style={{
                       display: 'flex',
@@ -635,20 +673,27 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   >
                     <Text weight="semibold">{selectedNode.name}</Text>
                     {nodeHasUnique ? (
-                      <Badge appearance="filled" color="warning">
-                        Unique permissions
-                      </Badge>
+                      <Badge appearance="filled" color="warning">Unique permissions</Badge>
                     ) : !nodeLoading && !nodeError ? (
-                      <Badge appearance="outline">Inherited permissions</Badge>
+                      <Badge appearance="filled" color="informative">Inherited</Badge>
                     ) : null}
                   </div>
 
-                  <Checkbox
-                    label="Expand SharePoint group members"
-                    checked={expandGroups}
-                    onChange={(_, d) => setExpandGroups(!!d.checked)}
-                    style={{ marginBottom: tokens.spacingVerticalXS }}
-                  />
+                  {/* Options — always at top */}
+                  <div className={styles.optionsBar}>
+                    <Checkbox
+                      label="Expand SharePoint group members"
+                      checked={expandGroups}
+                      onChange={(_, d) => setExpandGroups(!!d.checked)}
+                    />
+                    {!nodeLoading && !nodeError && !nodeHasUnique && (
+                      <Checkbox
+                        label="Show parent permissions"
+                        checked={showParentPerms}
+                        onChange={handleParentPermsCheckbox}
+                      />
+                    )}
+                  </div>
 
                   {nodeLoading && <Spinner size="small" />}
 
@@ -658,32 +703,31 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     </MessageBar>
                   )}
 
+                  {/* Inherited banner */}
+                  {!nodeLoading && !nodeError && !nodeHasUnique && (
+                    <div className={styles.inheritedBanner}>
+                      <Link16Regular style={{ flexShrink: 0, color: tokens.colorBrandForeground1 }} />
+                      <Body1>This item inherits permissions from its parent.</Body1>
+                    </div>
+                  )}
+
+                  {/* Unique permissions table */}
                   {!nodeLoading && !nodeError && nodeHasUnique && (
                     <PermTable users={nodePerms} styles={styles} />
                   )}
 
-                  {!nodeLoading && !nodeError && !nodeHasUnique && (
+                  {/* Parent permissions */}
+                  {!nodeLoading && !nodeError && !nodeHasUnique && showParentPerms && (
                     <>
-                      <Body1 style={{ color: tokens.colorNeutralForeground3, marginBottom: tokens.spacingVerticalXS }}>
-                        This item inherits permissions from its parent.
-                      </Body1>
-
-                      <Checkbox
-                        label="Show parent permissions"
-                        checked={showParentPerms}
-                        onChange={handleParentPermsCheckbox}
-                        style={{ marginBottom: tokens.spacingVerticalS }}
-                      />
-
-                      {showParentPerms && parentPermsLoading && (
+                      {parentPermsLoading && (
                         <Spinner size="small" style={{ marginTop: tokens.spacingVerticalS }} />
                       )}
-                      {showParentPerms && parentPermsError && (
+                      {parentPermsError && (
                         <MessageBar intent="error" style={{ marginTop: tokens.spacingVerticalS }}>
                           <MessageBarBody>{parentPermsError}</MessageBarBody>
                         </MessageBar>
                       )}
-                      {showParentPerms && !parentPermsLoading && !parentPermsError && parentPerms && (
+                      {!parentPermsLoading && !parentPermsError && parentPerms && (
                         <>
                           <Text
                             size={200}

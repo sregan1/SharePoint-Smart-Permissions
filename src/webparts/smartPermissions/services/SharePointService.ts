@@ -2,7 +2,7 @@ import { WebPartContext } from '@microsoft/sp-webpart-base';
 import { SPHttpClient } from '@microsoft/sp-http';
 import {
   UserPermissionInfo, PermissionEntry, FolderFileNode, LibraryInfo,
-  SiteCollectionInfo, SiteUserInfo, ReportOptions, ReportScope, ObjectType,
+  SiteCollectionInfo, SiteUserInfo, ReportOptions, ReportScope, ObjectType, ScanProgress,
 } from '../models/models';
 
 // Escape single-quotes in OData string literals (SQL-style doubling).
@@ -32,6 +32,21 @@ function valueArray(data: any): any[] {
   if (Array.isArray(data?.value)) return data.value;
   if (Array.isArray(data?.results)) return data.results;
   return [];
+}
+
+// Known system/infrastructure library URL suffixes (lowercased, site-relative).
+// Checked as a suffix so they match regardless of site path prefix.
+const SYSTEM_LIB_SUFFIXES = [
+  '/formservertemplates', // Form Templates
+  '/style library',       // Style Library
+];
+
+// Returns true if this list entry should be treated as a system/hidden library
+// and excluded when includeHidden is false.
+function isSystemLibrary(lib: any): boolean {
+  if (lib.NoCrawl || lib.IsSiteAssetsLibrary) return true;
+  const url = ((lib.RootFolder?.ServerRelativeUrl) ?? '').toLowerCase();
+  return SYSTEM_LIB_SUFFIXES.some((s) => url.endsWith(s));
 }
 
 export class SharePointService {
@@ -105,7 +120,7 @@ export class SharePointService {
       `&$expand=RootFolder&$orderby=Title&$top=500`;
     const data = await this.getJson(url);
     return valueArray(data)
-      .filter((l: any) => includeHidden || (!l.NoCrawl && !l.IsSiteAssetsLibrary))
+      .filter((l: any) => includeHidden || !isSystemLibrary(l))
       .map((l: any) => ({
         title: l.Title,
         serverRelativeUrl: l.RootFolder?.ServerRelativeUrl ?? '',
@@ -131,21 +146,23 @@ export class SharePointService {
 
   async scanPermissions(
     options: ReportOptions,
-    onProgress: (msg: string) => void,
+    onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
   ): Promise<PermissionEntry[]> {
     const entries: PermissionEntry[] = [];
+    const emit0 = (message: string): void =>
+      onProgress({ message, scanned: entries.length, libsDone: 0, libsTotal: 0 });
 
     if (options.allSites) {
-      onProgress('Discovering site collections…');
+      emit0('Discovering site collections…');
       const sites = await this.getAllSites(options.siteUrl, signal);
       for (const site of sites) {
         if (signal?.aborted) break;
-        onProgress(`Scanning: ${site.title}`);
-        entries.push(...(await this.scanSite(site.url, options, onProgress, signal)));
+        emit0(`Scanning: ${site.title}`);
+        await this.scanSite(site.url, options, entries, onProgress, signal);
       }
     } else {
-      entries.push(...(await this.scanSite(options.siteUrl, options, onProgress, signal)));
+      await this.scanSite(options.siteUrl, options, entries, onProgress, signal);
     }
 
     return entries;
@@ -154,13 +171,17 @@ export class SharePointService {
   private async scanSite(
     siteUrl: string,
     options: ReportOptions,
-    onProgress: (msg: string) => void,
+    entries: PermissionEntry[],
+    onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
-  ): Promise<PermissionEntry[]> {
-    const entries: PermissionEntry[] = [];
+  ): Promise<void> {
+    let libsDone = 0;
+    let libsTotal = 0;
+    const emit = (message: string): void =>
+      onProgress({ message, scanned: entries.length, libsDone, libsTotal });
 
     // ── Site-level permissions ────────────────────────────────────────────
-    onProgress(`Loading site permissions: ${siteUrl}`);
+    emit(`Loading site permissions: ${siteUrl}`);
     let sitePerms: UserPermissionInfo[] = [];
 
     try {
@@ -197,47 +218,52 @@ export class SharePointService {
       } catch { /* skip */ }
     }
 
-    if (options.scope === ReportScope.Site) return entries;
+    if (options.scope === ReportScope.Site) return;
 
     // ── Libraries ─────────────────────────────────────────────────────────
-    onProgress('Loading document libraries…');
+    // Fetch the library list with a simple query so $filter is applied reliably.
+    // Combining $filter with a deep $expand=RoleAssignments can cause SPO to silently
+    // ignore the filter clause, letting hidden/system libraries slip through.
+    emit('Loading document libraries…');
     let libs: any[] = [];
-    let libsHaveRoles = false;
 
-    const hiddenFilter = options.includeHidden
-      ? 'BaseTemplate eq 101'
-      : 'BaseTemplate eq 101 and Hidden eq false and NoCrawl eq false';
+    const hiddenFilter = encodeURIComponent(
+      options.includeHidden
+        ? 'BaseTemplate eq 101'
+        : 'BaseTemplate eq 101 and Hidden eq false',
+    );
 
     try {
       const listsData = await this.getJson(
         `${siteUrl}/_api/web/lists?$filter=${hiddenFilter}` +
-          `&$select=Title,HasUniqueRoleAssignments,RootFolder/ServerRelativeUrl` +
-          `,RoleAssignments/Member/LoginName,RoleAssignments/Member/Title` +
-          `,RoleAssignments/Member/PrincipalType,RoleAssignments/RoleDefinitionBindings/Name` +
-          `&$expand=RootFolder,RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings` +
-          `&$top=200`,
+          `&$select=Title,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
+          `&$expand=RootFolder&$top=200`,
       );
       libs = valueArray(listsData);
-      libsHaveRoles = true;
-    } catch {
-      try {
-        const listsData = await this.getJson(
-          `${siteUrl}/_api/web/lists?$filter=${hiddenFilter}` +
-            `&$select=Title,HasUniqueRoleAssignments,RootFolder/ServerRelativeUrl` +
-            `&$expand=RootFolder&$top=200`,
-        );
-        libs = valueArray(listsData);
-      } catch { /* no libraries available */ }
+    } catch { /* no libraries available */ }
+
+    if (!options.includeHidden) {
+      libs = libs.filter((l: any) => !isSystemLibrary(l));
     }
+
+    libsTotal = libs.length;
+    emit('Starting library scan…');
 
     for (const lib of libs) {
       if (signal?.aborted) break;
-      onProgress(`Scanning library: ${lib.Title}`);
+      emit(`Scanning library: ${lib.Title}`);
 
-      const libPerms =
-        lib.HasUniqueRoleAssignments && libsHaveRoles
-          ? this.toPermissionInfoList(valueArray(lib.RoleAssignments))
-          : sitePerms;
+      let libPerms = sitePerms;
+      if (lib.HasUniqueRoleAssignments) {
+        try {
+          const raData = await this.getJson(
+            `${siteUrl}/_api/web/GetList('${odata(lib.RootFolder.ServerRelativeUrl)}')/RoleAssignments` +
+              `?$expand=Member,RoleDefinitionBindings` +
+              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+          );
+          libPerms = this.toPermissionInfoList(valueArray(raData));
+        } catch { /* fall back to site perms */ }
+      }
 
       entries.push({
         objectType: ObjectType.Library,
@@ -262,14 +288,15 @@ export class SharePointService {
             options,
             entries,
             libPerms,
-            onProgress,
+            emit,
             signal,
           );
         } catch { /* partial results OK */ }
       }
-    }
 
-    return entries;
+      libsDone++;
+      emit(`Scanning library: ${lib.Title}`);
+    }
   }
 
   private async walkFolder(
@@ -360,6 +387,7 @@ export class SharePointService {
         depth,
         uniquePermissions: folderPerms,
       });
+      onProgress(subfolder.Name);
 
       const shouldRecurse =
         options.scope === ReportScope.Item || currentLevel < options.folderDepth;
@@ -409,6 +437,7 @@ export class SharePointService {
         depth,
         uniquePermissions: filePerms,
       });
+      onProgress(file.Name);
     }
   }
 
@@ -638,15 +667,17 @@ export class SharePointService {
     onProgress('Loading libraries…');
     let libs: any[] = [];
     let libsHaveRoles = false;
-    const libFilter = includeHidden
-      ? 'BaseTemplate eq 101'
-      : 'BaseTemplate eq 101 and Hidden eq false and NoCrawl eq false';
+    const libFilter = encodeURIComponent(
+      includeHidden
+        ? 'BaseTemplate eq 101'
+        : 'BaseTemplate eq 101 and Hidden eq false',
+    );
 
     try {
       const listsData = await this.getJson(
         `${siteUrl}/_api/web/lists` +
           `?$filter=${libFilter}` +
-          `&$select=Title,HasUniqueRoleAssignments,RootFolder/ServerRelativeUrl` +
+          `&$select=Title,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
           `,RoleAssignments/Member/LoginName,RoleAssignments/Member/PrincipalType` +
           `,RoleAssignments/RoleDefinitionBindings/Name` +
           `&$expand=RootFolder,RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings` +
@@ -659,11 +690,15 @@ export class SharePointService {
         const listsData = await this.getJson(
           `${siteUrl}/_api/web/lists` +
             `?$filter=${libFilter}` +
-            `&$select=Title,HasUniqueRoleAssignments,RootFolder/ServerRelativeUrl` +
+            `&$select=Title,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
             `&$expand=RootFolder&$top=200`,
         );
         libs = valueArray(listsData);
       } catch { /* no libraries */ }
+    }
+
+    if (!includeHidden) {
+      libs = libs.filter((l: any) => !isSystemLibrary(l));
     }
 
     let siteEntry: PermissionEntry | undefined;
