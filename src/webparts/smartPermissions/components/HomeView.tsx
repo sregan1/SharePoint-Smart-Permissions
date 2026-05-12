@@ -4,7 +4,7 @@ import {
   Card,
   CardHeader,
   Text,
-  Title2,
+  LargeTitle,
   Body1,
   makeStyles,
   tokens,
@@ -14,6 +14,7 @@ import {
   DataBarVertical24Regular,
   FolderSearch24Regular,
   PersonSearch24Regular,
+  Checkmark16Filled,
 } from '@fluentui/react-icons';
 import { AppView } from './App';
 
@@ -65,9 +66,16 @@ const useStyles = makeStyles({
     marginBottom: tokens.spacingVerticalS,
   },
   cardDesc: {
-    color: tokens.colorNeutralForeground3,
     flexGrow: 1,
     marginBottom: tokens.spacingVerticalM,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalXS,
+  },
+  featureItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: tokens.spacingHorizontalXS,
   },
   navButton: {
     width: '100%',
@@ -87,13 +95,13 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <ShieldLock24Regular style={{ fontSize: '32px', flexShrink: 0, marginTop: '4px' }} />
-        <Title2>SharePoint Smart Permissions</Title2>
+        <ShieldLock24Regular style={{ fontSize: '36px', flexShrink: 0, color: tokens.colorBrandForeground1 }} />
+        <LargeTitle style={{ color: tokens.colorBrandForeground1 }}>SharePoint Smart Permissions</LargeTitle>
       </div>
 
       <div className={styles.subtitle}>
         <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-          Browser-based permissions reporting and auditing for SharePoint Online
+          Audit and understand SharePoint permissions in real time, directly from your browser — no PowerShell or admin tools required.
         </Body1>
       </div>
 
@@ -107,11 +115,22 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
               </div>
             }
           />
-          <Body1 className={styles.cardDesc}>
-            Scan a site, library, or entire tenant. Export a colour-coded Excel
-            workbook showing every unique permission break — who has access to
-            what, and where they got it.
-          </Body1>
+          <div className={styles.cardDesc}>
+            <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalS }}>
+              Generate a comprehensive Excel report showing every unique permission assignment across your site. Only highlights differences from inherited permissions.
+            </Body1>
+            {[
+              'Site, Library, Folder, or Item level',
+              'Configurable folder depth',
+              'Color-coded Excel export',
+              'Scan all sites or a single site',
+            ].map((f) => (
+              <div key={f} className={styles.featureItem}>
+                <Checkmark16Filled style={{ color: tokens.colorBrandForeground1, flexShrink: 0, marginTop: '2px' }} />
+                <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 }}>{f}</Body1>
+              </div>
+            ))}
+          </div>
           <Button
             appearance="primary"
             className={styles.navButton}
@@ -130,11 +149,22 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
               </div>
             }
           />
-          <Body1 className={styles.cardDesc}>
-            Browse a document library folder-by-folder and see live permissions
-            on any item. Instantly see whether permissions are unique or
-            inherited, and trace them back to their source.
-          </Body1>
+          <div className={styles.cardDesc}>
+            <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalS }}>
+              Browse permissions interactively in real time. Select any folder or file to instantly see who has access and what permission levels are assigned.
+            </Body1>
+            {[
+              'Interactive folder/file tree',
+              'Instant permission lookup',
+              'Unique vs. inherited permissions',
+              'Expand SharePoint group members',
+            ].map((f) => (
+              <div key={f} className={styles.featureItem}>
+                <Checkmark16Filled style={{ color: tokens.colorBrandForeground1, flexShrink: 0, marginTop: '2px' }} />
+                <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 }}>{f}</Body1>
+              </div>
+            ))}
+          </div>
           <Button
             appearance="primary"
             className={styles.navButton}
@@ -153,11 +183,22 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate }) => {
               </div>
             }
           />
-          <Body1 className={styles.cardDesc}>
-            Look up any user on a site and see every library, folder, and file
-            they can access — along with their permission level at each
-            location.
-          </Body1>
+          <div className={styles.cardDesc}>
+            <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalS }}>
+              Look up a specific user to see every location they can access on a site. Quickly identify over-privileged accounts or verify that access is correctly scoped.
+            </Body1>
+            {[
+              'Per-user access analysis',
+              'Full Site Access detection',
+              'Shows path and permission level',
+              'Search users by name',
+            ].map((f) => (
+              <div key={f} className={styles.featureItem}>
+                <Checkmark16Filled style={{ color: tokens.colorBrandForeground1, flexShrink: 0, marginTop: '2px' }} />
+                <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 }}>{f}</Body1>
+              </div>
+            ))}
+          </div>
           <Button
             appearance="primary"
             className={styles.navButton}

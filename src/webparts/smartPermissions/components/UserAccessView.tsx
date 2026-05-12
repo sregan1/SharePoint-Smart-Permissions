@@ -103,10 +103,11 @@ function formatElapsed(seconds: number): string {
 export interface UserAccessViewProps {
   sp: SharePointService;
   siteUrl: string;
+  includeHidden: boolean;
   onBack: () => void;
 }
 
-export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, onBack }) => {
+export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, includeHidden, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -199,6 +200,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, onB
         login,
         (msg) => setUserAccessStatus(msg),
         abortRef.current.signal,
+        includeHidden,
       );
       setIsFullSiteAccess(fullSiteAccess);
       setUserAccessItems(items);
@@ -281,9 +283,14 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, onB
                   {formatElapsed(scanElapsed)}
                 </Text>
               </div>
-              <Body1 style={{ color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 }}>
-                This scan may take several minutes depending on the size of the site.
-              </Body1>
+              <div className={styles.scanRow}>
+                <Button appearance="secondary" size="small" onClick={() => abortRef.current?.abort()}>
+                  Cancel
+                </Button>
+                <Body1 style={{ color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 }}>
+                  This scan may take several minutes depending on the size of the site.
+                </Body1>
+              </div>
             </div>
           )}
 

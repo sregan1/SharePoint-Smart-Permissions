@@ -285,10 +285,11 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 export interface PermissionsExplorerViewProps {
   sp: SharePointService;
   siteUrl: string;
+  includeHidden: boolean;
   onBack: () => void;
 }
 
-export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, onBack }) => {
+export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -333,7 +334,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setTreeStatus('');
 
     try {
-      const libs = await sp.getLibraries(siteUrl.trim(), abortRef.current.signal);
+      const libs = await sp.getLibraries(siteUrl.trim(), abortRef.current.signal, includeHidden);
 
       setLibraries(libs);
       setIsConnected(true);

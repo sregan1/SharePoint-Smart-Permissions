@@ -11,8 +11,7 @@
       "name": "",
       "privacyUrl": "",
       "termsOfUseUrl": "",
-      "websiteUrl": "",
-      "mpnId": "Undefined-1.18.2"
+      "websiteUrl": ""
     },
     "metadata": {
       "shortDescription": {
@@ -24,7 +23,7 @@
       "screenshotPaths": [],
       "videoUrl": "",
       "categories": []
-    },
+    }
   },
   "paths": {
     "zippedPackage": "solution/smart-permissions.sppkg"

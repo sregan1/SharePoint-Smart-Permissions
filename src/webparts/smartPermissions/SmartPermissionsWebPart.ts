@@ -91,6 +91,32 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
   }
 
   protected getPropertyPaneConfiguration(): IPropertyPaneConfiguration {
-    return { pages: [] };
+    // Construct the dropdown field descriptor directly to avoid any runtime
+    // import of @microsoft/sp-property-pane (which is an AMD external and
+    // cannot be require()'d dynamically in the workbench without a CSP error).
+    // PropertyPaneFieldType.Dropdown = 6 (stable since SPFx 1.x).
+    const dropdownField: any = {
+      type: 6,
+      targetProperty: 'defaultView',
+      properties: {
+        label: 'Default view on open',
+        options: [
+          { key: 'home', text: 'Home' },
+          { key: 'report', text: 'Permissions Report' },
+          { key: 'explorer', text: 'Permissions Explorer' },
+          { key: 'userAccess', text: 'User Access' },
+        ],
+        selectedKey: this.properties.defaultView ?? 'home',
+      },
+    };
+    return {
+      pages: [{
+        header: { description: 'Smart Permissions configuration' },
+        groups: [{
+          groupName: 'General',
+          groupFields: [dropdownField],
+        }],
+      }],
+    };
   }
 }

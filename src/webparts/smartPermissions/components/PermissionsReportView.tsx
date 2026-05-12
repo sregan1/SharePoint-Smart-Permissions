@@ -70,6 +70,15 @@ const useStyles = makeStyles({
     background: tokens.colorStatusSuccessBackground1,
     borderRadius: tokens.borderRadiusMedium,
   },
+  radioBox: {
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+    paddingTop: tokens.spacingVerticalS,
+    paddingBottom: tokens.spacingVerticalS,
+    paddingLeft: tokens.spacingHorizontalM,
+    paddingRight: tokens.spacingHorizontalM,
+    cursor: 'pointer',
+  },
 });
 
 export interface PermissionsReportViewProps {
@@ -204,48 +213,54 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             onChange={(_, d) => setScope(d.value)}
             layout="horizontal"
             disabled={isBusy}
+            style={{ flexWrap: 'wrap', gap: tokens.spacingHorizontalS }}
           >
-            <Radio value="Site" label={
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Globe24Regular style={{ fontSize: '16px' }} />Site only
-              </span>
-            } />
-            <Radio value="Library" label={
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <BookDatabase24Regular style={{ fontSize: '16px' }} />Libraries
-              </span>
-            } />
-            <Radio value="Folder" label={
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Folder24Regular style={{ fontSize: '16px' }} />Folders
-              </span>
-            } />
-            <Radio value="Item" label={
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <FolderOpen24Regular style={{ fontSize: '16px' }} />Files &amp; Folders
-              </span>
-            } />
+            {([
+              { value: 'Site', Icon: Globe24Regular, label: 'Site only' },
+              { value: 'Library', Icon: BookDatabase24Regular, label: 'Libraries' },
+              { value: 'Folder', Icon: Folder24Regular, label: 'Folders' },
+              { value: 'Item', Icon: FolderOpen24Regular, label: 'Files & Folders' },
+            ] as const).map(({ value, Icon, label }) => (
+              <div
+                key={value}
+                className={styles.radioBox}
+                style={scope === value ? {
+                  borderWidth: '2px',
+                  borderColor: tokens.colorBrandForeground1,
+                  background: tokens.colorBrandBackground2,
+                } : undefined}
+                onClick={() => { if (!isBusy) setScope(value); }}
+              >
+                <Radio
+                  value={value}
+                  label={
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Icon style={{ fontSize: '16px' }} />
+                      {label}
+                    </span>
+                  }
+                />
+              </div>
+            ))}
           </RadioGroup>
         </Field>
 
-        {/* Folder depth (only shown when scope = Folder) */}
-        {scope === 'Folder' && (
-          <div className={styles.row}>
-            <Label>Folder depth limit:</Label>
-            <SpinButton
-              value={folderDepth}
-              min={1}
-              max={10}
-              onChange={(_, d) =>
-                setFolderDepth(
-                  d.value !== undefined ? d.value : parseInt(d.displayValue ?? '2', 10),
-                )
-              }
-              style={{ width: '80px' }}
-              disabled={isBusy}
-            />
-          </div>
-        )}
+        {/* Folder depth — always rendered so it doesn't shift the Run Report button */}
+        <div className={styles.row} style={{ visibility: scope === 'Folder' ? 'visible' : 'hidden' }}>
+          <Label>Folder depth limit:</Label>
+          <SpinButton
+            value={folderDepth}
+            min={1}
+            max={10}
+            onChange={(_, d) =>
+              setFolderDepth(
+                d.value !== undefined ? d.value : parseInt(d.displayValue ?? '2', 10),
+              )
+            }
+            style={{ width: '80px' }}
+            disabled={isBusy}
+          />
+        </div>
 
         <Divider />
 

@@ -14,7 +14,7 @@ import {
   PopoverSurface,
   tokens,
 } from '@fluentui/react-components';
-import { Settings24Regular, Info16Regular } from '@fluentui/react-icons';
+import { Settings24Regular, Info16Regular, ShieldLock24Regular } from '@fluentui/react-icons';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 
 import { SharePointService } from '../services/SharePointService';
@@ -117,12 +117,12 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
         </Text>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <Checkbox
-            label="Include hidden libraries"
+            label="Include system and hidden libraries"
             checked={includeHidden}
             onChange={(_, d) => setIncludeHidden(!!d.checked)}
           />
           <Tooltip
-            content="When checked, includes libraries marked as hidden in SharePoint — such as Style Library, Form Templates, Site Assets, and other system libraries not shown in default views."
+            content="When checked, includes system and hidden libraries such as Style Library, Form Templates, Site Assets, and others not shown in default views. Applies to Permissions Explorer and User Access."
             relationship="description"
             withArrow
           >
@@ -146,69 +146,78 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
       {view !== 'home' ? (
         <div
           style={{
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: 'auto 1fr auto',
             alignItems: 'center',
-            gap: tokens.spacingHorizontalM,
             paddingTop: tokens.spacingVerticalS,
             paddingBottom: tokens.spacingVerticalS,
-            paddingLeft: tokens.spacingHorizontalL,
+            paddingLeft: tokens.spacingHorizontalM,
             paddingRight: tokens.spacingHorizontalS,
             background: tokens.colorBrandBackground,
+            gap: tokens.spacingHorizontalM,
           }}
         >
-          {isEditing ? (
-            <>
-              <Input
-                value={editUrl}
-                onChange={(_, d) => setEditUrl(d.value)}
-                placeholder="https://contoso.sharepoint.com/sites/mysite"
-                style={{ flexGrow: 1, minWidth: '200px' }}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
-              />
-              <Button appearance="secondary" onClick={handleConnect} disabled={!editUrl.trim()}>
-                Connect
-              </Button>
-              <Button
-                appearance="transparent"
-                style={{ color: 'white' }}
-                onClick={handleCancelEdit}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <>
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.75)',
-                  flexShrink: 0,
-                  display: 'inline-block',
-                }}
-              />
-              <Text
-                style={{
-                  flexGrow: 1,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: 'white',
-                }}
-              >
-                {siteUrl}
-              </Text>
-              <Button
-                appearance="transparent"
-                size="small"
-                style={{ color: 'white' }}
-                onClick={handleStartEdit}
-              >
-                Change URL
-              </Button>
-            </>
-          )}
+          {/* Left: branding */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalS, flexShrink: 0 }}>
+            <ShieldLock24Regular style={{ color: 'white', fontSize: '20px' }} />
+            <Text style={{ color: 'white', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' }}>
+              SharePoint Smart Permissions
+            </Text>
+          </div>
+
+          {/* Center: URL or edit input */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: tokens.spacingHorizontalS, minWidth: 0, overflow: 'hidden' }}>
+            {isEditing ? (
+              <>
+                <Input
+                  value={editUrl}
+                  onChange={(_, d) => setEditUrl(d.value)}
+                  placeholder="https://contoso.sharepoint.com/sites/mysite"
+                  style={{ minWidth: '200px', maxWidth: '400px', flexGrow: 1 }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
+                />
+                <Button appearance="secondary" onClick={handleConnect} disabled={!editUrl.trim()}>
+                  Connect
+                </Button>
+                <Button appearance="transparent" style={{ color: 'white', flexShrink: 0 }} onClick={handleCancelEdit}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.75)',
+                    flexShrink: 0,
+                    display: 'inline-block',
+                  }}
+                />
+                <Text
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: 'white',
+                  }}
+                >
+                  {siteUrl}
+                </Text>
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  style={{ color: 'white', flexShrink: 0 }}
+                  onClick={handleStartEdit}
+                >
+                  Change URL
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Right: settings */}
           <Popover open={settingsOpen} onOpenChange={(_, d) => setSettingsOpen(d.open)}>
             <PopoverTrigger disableButtonEnhancement>
               <Button
@@ -252,17 +261,19 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView }) => 
       )}
       {view === 'explorer' && (
         <PermissionsExplorerView
-          key={siteUrl}
+          key={siteUrl + String(includeHidden)}
           sp={sp}
           siteUrl={siteUrl}
+          includeHidden={includeHidden}
           onBack={() => setView('home')}
         />
       )}
       {view === 'userAccess' && (
         <UserAccessView
-          key={siteUrl}
+          key={siteUrl + String(includeHidden)}
           sp={sp}
           siteUrl={siteUrl}
+          includeHidden={includeHidden}
           onBack={() => setView('home')}
         />
       )}

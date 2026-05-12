@@ -34,3 +34,7 @@ desktop.ini
 .idea/
 *.suo
 *.user
+
+# Generated documentation artifacts
+docs/UserGuide.docx
+docs/screenshots/

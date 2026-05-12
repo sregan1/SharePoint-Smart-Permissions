@@ -91,16 +91,25 @@ export class SharePointService {
     return sites;
   }
 
-  async getLibraries(siteUrl: string, signal?: AbortSignal): Promise<LibraryInfo[]> {
+  async getLibraries(siteUrl: string, signal?: AbortSignal, includeHidden = false): Promise<LibraryInfo[]> {
+    // Server-side: BaseTemplate=101 (doc libraries) + Hidden=false (reliably supported).
+    // NoCrawl and IsSiteAssetsLibrary are fetched and filtered client-side because
+    // NoCrawl is not reliably filterable via OData across all SPO tenants.
+    const filter = includeHidden
+      ? 'BaseTemplate eq 101'
+      : 'BaseTemplate eq 101 and Hidden eq false';
     const url =
       `${siteUrl}/_api/web/lists` +
-      `?$filter=BaseTemplate eq 101 and Hidden eq false and NoCrawl eq false` +
-      `&$select=Title,RootFolder/ServerRelativeUrl&$expand=RootFolder&$orderby=Title&$top=500`;
+      `?$filter=${encodeURIComponent(filter)}` +
+      `&$select=Title,RootFolder/ServerRelativeUrl,NoCrawl,IsSiteAssetsLibrary` +
+      `&$expand=RootFolder&$orderby=Title&$top=500`;
     const data = await this.getJson(url);
-    return valueArray(data).map((l: any) => ({
-      title: l.Title,
-      serverRelativeUrl: l.RootFolder?.ServerRelativeUrl ?? '',
-    }));
+    return valueArray(data)
+      .filter((l: any) => includeHidden || (!l.NoCrawl && !l.IsSiteAssetsLibrary))
+      .map((l: any) => ({
+        title: l.Title,
+        serverRelativeUrl: l.RootFolder?.ServerRelativeUrl ?? '',
+      }));
   }
 
   async getSiteUsers(siteUrl: string, signal?: AbortSignal): Promise<SiteUserInfo[]> {
@@ -590,6 +599,7 @@ export class SharePointService {
     userLoginName: string,
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
+    includeHidden = false,
   ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[] }> {
     onProgress('Loading user info…');
 
@@ -628,11 +638,14 @@ export class SharePointService {
     onProgress('Loading libraries…');
     let libs: any[] = [];
     let libsHaveRoles = false;
+    const libFilter = includeHidden
+      ? 'BaseTemplate eq 101'
+      : 'BaseTemplate eq 101 and Hidden eq false and NoCrawl eq false';
 
     try {
       const listsData = await this.getJson(
         `${siteUrl}/_api/web/lists` +
-          `?$filter=BaseTemplate eq 101 and Hidden eq false and NoCrawl eq false` +
+          `?$filter=${libFilter}` +
           `&$select=Title,HasUniqueRoleAssignments,RootFolder/ServerRelativeUrl` +
           `,RoleAssignments/Member/LoginName,RoleAssignments/Member/PrincipalType` +
           `,RoleAssignments/RoleDefinitionBindings/Name` +
@@ -645,7 +658,7 @@ export class SharePointService {
       try {
         const listsData = await this.getJson(
           `${siteUrl}/_api/web/lists` +
-            `?$filter=BaseTemplate eq 101 and Hidden eq false and NoCrawl eq false` +
+            `?$filter=${libFilter}` +
             `&$select=Title,HasUniqueRoleAssignments,RootFolder/ServerRelativeUrl` +
             `&$expand=RootFolder&$top=200`,
         );
