@@ -14,6 +14,29 @@ A browser-based SharePoint Online permissions auditing tool delivered as an SPFx
 
 ---
 
+## Screenshots
+
+<table>
+<tr>
+  <td align="center"><strong>Home</strong></td>
+  <td align="center"><strong>Permissions Report</strong></td>
+</tr>
+<tr>
+  <td><img src="docs/screenshots/01_home.png" width="460" alt="Home screen"/></td>
+  <td><img src="docs/screenshots/02_report_config.png" width="460" alt="Permissions Report configuration"/></td>
+</tr>
+<tr>
+  <td align="center"><strong>Permissions Explorer</strong></td>
+  <td align="center"><strong>User Access</strong></td>
+</tr>
+<tr>
+  <td><img src="docs/screenshots/05_explorer.png" width="460" alt="Permissions Explorer"/></td>
+  <td><img src="docs/screenshots/07_user_access_complete.png" width="460" alt="User Access results"/></td>
+</tr>
+</table>
+
+---
+
 ## Technology
 
 - **SPFx 1.21.1** · React 17 · TypeScript
@@ -83,11 +106,12 @@ To change it: put the page in Edit mode → click the web part pencil → select
 ```
 src/webparts/smartPermissions/
 ├── components/
-│   ├── App.tsx                     # Root component, banner, settings popover, theme
+│   ├── App.tsx                     # Root component, banner, navigation, theme wiring
 │   ├── HomeView.tsx                # Home screen with feature cards
 │   ├── PermissionsReportView.tsx   # Report configuration, progress, export
 │   ├── PermissionsExplorerView.tsx # Interactive folder/file tree + permission panel
-│   └── UserAccessView.tsx          # Per-user access scan
+│   ├── UserAccessView.tsx          # Per-user access scan
+│   └── SettingsView.tsx            # Full-page settings screen
 ├── services/
 │   ├── SharePointService.ts        # All REST + Graph API calls
 │   └── ExcelExportService.ts       # ExcelJS workbook generation
