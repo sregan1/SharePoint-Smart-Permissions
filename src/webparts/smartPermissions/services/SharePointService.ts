@@ -1,5 +1,5 @@
 import { WebPartContext } from '@microsoft/sp-webpart-base';
-import { SPHttpClient } from '@microsoft/sp-http';
+import { SPHttpClient, MSGraphClientV3 } from '@microsoft/sp-http';
 import {
   UserPermissionInfo, PermissionEntry, FolderFileNode, LibraryInfo,
   SiteCollectionInfo, SiteUserInfo, ReportOptions, ReportScope, ObjectType, ScanProgress,
@@ -32,6 +32,14 @@ function valueArray(data: any): any[] {
   if (Array.isArray(data?.value)) return data.value;
   if (Array.isArray(data?.results)) return data.results;
   return [];
+}
+
+// Extract the Azure AD object GUID from a SharePoint claims login name.
+// M365 Groups:      c:0o.c|federateddirectoryclaimprovider|{GUID}
+// Security Groups:  c:0t.c|tenant|{GUID}  /  c:0p.c|s2s|{GUID}
+function extractAadGroupId(loginName: string): string | null {
+  const last = loginName.split('|').pop() ?? '';
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last) ? last : null;
 }
 
 // Known system/infrastructure library URL suffixes (lowercased, site-relative).
@@ -175,6 +183,7 @@ export class SharePointService {
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
   ): Promise<void> {
+    const startIndex = entries.length;
     let libsDone = 0;
     let libsTotal = 0;
     const emit = (message: string): void =>
@@ -218,84 +227,107 @@ export class SharePointService {
       } catch { /* skip */ }
     }
 
-    if (options.scope === ReportScope.Site) return;
+    if (options.scope !== ReportScope.Site) {
+      // ── Libraries ───────────────────────────────────────────────────────
+      // Fetch the library list with a simple query so $filter is applied reliably.
+      // Combining $filter with a deep $expand=RoleAssignments can cause SPO to silently
+      // ignore the filter clause, letting hidden/system libraries slip through.
+      emit('Loading document libraries…');
+      let libs: any[] = [];
 
-    // ── Libraries ─────────────────────────────────────────────────────────
-    // Fetch the library list with a simple query so $filter is applied reliably.
-    // Combining $filter with a deep $expand=RoleAssignments can cause SPO to silently
-    // ignore the filter clause, letting hidden/system libraries slip through.
-    emit('Loading document libraries…');
-    let libs: any[] = [];
-
-    const hiddenFilter = encodeURIComponent(
-      options.includeHidden
-        ? 'BaseTemplate eq 101'
-        : 'BaseTemplate eq 101 and Hidden eq false',
-    );
-
-    try {
-      const listsData = await this.getJson(
-        `${siteUrl}/_api/web/lists?$filter=${hiddenFilter}` +
-          `&$select=Title,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
-          `&$expand=RootFolder&$top=200`,
+      const hiddenFilter = encodeURIComponent(
+        options.includeHidden
+          ? 'BaseTemplate eq 101'
+          : 'BaseTemplate eq 101 and Hidden eq false',
       );
-      libs = valueArray(listsData);
-    } catch { /* no libraries available */ }
 
-    if (!options.includeHidden) {
-      libs = libs.filter((l: any) => !isSystemLibrary(l));
+      try {
+        const listsData = await this.getJson(
+          `${siteUrl}/_api/web/lists?$filter=${hiddenFilter}` +
+            `&$select=Title,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
+            `&$expand=RootFolder&$top=200`,
+        );
+        libs = valueArray(listsData);
+      } catch { /* no libraries available */ }
+
+      if (!options.includeHidden) {
+        libs = libs.filter((l: any) => !isSystemLibrary(l));
+      }
+
+      libsTotal = libs.length;
+      emit('Starting library scan…');
+
+      for (const lib of libs) {
+        if (signal?.aborted) break;
+        emit(`Scanning library: ${lib.Title}`);
+
+        let libPerms = sitePerms;
+        if (lib.HasUniqueRoleAssignments) {
+          try {
+            const raData = await this.getJson(
+              `${siteUrl}/_api/web/GetList('${odata(lib.RootFolder.ServerRelativeUrl)}')/RoleAssignments` +
+                `?$expand=Member,RoleDefinitionBindings` +
+                `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+            );
+            libPerms = this.toPermissionInfoList(valueArray(raData));
+          } catch { /* fall back to site perms */ }
+        }
+
+        entries.push({
+          objectType: ObjectType.Library,
+          name: lib.Title,
+          serverRelativeUrl: lib.RootFolder?.ServerRelativeUrl ?? '',
+          siteUrl,
+          hasUniquePermissions: !!lib.HasUniqueRoleAssignments,
+          depth: 1,
+          uniquePermissions: libPerms,
+        });
+
+        if (
+          options.scope === ReportScope.Folder ||
+          options.scope === ReportScope.Item
+        ) {
+          try {
+            await this.walkFolder(
+              siteUrl,
+              lib.RootFolder.ServerRelativeUrl,
+              2,
+              1,
+              options,
+              entries,
+              libPerms,
+              emit,
+              signal,
+            );
+          } catch { /* partial results OK */ }
+        }
+
+        libsDone++;
+        emit(`Scanning library: ${lib.Title}`);
+      }
     }
 
-    libsTotal = libs.length;
-    emit('Starting library scan…');
-
-    for (const lib of libs) {
-      if (signal?.aborted) break;
-      emit(`Scanning library: ${lib.Title}`);
-
-      let libPerms = sitePerms;
-      if (lib.HasUniqueRoleAssignments) {
-        try {
-          const raData = await this.getJson(
-            `${siteUrl}/_api/web/GetList('${odata(lib.RootFolder.ServerRelativeUrl)}')/RoleAssignments` +
-              `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
-          );
-          libPerms = this.toPermissionInfoList(valueArray(raData));
-        } catch { /* fall back to site perms */ }
+    if (options.expandGroups && !signal?.aborted) {
+      const memberCache = new Map<string, UserPermissionInfo[]>();
+      for (const entry of entries.slice(startIndex)) {
+        if (signal?.aborted) break;
+        const expanded: UserPermissionInfo[] = [];
+        for (const up of entry.uniquePermissions) {
+          expanded.push(up);
+          if (up.principalType === 'SharePointGroup' || up.principalType === 'SecurityGroup') {
+            const cacheKey = up.loginName || up.displayName;
+            let members: UserPermissionInfo[];
+            if (memberCache.has(cacheKey)) {
+              members = memberCache.get(cacheKey)!;
+            } else {
+              members = await this.getGroupMembers(siteUrl, up.displayName, up.loginName, up.principalType, signal);
+              memberCache.set(cacheKey, members);
+            }
+            members.forEach((m) => expanded.push({ ...m, roles: [...up.roles], sourceGroup: up.displayName }));
+          }
+        }
+        entry.uniquePermissions = expanded;
       }
-
-      entries.push({
-        objectType: ObjectType.Library,
-        name: lib.Title,
-        serverRelativeUrl: lib.RootFolder?.ServerRelativeUrl ?? '',
-        siteUrl,
-        hasUniquePermissions: !!lib.HasUniqueRoleAssignments,
-        depth: 1,
-        uniquePermissions: libPerms,
-      });
-
-      if (
-        options.scope === ReportScope.Folder ||
-        options.scope === ReportScope.Item
-      ) {
-        try {
-          await this.walkFolder(
-            siteUrl,
-            lib.RootFolder.ServerRelativeUrl,
-            2,
-            1,
-            options,
-            entries,
-            libPerms,
-            emit,
-            signal,
-          );
-        } catch { /* partial results OK */ }
-      }
-
-      libsDone++;
-      emit(`Scanning library: ${lib.Title}`);
     }
   }
 
@@ -596,28 +628,61 @@ export class SharePointService {
   async getGroupMembers(
     siteUrl: string,
     groupName: string,
+    loginName: string,
     principalType: string,
     signal?: AbortSignal,
   ): Promise<UserPermissionInfo[]> {
-    if (principalType !== 'SharePointGroup') return [];
+    if (principalType === 'SharePointGroup') {
+      try {
+        const data = await this.getJson(
+          `${siteUrl}/_api/web/sitegroups/getbyname('${odata(groupName)}')/users` +
+            `?$select=LoginName,Title,IsHiddenInUI&$top=2000`,
+        );
+        return valueArray(data)
+          .filter((u: any) => !u.IsHiddenInUI)
+          .map(
+            (u: any): UserPermissionInfo => ({
+              loginName: u.LoginName,
+              displayName: u.Title,
+              principalType: 'User',
+              roles: [],
+              isGroupMember: true,
+            }),
+          )
+          .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      } catch {
+        return [];
+      }
+    }
 
+    if (principalType === 'SecurityGroup') {
+      const groupId = extractAadGroupId(loginName);
+      if (!groupId) return [];
+      return this._getAadGroupMembers(groupId);
+    }
+
+    return [];
+  }
+
+  private async _getAadGroupMembers(groupId: string): Promise<UserPermissionInfo[]> {
     try {
-      const data = await this.getJson(
-        `${siteUrl}/_api/web/sitegroups/getbyname('${odata(groupName)}')/users` +
-          `?$select=LoginName,Title,IsHiddenInUI&$top=2000`,
-      );
-      return valueArray(data)
-        .filter((u: any) => !u.IsHiddenInUI)
-        .map(
-          (u: any): UserPermissionInfo => ({
-            loginName: u.LoginName,
-            displayName: u.Title,
-            principalType: 'User',
-            roles: [],
-            isGroupMember: true,
-          }),
-        )
-        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      const client: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
+      const result = await client
+        .api(`/groups/${groupId}/members`)
+        .select('displayName,userPrincipalName,mail,id')
+        .top(999)
+        .get();
+      return (result?.value ?? [])
+        .map((m: any): UserPermissionInfo => ({
+          loginName: m.userPrincipalName ?? m.mail ?? m.id ?? '',
+          displayName: m.displayName ?? m.userPrincipalName ?? m.id ?? '',
+          principalType: 'User',
+          roles: [],
+          isGroupMember: true,
+        }))
+        .sort((a: UserPermissionInfo, b: UserPermissionInfo) =>
+          a.displayName.localeCompare(b.displayName),
+        );
     } catch {
       return [];
     }

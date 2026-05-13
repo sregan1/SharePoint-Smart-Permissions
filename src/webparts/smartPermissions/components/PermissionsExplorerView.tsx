@@ -461,10 +461,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     const expanded: UserPermissionInfo[] = [];
     for (const u of users) {
       expanded.push(u);
-      if (expandGroups && u.principalType === 'SharePointGroup') {
+      if (expandGroups && (u.principalType === 'SharePointGroup' || u.principalType === 'SecurityGroup')) {
         const members = await sp.getGroupMembers(
           siteUrl.trim(),
           u.displayName,
+          u.loginName,
           u.principalType,
           abortRef.current?.signal,
         );
@@ -682,7 +683,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   {/* Options — always at top */}
                   <div className={styles.optionsBar}>
                     <Checkbox
-                      label="Expand SharePoint group members"
+                      label="Expand group members"
                       checked={expandGroups}
                       onChange={(_, d) => setExpandGroups(!!d.checked)}
                     />

@@ -44,6 +44,16 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       );
     });
 
+    // Initialise services first so this._sp is defined before any render() call.
+    try {
+      this._sp = new SharePointService(this.context);
+      this._excel = new ExcelExportService();
+    } catch (err: any) {
+      return Promise.reject(
+        new Error(`[SmartPermissions] Service init failed: ${err?.message ?? String(err)}\n${err?.stack ?? ''}`)
+      );
+    }
+
     // Read the current SharePoint site theme colour and re-render when it changes.
     try {
       const themeProvider = this.context.serviceScope.consume(ThemeProvider.serviceKey);
@@ -64,15 +74,6 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       applyTheme(themeProvider.tryGetTheme());
       themeProvider.themeChangedEvent.add(this, (args) => applyTheme(args.theme));
     } catch { /* theme unavailable — keep default blue */ }
-
-    try {
-      this._sp = new SharePointService(this.context);
-      this._excel = new ExcelExportService();
-    } catch (err: any) {
-      return Promise.reject(
-        new Error(`[SmartPermissions] Service init failed: ${err?.message ?? String(err)}\n${err?.stack ?? ''}`)
-      );
-    }
 
     return super.onInit().catch((err: any) => {
       const detail =

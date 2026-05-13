@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { PermissionEntry, ObjectType } from '../models/models';
+import { PermissionEntry, ObjectType, UserPermissionInfo } from '../models/models';
 
 // Colours matching ExcelExportService.cs
 const COLOR = {
@@ -135,6 +135,7 @@ export class ExcelExportService {
       'Name',
       'Permission Source',
       'User / Group',
+      'Access Via',
       'Principal Type',
       'Permission Level',
     ];
@@ -170,7 +171,7 @@ export class ExcelExportService {
       }
 
       // Thin bottom border after each entry group
-      for (let c = 1; c <= headers.length; c++) {
+      for (let c = 1; c <= 8; c++) {
         const cell = ws.getCell(rowIndex - 1, c);
         cell.border = {
           ...cell.border,
@@ -180,24 +181,25 @@ export class ExcelExportService {
       void startRow; // suppress unused-variable warning
     }
 
-    // Column widths matching the C# original
+    // Column widths
     ws.getColumn(1).width = 10;
     ws.getColumn(2).width = 55;
     ws.getColumn(3).width = 35;
     ws.getColumn(4).width = 18;
     ws.getColumn(5).width = 35;
-    ws.getColumn(6).width = 16;
-    ws.getColumn(7).width = 20;
+    ws.getColumn(6).width = 30;
+    ws.getColumn(7).width = 16;
+    ws.getColumn(8).width = 20;
 
     // Auto-filter on header row
-    ws.autoFilter = { from: 'A1', to: 'G1' };
+    ws.autoFilter = { from: 'A1', to: 'H1' };
   }
 
   private writeRow(
     ws: ExcelJS.Worksheet,
     rowIndex: number,
     entry: PermissionEntry,
-    user: { displayName: string; principalType: string; roles: string[] } | null,
+    user: UserPermissionInfo | null,
   ): void {
     const row = ws.getRow(rowIndex);
 
@@ -244,10 +246,14 @@ export class ExcelExportService {
       row.getCell(5).value = user.displayName;
       row.getCell(5).alignment = { vertical: 'middle' };
 
-      row.getCell(6).value = friendlyPrincipalType(user.principalType);
+      // Col 6: Access Via — group name if expanded from a group, otherwise "Direct"
+      row.getCell(6).value = user.sourceGroup ?? 'Direct';
       row.getCell(6).alignment = { vertical: 'middle' };
 
-      const roleCell = row.getCell(7);
+      row.getCell(7).value = friendlyPrincipalType(user.principalType);
+      row.getCell(7).alignment = { vertical: 'middle' };
+
+      const roleCell = row.getCell(8);
       roleCell.value = user.roles.join(', ');
       roleCell.fill = argbFill(roleColor(user.roles));
       roleCell.alignment = { vertical: 'middle' };

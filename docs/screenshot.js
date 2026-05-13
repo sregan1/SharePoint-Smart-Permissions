@@ -267,7 +267,7 @@ const icons = {
   file:        `<svg width="14" height="16" viewBox="0 0 24 24" fill="none"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" fill="#0078d4"/></svg>`,
   chevronDown: `<svg width="12" height="12" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M7 10l5 5 5-5H7z"/></svg>`,
   chevronRight:`<svg width="12" height="12" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M10 17l5-5-5-5v10z"/></svg>`,
-  arrowCircleDown:`<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 10V8h-2v4H8l4 4 4-4h-3z"/></svg>`,
+  arrowCircleDown:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="${T.textSubtle}" stroke-width="2"/><path d="M12 8v8M8.5 13.5L12 17l3.5-3.5" stroke="${T.textSubtle}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check:       `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.brand}"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>`,
   person:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
   people:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
@@ -387,9 +387,9 @@ function homeHTML() {
 // ─── SCREEN 2: Permissions Report — Config ────────────────────────────────────
 function reportConfigHTML() {
   const scopeOptions = [
-    { value: 'Site',    icon: icons.globe,      label: 'Site only',      selected: false },
-    { value: 'Library', icon: icons.bookDb,     label: 'Libraries',      selected: true  },
-    { value: 'Folder',  icon: icons.folderIcon, label: 'Folders',        selected: false },
+    { value: 'Site',    icon: icons.globe,      label: 'Site only',       selected: true  },
+    { value: 'Library', icon: icons.bookDb,     label: 'Libraries',       selected: false },
+    { value: 'Folder',  icon: icons.folderIcon, label: 'Folders',         selected: false },
     { value: 'Item',    icon: icons.folderOpen,  label: 'Files & Folders', selected: false },
   ];
   return shell('Permissions Report - Config', `
@@ -423,14 +423,10 @@ function reportConfigHTML() {
         </div>
       </div>
 
-      <!-- Folder depth (hidden since Libraries selected) -->
-      <div style="display:flex;align-items:center;gap:10px;visibility:hidden">
-        <span style="font-size:13px;font-weight:500">Folder depth limit:</span>
-        <div class="spinbutton">
-          <input value="2" readonly/>
-          <button>▲</button>
-          <button style="border-left:1px solid ${T.border}">▼</button>
-        </div>
+      <!-- Expand groups checkbox (checked by default) -->
+      <div class="checkbox-row">
+        <span class="checkbox-box checked"></span>
+        <span>Expand group members in report (SharePoint groups, Security groups, and M365 groups)</span>
       </div>
 
       <hr class="divider"/>
@@ -446,8 +442,8 @@ function reportConfigHTML() {
 function reportRunningHTML() {
   const scopeOptions = [
     { icon: icons.globe,      label: 'Site only',       selected: false },
-    { icon: icons.bookDb,     label: 'Libraries',        selected: true  },
-    { icon: icons.folderIcon, label: 'Folders',          selected: false },
+    { icon: icons.bookDb,     label: 'Libraries',        selected: false },
+    { icon: icons.folderIcon, label: 'Folders',          selected: true  },
     { icon: icons.folderOpen, label: 'Files & Folders',  selected: false },
   ];
   return shell('Permissions Report - Running', `
@@ -478,6 +474,23 @@ function reportRunningHTML() {
         </div>
       </div>
 
+      <!-- Folder depth (visible, disabled while running) -->
+      <div style="display:flex;align-items:center;gap:10px;opacity:0.6">
+        <span style="font-size:13px;font-weight:500">Folder depth limit:</span>
+        <div class="spinbutton">
+          <input value="3" readonly/>
+          <button>▲</button>
+          <button style="border-left:1px solid ${T.border}">▼</button>
+        </div>
+        <span style="font-size:12px;color:${T.textSubtle}">levels deep</span>
+      </div>
+
+      <!-- Expand groups checkbox (disabled while running) -->
+      <div class="checkbox-row" style="opacity:0.6">
+        <span class="checkbox-box checked"></span>
+        <span>Expand group members in report (SharePoint groups, Security groups, and M365 groups)</span>
+      </div>
+
       <hr class="divider"/>
 
       <div style="display:flex;align-items:center;gap:10px">
@@ -504,8 +517,8 @@ function reportRunningHTML() {
 function reportCompleteHTML() {
   const scopeOptions = [
     { icon: icons.globe,      label: 'Site only',       selected: false },
-    { icon: icons.bookDb,     label: 'Libraries',        selected: true  },
-    { icon: icons.folderIcon, label: 'Folders',          selected: false },
+    { icon: icons.bookDb,     label: 'Libraries',        selected: false },
+    { icon: icons.folderIcon, label: 'Folders',          selected: true  },
     { icon: icons.folderOpen, label: 'Files & Folders',  selected: false },
   ];
   return shell('Permissions Report - Complete', `
@@ -534,6 +547,23 @@ function reportCompleteHTML() {
             <span style="display:flex;align-items:center;gap:5px;font-size:13px;color:${o.selected ? T.brand : T.text}">${o.icon}${o.label}</span>
           </div>`).join('')}
         </div>
+      </div>
+
+      <!-- Folder depth (visible since Folders selected) -->
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;font-weight:500">Folder depth limit:</span>
+        <div class="spinbutton">
+          <input value="3" readonly/>
+          <button>▲</button>
+          <button style="border-left:1px solid ${T.border}">▼</button>
+        </div>
+        <span style="font-size:12px;color:${T.textSubtle}">levels deep</span>
+      </div>
+
+      <!-- Expand groups checkbox (checked) -->
+      <div class="checkbox-row">
+        <span class="checkbox-box checked"></span>
+        <span>Expand group members in report (SharePoint groups, Security groups, and M365 groups)</span>
       </div>
 
       <hr class="divider"/>
@@ -636,7 +666,7 @@ function explorerHTML() {
         <div class="options-bar">
           <div class="checkbox-row">
             <span class="checkbox-box"></span>
-            <span>Expand SharePoint group members</span>
+            <span>Expand group members</span>
           </div>
           <div class="checkbox-row">
             <span class="checkbox-box checked"></span>
@@ -811,59 +841,44 @@ function userAccessFullHTML() {
   </div>`);
 }
 
-// ─── SCREEN 9: Settings popover + URL edit mode ───────────────────────────────
+// ─── SCREEN 9: Settings full page ────────────────────────────────────────────
 function settingsHTML() {
   return shell('Settings', `
   ${banner()}
-  <div class="content">
+  <div class="content" style="max-width:540px">
     <div class="back-row">
       <button class="btn-back">${icons.back} Back</button>
     </div>
-    <div class="title">Global Settings</div>
-    <div class="subtitle">Access settings from the gear icon (⚙) in the top-right corner of the banner on any screen.</div>
+    <div class="title" style="margin-bottom:24px">Settings</div>
 
-    <div style="display:flex;gap:40px;margin-top:8px;flex-wrap:wrap">
-      <!-- Settings panel -->
-      <div>
-        <div class="section-label" style="margin-bottom:12px">Settings panel</div>
-        <div style="background:white;border:1px solid ${T.border};border-radius:${T.radiusLg};box-shadow:${T.shadowMd};padding:16px;min-width:300px">
-          <div style="font-weight:600;font-size:14px;margin-bottom:14px">Settings</div>
-          <div class="checkbox-row">
-            <span class="checkbox-box checked"></span>
-            <label style="font-size:13px">Include system and hidden libraries</label>
-            <span style="margin-left:2px">${icons.info}</span>
-          </div>
-          <p style="font-size:12px;color:${T.textSubtle};margin-top:8px;margin-left:24px;line-height:1.5">
-            When checked, includes Style Library, Form Templates,<br/>Site Assets, and other hidden libraries.
-          </p>
-        </div>
+    <!-- Libraries section -->
+    <div style="margin-bottom:24px">
+      <div style="font-weight:600;font-size:14px;margin-bottom:10px">Libraries</div>
+      <div class="checkbox-row" style="margin-bottom:6px">
+        <span class="checkbox-box checked"></span>
+        <label style="font-size:13px">Include system and hidden libraries</label>
+        <span style="margin-left:2px">${icons.info}</span>
       </div>
+      <p style="font-size:12px;color:${T.textSubtle};margin-left:24px;line-height:1.5">
+        When checked, includes Style Library, Form Templates, Site Assets, and other libraries hidden
+        from default views. Applies to Permissions Explorer and User Access.
+      </p>
+    </div>
 
-      <!-- URL edit mode -->
-      <div>
-        <div class="section-label" style="margin-bottom:12px">Changing the target site</div>
-        <div style="background:${T.brand};border-radius:${T.radiusLg};overflow:hidden;min-width:400px">
-          <div style="display:grid;grid-template-columns:auto 1fr auto;align-items:center;padding:8px 12px 8px 16px;gap:16px">
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-              ${icons.shield}
-              <span style="color:white;font-weight:600;font-size:14px;white-space:nowrap">SharePoint Smart Permissions</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;min-width:0">
-              <input
-                value="https://contoso.sharepoint.com/sites/HR"
-                style="flex:1;border:1px solid rgba(255,255,255,0.5);border-radius:${T.radius};padding:5px 10px;background:white;font-size:13px;font-family:inherit;color:${T.text};min-width:220px"
-                readonly
-              />
-              <button style="background:white;border:none;border-radius:${T.radius};padding:5px 12px;font-size:13px;font-family:inherit;cursor:pointer;font-weight:500;white-space:nowrap">Connect</button>
-              <button class="btn-transparent-white" style="white-space:nowrap">Cancel</button>
-            </div>
-            <div><button class="icon-btn">${icons.settings}</button></div>
-          </div>
-        </div>
-        <p style="font-size:12px;color:${T.textSubtle};margin-top:10px">
-          Click <strong>Change URL</strong> in the banner, enter the target site URL, then click <strong>Connect</strong>.
-        </p>
-      </div>
+    <hr class="divider" style="margin:20px 0"/>
+
+    <!-- Default view instructions section -->
+    <div>
+      <div style="font-weight:600;font-size:14px;margin-bottom:10px">Default view on load</div>
+      <p style="font-size:13px;color:${T.textSubtle};margin-bottom:10px;line-height:1.5">
+        To change which screen opens when the web part first loads, edit the web part properties:
+      </p>
+      <ol style="margin:0;padding-left:20px;line-height:2;font-size:13px;color:${T.textSubtle}">
+        <li>Put the SharePoint page into <strong style="color:${T.text}">Edit</strong> mode.</li>
+        <li>Click the <strong style="color:${T.text}">pencil (edit)</strong> icon on the Smart Permissions web part.</li>
+        <li>In the property panel, choose a view from the <strong style="color:${T.text}">Default view on open</strong> dropdown.</li>
+        <li><strong style="color:${T.text}">Republish</strong> the page to save the change.</li>
+      </ol>
     </div>
   </div>`);
 }

@@ -100,8 +100,9 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
   // ── Form state ──
   const [allSites, setAllSites] = React.useState(false);
-  const [scope, setScope] = React.useState<string>('Library');
+  const [scope, setScope] = React.useState<string>('Site');
   const [folderDepth, setFolderDepth] = React.useState(2);
+  const [expandGroups, setExpandGroups] = React.useState(true);
 
   // ── Run state ──
   const [isBusy, setIsBusy] = React.useState(false);
@@ -120,6 +121,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     return () => clearInterval(id);
   }, [isBusy]);
 
+  // Clear stale results when any option that affects output changes
+  React.useEffect(() => {
+    setEntries(null);
+  }, [allSites, scope, folderDepth, expandGroups]);
+
   const formatElapsed = (secs: number): string => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
@@ -135,6 +141,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   }, [siteUrl]);
 
   const handleRun = async (): Promise<void> => {
+    abortRef.current?.abort();
     abortRef.current = new AbortController();
     setIsBusy(true);
     setError('');
@@ -148,6 +155,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         scope: scope as ReportScope,
         folderDepth,
         includeHidden,
+        expandGroups,
       };
 
       const result = await sp.scanPermissions(
@@ -277,6 +285,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             disabled={isBusy}
           />
         </div>
+
+        <Checkbox
+          label="Expand group members in report (SharePoint groups, Security groups, and M365 groups)"
+          checked={expandGroups}
+          onChange={(_, d) => setExpandGroups(!!d.checked)}
+          disabled={isBusy}
+        />
 
         <Divider />
 

@@ -15,10 +15,11 @@
 6. [Permissions Explorer](#permissions-explorer)
 7. [User Access](#user-access)
 8. [Settings](#settings)
-9. [Changing the Target Site](#changing-the-target-site)
-10. [Security & Privacy](#security--privacy)
-11. [Frequently Asked Questions](#frequently-asked-questions)
-12. [Troubleshooting](#troubleshooting)
+9. [Web Part Configuration](#web-part-configuration)
+10. [Changing the Target Site](#changing-the-target-site)
+11. [Security & Privacy](#security--privacy)
+12. [Frequently Asked Questions](#frequently-asked-questions)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -108,8 +109,9 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
    | **Files & Folders** | Everything — libraries, folders, and individual files |
 
 3. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
-4. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organisation.
-5. Click **Run Report**.
+4. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership.
+5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organisation.
+6. Click **Run Report**.
 
 ![Report scan in progress showing progress bar, elapsed timer, and item count](screenshots/03_report_running.png)
 
@@ -176,7 +178,7 @@ Color-coded permission badges: **red** for Full Control, **amber** for Edit/Cont
 
 ### Expand Group Members
 
-Check **Expand SharePoint group members** in the options bar to expand each SharePoint group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
+Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
 
 Toggling this option refreshes the permissions panel in place — if you were already showing parent permissions, those are refreshed too.
 
@@ -238,9 +240,9 @@ Individual item listing is not shown for owner-level accounts because they can a
 
 ## Settings
 
-The **Settings** panel is accessible from the gear icon (⚙) in the top-right corner of the banner on every screen, including the home screen.
+The **Settings** page is accessible from the gear icon (⚙) in the top-right corner of the banner on every screen, including the home screen. Clicking the gear opens a dedicated full-page settings view with a **Back** button to return to where you were.
 
-![Settings popover showing the Include system and hidden libraries checkbox](screenshots/09_settings.png)
+![Settings page showing the Include system and hidden libraries option and Default view instructions](screenshots/09_settings.png)
 
 ### Include System and Hidden Libraries
 
@@ -257,6 +259,35 @@ This setting is useful during a thorough security audit where you need to accoun
 
 > **Note:** The Permissions Report always excludes system and hidden libraries regardless of this setting.
 
+### Default View on Load
+
+The Settings page also shows step-by-step instructions for changing which screen the web part opens on by default. This is configured through the SharePoint web part property pane — see [Web Part Configuration](#web-part-configuration) for the full walkthrough.
+
+---
+
+## Web Part Configuration
+
+Site administrators can configure the web part's default behaviour through the SharePoint property pane.
+
+### Setting a Default View
+
+By default the web part opens on the **Home** screen. You can change this so it opens directly on one of the three tools — useful when the web part is placed on a dedicated audit page.
+
+**To change the default view:**
+
+1. Navigate to the SharePoint page where the web part is installed.
+2. Put the page into **Edit** mode (click the pencil icon or **Edit** in the top bar).
+3. Click anywhere on the web part, then click the **Edit web part** pencil icon that appears on the web part's left edge.
+4. The property pane opens on the right. Under **General**, locate the **Default view on open** dropdown.
+5. Choose one of:
+   - **Home** — shows the home screen with all three feature cards *(default)*
+   - **Permissions Report** — opens directly on the report configuration screen
+   - **Permissions Explorer** — opens directly on the explorer with library picker
+   - **User Access** — opens directly on the user access lookup screen
+6. Click **Apply** (or close the pane), then **Republish** the page to save the change.
+
+> **Tip:** If the web part is used by a team that exclusively runs permission reports, setting the default view to **Permissions Report** eliminates one click on every visit.
+
 ---
 
 ## Changing the Target Site
@@ -265,11 +296,9 @@ By default, the web part connects to the SharePoint site where it is installed. 
 
 To audit a **different site**:
 
-1. Click **Change URL** in the banner.
+1. Click **Change URL** in the banner at the top of any tool screen.
 2. Type or paste the full URL of the target site (e.g., `https://contoso.sharepoint.com/sites/finance`).
 3. Press **Enter** or click **Connect**.
-
-![Banner in URL edit mode with input field and Connect button](screenshots/09_settings.png)
 
 The web part will reconnect to the new site. All tools will now operate against that site until you change it again or navigate back to the home screen and return.
 
@@ -341,7 +370,7 @@ A: Yes. Select the item in the Permissions Explorer, then check **Show parent pe
 ---
 
 **Q: If I toggle "Expand group members", will it lose the parent permissions I was viewing?**
-A: No. Toggling "Expand SharePoint group members" refreshes the permissions in place — if parent permissions were already showing, they are re-fetched with the updated expansion setting automatically.
+A: No. Toggling "Expand group members" refreshes the permissions in place — if parent permissions were already showing, they are re-fetched with the updated expansion setting automatically.
 
 ---
 

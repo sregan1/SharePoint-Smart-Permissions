@@ -435,10 +435,11 @@ export const RealtimeAuditView: React.FC<RealtimeAuditViewProps> = ({ context, s
       const expanded: UserPermissionInfo[] = [];
       for (const u of users) {
         expanded.push(u);
-        if (hasUnique && expandGroups && u.principalType === 'SharePointGroup') {
+        if (hasUnique && expandGroups && (u.principalType === 'SharePointGroup' || u.principalType === 'SecurityGroup')) {
           const members = await sp.getGroupMembers(
             siteUrl.trim(),
             u.displayName,
+            u.loginName,
             u.principalType,
             abortRef.current?.signal,
           );

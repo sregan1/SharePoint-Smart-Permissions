@@ -18,6 +18,7 @@ export interface UserPermissionInfo {
   principalType: string; // 'User', 'SecurityGroup', 'SharePointGroup'
   roles: string[];
   isGroupMember?: boolean;
+  sourceGroup?: string; // group name if this user was expanded from a group; undefined = direct assignment
 }
 
 export interface PermissionEntry {
@@ -63,6 +64,7 @@ export interface ReportOptions {
   scope: ReportScope;
   folderDepth: number;
   includeHidden: boolean;
+  expandGroups: boolean;
 }
 
 export interface ScanProgress {
@@ -71,3 +73,4 @@ export interface ScanProgress {
   libsDone: number;   // libraries fully processed
   libsTotal: number;  // total libraries to scan (known after initial fetch)
 }
+

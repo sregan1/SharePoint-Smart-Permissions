@@ -7,15 +7,10 @@ import {
   Button,
   Input,
   Text,
-  Checkbox,
-  Tooltip,
-  Popover,
-  PopoverTrigger,
-  PopoverSurface,
   tokens,
   Theme,
 } from '@fluentui/react-components';
-import { Settings24Regular, Info16Regular, ShieldLock24Regular } from '@fluentui/react-icons';
+import { Settings24Regular, ShieldLock24Regular } from '@fluentui/react-icons';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 
 import { SharePointService } from '../services/SharePointService';
@@ -24,8 +19,9 @@ import { HomeView } from './HomeView';
 import { PermissionsReportView } from './PermissionsReportView';
 import { PermissionsExplorerView } from './PermissionsExplorerView';
 import { UserAccessView } from './UserAccessView';
+import { SettingsView } from './SettingsView';
 
-export type AppView = 'home' | 'report' | 'explorer' | 'userAccess';
+export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'settings';
 
 export interface IBrandColors {
   primary: string;
@@ -139,12 +135,14 @@ try {
 
 export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brandColors }) => {
   const theme = React.useMemo(() => buildTheme(brandColors), [brandColors.primary]);
+
   const [view, setView] = React.useState<AppView>(defaultView ?? 'home');
+  const [prevView, setPrevView] = React.useState<AppView>('home');
+
   const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
   const [editUrl, setEditUrl] = React.useState(context.pageContext.web.absoluteUrl);
   const [isEditing, setIsEditing] = React.useState(false);
   const [includeHidden, setIncludeHidden] = React.useState(false);
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   const handleConnect = (): void => {
     if (editUrl.trim()) {
@@ -163,41 +161,19 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
     setIsEditing(false);
   };
 
-  const renderSettingsSurface = () => (
-    <PopoverSurface>
-      <div style={{ padding: '12px 16px', minWidth: '280px' }}>
-        <Text weight="semibold" style={{ display: 'block', marginBottom: '12px' }}>
-          Settings
-        </Text>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Checkbox
-            label="Include system and hidden libraries"
-            checked={includeHidden}
-            onChange={(_, d) => setIncludeHidden(!!d.checked)}
-          />
-          <Tooltip
-            content="When checked, includes system and hidden libraries such as Style Library, Form Templates, Site Assets, and others not shown in default views. Applies to Permissions Explorer and User Access."
-            relationship="description"
-            withArrow
-          >
-            <Button
-              appearance="transparent"
-              icon={<Info16Regular />}
-              size="small"
-              style={{ minWidth: 'unset', padding: '2px' }}
-              aria-label="More info about hidden libraries"
-            />
-          </Tooltip>
-        </div>
-      </div>
-    </PopoverSurface>
-  );
+  const handleOpenSettings = (): void => {
+    setPrevView(view === 'settings' ? prevView : view);
+    setView('settings');
+  };
+
 
   return (
     <ErrorBoundary>
     <RendererProvider renderer={renderer} targetDocument={document}>
     <FluentProvider theme={theme} style={{ minHeight: '400px', position: 'relative' }}>
-      {view !== 'home' ? (
+
+      {/* Banner — shown on inner views (not home or settings) */}
+      {view !== 'home' && view !== 'settings' && (
         <div
           style={{
             display: 'grid',
@@ -272,31 +248,26 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           </div>
 
           {/* Right: settings */}
-          <Popover open={settingsOpen} onOpenChange={(_, d) => setSettingsOpen(d.open)}>
-            <PopoverTrigger disableButtonEnhancement>
-              <Button
-                appearance="transparent"
-                icon={<Settings24Regular style={{ color: 'white' }} />}
-                aria-label="Settings"
-                title="Settings"
-              />
-            </PopoverTrigger>
-            {renderSettingsSurface()}
-          </Popover>
+          <Button
+            appearance="transparent"
+            icon={<Settings24Regular style={{ color: 'white' }} />}
+            aria-label="Settings"
+            title="Settings"
+            onClick={handleOpenSettings}
+          />
         </div>
-      ) : (
+      )}
+
+      {/* Gear icon on home view */}
+      {view === 'home' && (
         <div style={{ position: 'absolute', top: '4px', right: '8px', zIndex: 10 }}>
-          <Popover open={settingsOpen} onOpenChange={(_, d) => setSettingsOpen(d.open)}>
-            <PopoverTrigger disableButtonEnhancement>
-              <Button
-                appearance="transparent"
-                icon={<Settings24Regular style={{ color: 'white' }} />}
-                aria-label="Settings"
-                title="Settings"
-              />
-            </PopoverTrigger>
-            {renderSettingsSurface()}
-          </Popover>
+          <Button
+            appearance="transparent"
+            icon={<Settings24Regular style={{ color: 'white' }} />}
+            aria-label="Settings"
+            title="Settings"
+            onClick={handleOpenSettings}
+          />
         </div>
       )}
 
@@ -331,6 +302,14 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           onBack={() => setView('home')}
         />
       )}
+      {view === 'settings' && (
+        <SettingsView
+          includeHidden={includeHidden}
+          onIncludeHiddenChange={setIncludeHidden}
+          onBack={() => setView(prevView)}
+        />
+      )}
+
     </FluentProvider>
     </RendererProvider>
     </ErrorBoundary>
