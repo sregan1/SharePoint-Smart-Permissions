@@ -1,0 +1,16 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/core-build/config.2.0.0-beta.17.json",
+  "version": "2.0",
+  "bundles": {
+    "smart-permissions-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/smartPermissions/SmartPermissionsWebPart.js",
+          "manifest": "./src/webparts/smartPermissions/SmartPermissionsWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {}
+}
