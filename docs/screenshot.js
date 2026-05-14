@@ -594,6 +594,72 @@ function reportCompleteHTML() {
   </div>`);
 }
 
+// ─── SCREEN 4b: Permissions Report — Export ready ────────────────────────────
+function reportExportHTML() {
+  const rows = [
+    { type: 'Site',    path: '/sites/Marketing' },
+    { type: 'Library', path: '/sites/Marketing/Campaign Documents' },
+    { type: 'Folder',  path: '/sites/Marketing/Campaign Documents/Q4 Launch' },
+    { type: 'File',    path: '/sites/Marketing/Campaign Documents/Q4 Launch/Budget.xlsx' },
+    { type: 'Folder',  path: '/sites/Marketing/Marketing Assets/Brand Photos' },
+  ];
+  return shell('Permissions Report - Export Ready', `
+  ${banner()}
+  <div class="content">
+    <div class="back-row">
+      <button class="btn-back">${icons.back} Back</button>
+    </div>
+    <div class="title">Permissions Report</div>
+    <div style="margin-bottom:16px"></div>
+
+    <!-- Compact summary of chosen settings -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <span class="badge badge-outline" style="font-size:12px">${icons.folderIcon}&nbsp; Folders</span>
+      <span class="badge badge-outline" style="font-size:12px">Depth: 3</span>
+      <span class="badge badge-outline" style="font-size:12px">Expand groups: on</span>
+    </div>
+
+    <!-- Grey status area -->
+    <div class="progress-area" style="max-width:680px;margin-bottom:12px">
+      <span style="font-size:13px;color:${T.textSubtle}">Scan complete — 147 items scanned across 4 libraries in 0:38.</span>
+    </div>
+
+    <!-- Green result area -->
+    <div class="result-area" style="max-width:680px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-weight:600;font-size:14px;color:${T.green}">Scan complete</span>
+        <span class="badge badge-success">147 objects</span>
+        <span class="badge badge-warning">5 unique permissions</span>
+        <span class="badge badge-outline">142 inherited</span>
+      </div>
+      <p style="font-size:13px;color:${T.textSubtle};margin:4px 0 12px">
+        5 location(s) have unique permission assignments. The Excel export includes one row per
+        user or group assignment, with an <strong style="color:${T.text}">Access Via</strong> column
+        showing group membership.
+      </p>
+      <button class="btn-primary" style="font-size:14px;padding:8px 20px;gap:8px">
+        ${icons.docArrow} Export to Excel
+      </button>
+    </div>
+
+    <!-- Preview table of unique items -->
+    <div style="max-width:680px">
+      <p style="font-size:12px;font-weight:600;color:${T.textSubtle};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Items with unique permissions</p>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Path</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `<tr>
+            <td><span class="badge badge-${r.type === 'Site' ? 'brand' : r.type === 'Library' ? 'info' : r.type === 'Folder' ? 'warning' : 'outline'}">${r.type}</span></td>
+            <td style="font-size:12px;color:${T.textSubtle}">${r.path}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`);
+}
+
 // ─── SCREEN 5: Permissions Explorer ──────────────────────────────────────────
 function explorerHTML() {
   return shell('Permissions Explorer', `
@@ -889,6 +955,7 @@ const screens = [
   { name: '02_report_config',          html: reportConfigHTML() },
   { name: '03_report_running',         html: reportRunningHTML() },
   { name: '04_report_complete',        html: reportCompleteHTML() },
+  { name: '04b_report_export',         html: reportExportHTML() },
   { name: '05_explorer',               html: explorerHTML() },
   { name: '06_user_access_scanning',   html: userAccessRunningHTML() },
   { name: '07_user_access_complete',   html: userAccessCompleteHTML() },
