@@ -126,6 +126,10 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 
 ![Completed report with result summary and Export to Excel button](screenshots/04_report_complete.png)
 
+8. Click **Export to Excel** to download the results as a colour-coded workbook.
+
+![Excel workbook downloaded after clicking Export to Excel](screenshots/04b_report_export.png)
+
 ### Understanding the Results
 
 The Excel export contains one row per scanned object (site, library, folder, or file). Key columns include:
