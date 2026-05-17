@@ -35,5 +35,4 @@ desktop.ini
 *.suo
 *.user
 
-# Generated documentation artifacts (Word doc is binary; screenshots are tracked)
-docs/UserGuide.docx
+# Screenshots are tracked in the repo
