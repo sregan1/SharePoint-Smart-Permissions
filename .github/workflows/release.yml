@@ -47,5 +47,5 @@ jobs:
           artifactContentType: application/zip
           allowUpdates: true
           removeArtifacts: true
-          prerelease: true
+          prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
