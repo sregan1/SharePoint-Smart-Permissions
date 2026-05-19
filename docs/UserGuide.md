@@ -130,6 +130,7 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 
 ![Excel workbook downloaded after clicking Export to Excel](screenshots/04b_report_export.png)
 
+
 ### Understanding the Results
 
 The Excel export contains one row per scanned object (site, library, folder, or file). Key columns include:
@@ -182,7 +183,11 @@ Color-coded permission badges: **red** for Full Control, **amber** for Edit/Cont
 
 ### Expand Group Members
 
+<<<<<<< HEAD
 Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment. Note: expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
+=======
+Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
+>>>>>>> 2bf93c0aa19dfc3a4726402d5afaa2f912195bcb
 
 Toggling this option refreshes the permissions panel in place — if you were already showing parent permissions, those are refreshed too.
 

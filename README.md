@@ -2,7 +2,7 @@
 
 A free, open source browser-based SharePoint Online permissions auditing tool delivered as an SPFx web part. Gives site owners, administrators, and compliance teams a real-time view of who has access to what — with no PowerShell, no third-party software, and no elevated service accounts required.
 
-**Website:** [sharepointsmartsolutions.com/smart-permissions](https://sharepointsmartsolutions.com/smart-permissions) 
+**Website:** [sharepointsmartsolutions.com/smart-permissions](https://sharepointsmartsolutions.com/smart-permissions)
 
 **User Guide:** [UserGuide.md](https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/docs/UserGuide.md)
 
@@ -18,6 +18,36 @@ A free, open source browser-based SharePoint Online permissions auditing tool de
 
 ---
 
+## Screenshots
+
+<table>
+<tr>
+  <td align="center"><strong>Home</strong></td>
+  <td align="center"><strong>Permissions Report — Configuration</strong></td>
+</tr>
+<tr>
+  <td><img src="docs/screenshots/01_home.png" width="460" alt="Home screen"/></td>
+  <td><img src="docs/screenshots/02_report_config.png" width="460" alt="Permissions Report configuration"/></td>
+</tr>
+<tr>
+  <td align="center"><strong>Permissions Report — Export to Excel</strong></td>
+  <td align="center"><strong>Permissions Explorer</strong></td>
+</tr>
+<tr>
+  <td><img src="docs/screenshots/04b_report_export.png" width="460" alt="Permissions Report complete with Export to Excel"/></td>
+  <td><img src="docs/screenshots/05_explorer.png" width="460" alt="Permissions Explorer"/></td>
+</tr>
+<tr>
+  <td align="center"><strong>User Access</strong></td>
+  <td align="center"><strong>Settings</strong></td>
+</tr>
+<tr>
+  <td><img src="docs/screenshots/07_user_access_complete.png" width="460" alt="User Access results"/></td>
+  <td><img src="docs/screenshots/09_settings.png" width="460" alt="Settings"/></td>
+</tr>
+</table>
+
+---
 
 ## Security & Privacy
 
@@ -26,6 +56,7 @@ A free, open source browser-based SharePoint Online permissions auditing tool de
 - No external services: all data stays within the Microsoft 365 tenant
 - No data storage: results exist only in the browser session
 
+---
 
 ## Technology
 
@@ -102,11 +133,12 @@ To change it: put the page in Edit mode → click the web part pencil → select
 ```
 src/webparts/smartPermissions/
 ├── components/
-│   ├── App.tsx                     # Root component, banner, settings popover, theme
+│   ├── App.tsx                     # Root component, banner, navigation, theme wiring
 │   ├── HomeView.tsx                # Home screen with feature cards
 │   ├── PermissionsReportView.tsx   # Report configuration, progress, export
 │   ├── PermissionsExplorerView.tsx # Interactive folder/file tree + permission panel
-│   └── UserAccessView.tsx          # Per-user access scan
+│   ├── UserAccessView.tsx          # Per-user access scan
+│   └── SettingsView.tsx            # Full-page settings screen
 ├── services/
 │   ├── SharePointService.ts        # All REST + Graph API calls
 │   └── ExcelExportService.ts       # ExcelJS workbook generation

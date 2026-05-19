@@ -706,6 +706,7 @@ export class SharePointService {
     return results;
   }
 
+
   async getUserAccess(
     siteUrl: string,
     userLoginName: string,

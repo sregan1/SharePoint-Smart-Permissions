@@ -597,11 +597,11 @@ function reportCompleteHTML() {
 // ─── SCREEN 4b: Permissions Report — Export ready ────────────────────────────
 function reportExportHTML() {
   const rows = [
-    { type: 'Site',    path: '/sites/Marketing' },
-    { type: 'Library', path: '/sites/Marketing/Campaign Documents' },
-    { type: 'Folder',  path: '/sites/Marketing/Campaign Documents/Q4 Launch' },
-    { type: 'File',    path: '/sites/Marketing/Campaign Documents/Q4 Launch/Budget.xlsx' },
-    { type: 'Folder',  path: '/sites/Marketing/Marketing Assets/Brand Photos' },
+    { type: 'Site',    path: '/sites/Marketing',                                          unique: true  },
+    { type: 'Library', path: '/sites/Marketing/Campaign Documents',                      unique: true  },
+    { type: 'Folder',  path: '/sites/Marketing/Campaign Documents/Q4 Launch',            unique: true  },
+    { type: 'File',    path: '/sites/Marketing/Campaign Documents/Q4 Launch/Budget.xlsx', unique: true  },
+    { type: 'Folder',  path: '/sites/Marketing/Marketing Assets/Brand Photos',           unique: true  },
   ];
   return shell('Permissions Report - Export Ready', `
   ${banner()}

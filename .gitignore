@@ -36,3 +36,6 @@ desktop.ini
 *.user
 
 # Screenshots are tracked in the repo
+
+# Generated documentation artifacts
+docs/UserGuide.docx
