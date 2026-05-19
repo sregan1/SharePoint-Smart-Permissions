@@ -1,6 +1,10 @@
 # SharePoint Smart Permissions
 
-A browser-based SharePoint Online permissions auditing tool delivered as an SPFx web part. Gives site owners, administrators, and compliance teams a real-time view of who has access to what — with no PowerShell, no third-party software, and no elevated service accounts required.
+A free, open source browser-based SharePoint Online permissions auditing tool delivered as an SPFx web part. Gives site owners, administrators, and compliance teams a real-time view of who has access to what — with no PowerShell, no third-party software, and no elevated service accounts required.
+
+**Website:** [sharepointsmartsolutions.com/smart-permissions](https://sharepointsmartsolutions.com/smart-permissions) 
+
+**User Guide:** [UserGuide.md](https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/docs/UserGuide.md)
 
 ---
 
@@ -14,17 +18,26 @@ A browser-based SharePoint Online permissions auditing tool delivered as an SPFx
 
 ---
 
+
+## Security & Privacy
+
+- Runs entirely in the user's browser as the signed-in identity — no elevated permissions
+- Read-only: never creates, modifies, or deletes any SharePoint content
+- No external services: all data stays within the Microsoft 365 tenant
+- No data storage: results exist only in the browser session
+
+
 ## Technology
 
 - **SPFx 1.21.1** · React 17 · TypeScript
 - **Fluent UI v9** (`@fluentui/react-components`) — theme tokens driven by the SharePoint site theme
 - **SharePoint REST API** — all permission data is read via standard SPO REST endpoints
-- **Microsoft Graph API** — used for Security Group and M365 Group member expansion (`GroupMember.Read.All`)
+- **Microsoft Graph API** — used for Security Group and M365 Group member expansion (`GroupMember.Read.All`, optional)
 - **ExcelJS** — in-browser Excel workbook generation
 
 ---
 
-## Prerequisites
+## Prerequisites (if building) - EXE available for download
 
 - Node.js 18.x
 - `gulp-cli` installed globally (`npm install -g gulp-cli`)
@@ -46,7 +59,11 @@ The local workbench opens at `https://localhost:4321/temp/workbench.html`. For f
 
 ---
 
-## Building & Packaging
+## Download or Build & Package
+
+If you don't want to build from source, you can download the pre-built `smart-permissions.sppkg` directly from the [Releases](https://github.com/sregan1/SharePoint-Smart-Permissions/releases) page and skip straight to uploading it to your App Catalog.
+
+To build yourself:
 
 ```bash
 # Production bundle
@@ -56,13 +73,15 @@ gulp bundle --ship
 gulp package-solution --ship
 ```
 
-The package is written to `sharepoint/solution/smart-permissions.sppkg`. Upload it to the SharePoint App Catalog and approve the `GroupMember.Read.All` Graph permission request in the SharePoint Admin Center.
+The package is written to `sharepoint/solution/smart-permissions.sppkg`. Upload it to the SharePoint App Catalog. Optionally, approve the `GroupMember.Read.All` Graph permission request in the SharePoint Admin Center to enable group member expansion (see below).
 
 ---
 
-## Graph API Permission
+## Graph API Permission (optional)
 
-The package declares a `webApiPermissionRequests` entry for `Microsoft Graph / GroupMember.Read.All`. This permission is required for expanding Security Group and M365 Group members in the Permissions Explorer and Permissions Report. A SharePoint or Global Administrator must approve the request in **SharePoint Admin Center → Advanced → API access** after the package is deployed.
+The package declares a `webApiPermissionRequests` entry for `Microsoft Graph / GroupMember.Read.All`. This permission is **optional** — the app works fully without it. It is only needed for the **Expand group members** feature, which lists the individual members of Security groups and M365 groups in the Permissions Report and Permissions Explorer. SharePoint group expansion works without it.
+
+To enable group member expansion, a SharePoint or Global Administrator must approve the request in **SharePoint Admin Center → Advanced → API access** after the package is deployed. If not approved, all other features work normally.
 
 ---
 
@@ -102,12 +121,3 @@ src/webparts/smartPermissions/
 
 - [User Guide](docs/UserGuide.md) — end-user documentation covering all three tools, settings, and web part configuration
 - `docs/screenshots/` — auto-generated UI screenshots (regenerate with `node docs/screenshot.js`)
-
----
-
-## Security & Privacy
-
-- Runs entirely in the user's browser as the signed-in identity — no elevated permissions
-- Read-only: never creates, modifies, or deletes any SharePoint content
-- No external services: all data stays within the Microsoft 365 tenant
-- No data storage: results exist only in the browser session

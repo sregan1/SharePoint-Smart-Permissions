@@ -109,7 +109,7 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
    | **Files & Folders** | Everything — libraries, folders, and individual files |
 
 3. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
-4. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership.
+4. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership. Expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
 5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organisation.
 6. Click **Run Report**.
 
@@ -182,7 +182,7 @@ Color-coded permission badges: **red** for Full Control, **amber** for Edit/Cont
 
 ### Expand Group Members
 
-Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
+Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment. Note: expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
 
 Toggling this option refreshes the permissions panel in place — if you were already showing parent permissions, those are refreshed too.
 

@@ -688,6 +688,24 @@ export class SharePointService {
     }
   }
 
+  private async runConcurrent<T>(
+    tasks: (() => Promise<T | undefined>)[],
+    concurrency = 5,
+  ): Promise<(T | undefined)[]> {
+    if (tasks.length === 0) return [];
+    const results: (T | undefined)[] = new Array(tasks.length);
+    let idx = 0;
+    const worker = async () => {
+      while (idx < tasks.length) {
+        const i = idx++;
+        try { results[i] = await tasks[i](); }
+        catch { results[i] = undefined; }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+    return results;
+  }
+
   async getUserAccess(
     siteUrl: string,
     userLoginName: string,
@@ -798,8 +816,8 @@ export class SharePointService {
 
     const items: PermissionEntry[] = siteEntry ? [siteEntry] : [];
 
-    for (const lib of libs) {
-      if (signal?.aborted) break;
+    await this.runConcurrent(libs.map((lib: any) => async () => {
+      if (signal?.aborted) return;
       onProgress(`Scanning library: ${lib.Title}`);
 
       if (lib.HasUniqueRoleAssignments && libsHaveRoles) {
@@ -829,20 +847,18 @@ export class SharePointService {
         }
       }
 
-      try {
-        await this.walkFoldersForUser(
-          siteUrl,
-          lib.RootFolder?.ServerRelativeUrl ?? '',
-          userLoginName,
-          userTitle,
-          groupLogins,
-          items,
-          2,
-          onProgress,
-          signal,
-        );
-      } catch { /* partial results OK */ }
-    }
+      await this.walkFoldersForUser(
+        siteUrl,
+        lib.RootFolder?.ServerRelativeUrl ?? '',
+        userLoginName,
+        userTitle,
+        groupLogins,
+        items,
+        2,
+        onProgress,
+        signal,
+      );
+    }), 3);
 
     return { fullSiteAccess: false, items };
   }
@@ -903,67 +919,63 @@ export class SharePointService {
         (f: any) => f.ListItemAllFields?.HasUniqueRoleAssignments,
       );
 
-      for (const subfolder of uniqueFolders) {
-        if (signal?.aborted) break;
-        try {
-          const raData = await this.getJson(
-            `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${odata(subfolder.ServerRelativeUrl)}')/ListItemAllFields/RoleAssignments` +
-              `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
-          );
-          const roles = this.extractRoles(valueArray(raData), userLogin, groupLogins).filter(
-            (r) => r.toLowerCase() !== 'limited access',
-          );
-          if (roles.length > 0) {
-            results.push({
-              objectType: ObjectType.Folder,
-              name: subfolder.Name,
-              serverRelativeUrl: subfolder.ServerRelativeUrl,
-              siteUrl,
-              hasUniquePermissions: true,
-              depth,
-              uniquePermissions: [
-                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles },
-              ],
-            });
-          }
-        } catch { /* skip this folder */ }
-      }
+      await this.runConcurrent(uniqueFolders.map((subfolder: any) => async () => {
+        if (signal?.aborted) return;
+        const raData = await this.getJson(
+          `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${odata(subfolder.ServerRelativeUrl)}')/ListItemAllFields/RoleAssignments` +
+            `?$expand=Member,RoleDefinitionBindings` +
+            `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
+        );
+        const roles = this.extractRoles(valueArray(raData), userLogin, groupLogins).filter(
+          (r) => r.toLowerCase() !== 'limited access',
+        );
+        if (roles.length > 0) {
+          results.push({
+            objectType: ObjectType.Folder,
+            name: subfolder.Name,
+            serverRelativeUrl: subfolder.ServerRelativeUrl,
+            siteUrl,
+            hasUniquePermissions: true,
+            depth,
+            uniquePermissions: [
+              { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles },
+            ],
+          });
+        }
+      }));
 
-      for (const file of uniqueFiles) {
-        if (signal?.aborted) break;
-        try {
-          const raData = await this.getJson(
-            `${siteUrl}/_api/web/GetFileByServerRelativeUrl('${odata(file.ServerRelativeUrl)}')/ListItemAllFields/RoleAssignments` +
-              `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
-          );
-          const roles = this.extractRoles(valueArray(raData), userLogin, groupLogins).filter(
-            (r) => r.toLowerCase() !== 'limited access',
-          );
-          if (roles.length > 0) {
-            results.push({
-              objectType: ObjectType.File,
-              name: file.Name,
-              serverRelativeUrl: file.ServerRelativeUrl,
-              siteUrl,
-              hasUniquePermissions: true,
-              depth,
-              uniquePermissions: [
-                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles },
-              ],
-            });
-          }
-        } catch { /* skip this file */ }
-      }
+      await this.runConcurrent(uniqueFiles.map((file: any) => async () => {
+        if (signal?.aborted) return;
+        const raData = await this.getJson(
+          `${siteUrl}/_api/web/GetFileByServerRelativeUrl('${odata(file.ServerRelativeUrl)}')/ListItemAllFields/RoleAssignments` +
+            `?$expand=Member,RoleDefinitionBindings` +
+            `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
+        );
+        const roles = this.extractRoles(valueArray(raData), userLogin, groupLogins).filter(
+          (r) => r.toLowerCase() !== 'limited access',
+        );
+        if (roles.length > 0) {
+          results.push({
+            objectType: ObjectType.File,
+            name: file.Name,
+            serverRelativeUrl: file.ServerRelativeUrl,
+            siteUrl,
+            hasUniquePermissions: true,
+            depth,
+            uniquePermissions: [
+              { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles },
+            ],
+          });
+        }
+      }));
     }
 
-    // Recurse into all visible subfolders that have content.
-    for (const subfolder of visibleFolders) {
-      if (signal?.aborted) break;
-      if ((subfolder.ItemCount ?? 0) > 0) {
-        try {
-          await this.walkFoldersForUser(
+    // Recurse into all visible subfolders that have content (3 concurrent branches).
+    await this.runConcurrent(
+      visibleFolders
+        .filter((subfolder: any) => !signal?.aborted && (subfolder.ItemCount ?? 0) > 0)
+        .map((subfolder: any) => () =>
+          this.walkFoldersForUser(
             siteUrl,
             subfolder.ServerRelativeUrl,
             userLogin,
@@ -973,10 +985,10 @@ export class SharePointService {
             depth + 1,
             onProgress,
             signal,
-          );
-        } catch { /* continue to next folder */ }
-      }
-    }
+          ),
+        ),
+      3,
+    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
