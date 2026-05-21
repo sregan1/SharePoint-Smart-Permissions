@@ -20,6 +20,7 @@
 11. [Security & Privacy](#security--privacy)
 12. [Frequently Asked Questions](#frequently-asked-questions)
 13. [Troubleshooting](#troubleshooting)
+14. [Administrator: Tenant-Wide Provisioning](#administrator-tenant-wide-provisioning)
 
 ---
 
@@ -183,11 +184,7 @@ Color-coded permission badges: **red** for Full Control, **amber** for Edit/Cont
 
 ### Expand Group Members
 
-<<<<<<< HEAD
 Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment. Note: expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
-=======
-Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment.
->>>>>>> 2bf93c0aa19dfc3a4726402d5afaa2f912195bcb
 
 Toggling this option refreshes the permissions panel in place — if you were already showing parent permissions, those are refreshed too.
 
@@ -439,6 +436,75 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 - Ensure **Include system and hidden libraries** is unchecked in Settings.
 - These libraries are excluded by URL pattern as well as their metadata flags. If they still appear, check that you are running the latest version of the web part package.
+
+---
+
+## Administrator: Tenant-Wide Provisioning
+
+For organisations that want to make Smart Permissions available on every site collection, the included PowerShell script automates the creation of a **Permissions.aspx** page with the web part pre-added across all sites in the tenant.
+
+### Prerequisites
+
+- The **Smart Permissions** app must already be deployed to the tenant App Catalog and approved for all sites before running this script.
+- The **PnP.PowerShell** module must be installed on the machine running the script:
+  ```powershell
+  Install-Module PnP.PowerShell
+  ```
+- The account used must have **SharePoint Administrator** or **Global Administrator** permissions.
+
+### Script Location
+
+The script is located at `scripts/Provision-SmartPermissions.ps1` in the solution repository.
+
+### Configuration
+
+Open the script and set the `$adminUrl` variable at the top:
+
+```powershell
+$adminUrl = "https://contoso-admin.sharepoint.com"
+```
+
+All other variables are pre-configured with the correct values for this solution and do not need to be changed.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `$adminUrl` | *(empty — must set)* | Your SharePoint admin center URL |
+| `$componentId` | Pre-filled | The Smart Permissions web part ID |
+| `$pageName` | `Permissions` | File name of the created page (without `.aspx`) |
+| `$pageTitle` | `Permissions` | Display title shown at the top of the page |
+| `$webPartProps` | `defaultView: home` | Web part property defaults |
+
+### Running the Script
+
+1. Open a PowerShell terminal.
+2. Set `$adminUrl` in the script.
+3. Run the script:
+   ```powershell
+   .\scripts\Provision-SmartPermissions.ps1
+   ```
+4. Sign in when prompted. You may be prompted to sign in once for the admin center and once per site — this is expected.
+5. The script logs each site as it processes it. Sites that fail (e.g. locked, no-script sites) are logged as warnings and skipped.
+
+### Testing on a Single Site First
+
+Before running tenant-wide, test against one site by temporarily replacing the `foreach` loop with a direct connection:
+
+```powershell
+Connect-PnPOnline -Url "https://contoso.sharepoint.com/sites/yourtest" -Interactive
+# ... then run just the page/web part creation block manually
+```
+
+### What the Script Does
+
+For each site collection:
+1. Connects to the site
+2. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
+3. Adds the Smart Permissions web part with default properties
+4. Publishes the page so it is immediately visible to site visitors
+
+### Re-Running Safely
+
+The script is safe to re-run. If `Permissions.aspx` already exists on a site, the script skips creating it and proceeds to add the web part. However, running it multiple times may result in duplicate web parts on pages where the script has already run. To avoid this, filter `$sites` to only newly created sites before re-running.
 
 ---
 

@@ -2,9 +2,11 @@
 
 A free, open source browser-based SharePoint Online permissions auditing tool delivered as an SPFx web part. Gives site owners, administrators, and compliance teams a real-time view of who has access to what — with no PowerShell, no third-party software, and no elevated service accounts required.
 
-**Website:** [sharepointsmartsolutions.com/smart-permissions](https://sharepointsmartsolutions.com/smart-permissions)
-
-**User Guide:** [UserGuide.md](https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/docs/UserGuide.md)
+<p>
+  <a href="https://sharepointsmartsolutions.com/smart-permissions"><img src="https://img.shields.io/badge/Website-sharepointsmartsolutions.com-0078d4?style=for-the-badge&logo=microsoftsharepoint&logoColor=white" alt="Website"/></a>
+  &nbsp;
+  <a href="https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/docs/UserGuide.md"><img src="https://img.shields.io/badge/User_Guide-View_Documentation-107c10?style=for-the-badge&logo=readthedocs&logoColor=white" alt="User Guide"/></a>
+</p>
 
 ---
 
