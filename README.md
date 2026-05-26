@@ -12,11 +12,23 @@ A free, open source browser-based SharePoint Online permissions auditing tool de
 
 ## Features
 
+### Main Tools
+
 | Tool | Description |
 |------|-------------|
-| **Permissions Report** | Scans a site's libraries, folders, and files and exports a colour-coded Excel workbook of every unique permission assignment. Supports full-tenant scans and optional group member expansion. |
+| **Permissions Report** | Scans a site's libraries, folders, and files and exports a color-coded Excel workbook of every unique permission assignment. Supports full-tenant scans and optional group member expansion. |
 | **Permissions Explorer** | Interactively browse a document library tree and inspect live permissions on any folder or file. Shows inherited vs. unique permissions and supports expanding group members (SharePoint groups, Security groups, M365 groups). |
 | **User Access** | Look up any user and see every location they can access, with their exact permission level at each location. Detects full-site owner access immediately. |
+
+### More Tools
+
+| Tool | Description |
+|------|-------------|
+| **Permission Groups** | Shows all SharePoint groups on the site and their members. Quickly find who belongs to Owners, Members, Visitors, and any custom groups. |
+| **External Users** | Lists all external (#EXT#) accounts that have been granted access to the site, including which SharePoint groups they belong to. Includes a one-click **Check Access** shortcut per user. |
+| **Broken Inheritance Finder** | Scans every library, folder, and file and highlights every item that has had its permissions explicitly changed from its parent — the quickest way to find permission sprawl. |
+| **Sharing Links** | Lists all sharing links across all document libraries — internal, external, and anonymous — so you can see at a glance what has been shared outside the site. Requires `Sites.Read.All`. |
+| **Anonymous Access Summary** | Enumerates all anonymous and org-wide sharing links using the Microsoft Graph API, grouped by library and showing expiry dates where set. Requires `Sites.Read.All`. |
 
 ---
 
@@ -65,7 +77,7 @@ A free, open source browser-based SharePoint Online permissions auditing tool de
 - **SPFx 1.21.1** · React 17 · TypeScript
 - **Fluent UI v9** (`@fluentui/react-components`) — theme tokens driven by the SharePoint site theme
 - **SharePoint REST API** — all permission data is read via standard SPO REST endpoints
-- **Microsoft Graph API** — used for Security Group and M365 Group member expansion (`GroupMember.Read.All`, optional)
+- **Microsoft Graph API** — used for group member expansion (`GroupMember.Read.All`, optional) and sharing link enumeration (`Sites.Read.All`, optional)
 - **ExcelJS** — in-browser Excel workbook generation
 
 ---
@@ -106,15 +118,24 @@ gulp bundle --ship
 gulp package-solution --ship
 ```
 
-The package is written to `sharepoint/solution/smart-permissions.sppkg`. Upload it to the SharePoint App Catalog. Optionally, approve the `GroupMember.Read.All` Graph permission request in the SharePoint Admin Center to enable group member expansion (see below).
+The package is written to `sharepoint/solution/smart-permissions.sppkg`. Upload it to the SharePoint App Catalog. Optionally, approve the Graph permission requests in the SharePoint Admin Center to enable group member expansion and sharing link features (see below).
 
 ---
 
-## Graph API Permission (optional)
+## Graph API Permissions (optional)
 
-The package declares a `webApiPermissionRequests` entry for `Microsoft Graph / GroupMember.Read.All`. This permission is **optional** — the app works fully without it. It is only needed for the **Expand group members** feature, which lists the individual members of Security groups and M365 groups in the Permissions Report and Permissions Explorer. SharePoint group expansion works without it.
+The package declares two `webApiPermissionRequests` entries:
 
-To enable group member expansion, a SharePoint or Global Administrator must approve the request in **SharePoint Admin Center → Advanced → API access** after the package is deployed. If not approved, all other features work normally.
+| Permission | Purpose | Required? |
+|------------|---------|-----------|
+| `GroupMember.Read.All` | Expand Security group and M365 group members in Permissions Report and Explorer | Optional |
+| `Sites.Read.All` | Enumerate sharing links in Sharing Links and Anonymous Access Summary | Optional |
+
+Both permissions are **optional** — all other tools work without them:
+- Without `GroupMember.Read.All`: Security groups and M365 groups cannot be expanded to list individual members. SharePoint group expansion works without it.
+- Without `Sites.Read.All`: The **Sharing Links** and **Anonymous Access Summary** tools will show a permission error.
+
+To enable these features, a SharePoint or Global Administrator must approve the request(s) in **SharePoint Admin Center → Advanced → API access** after the package is deployed.
 
 ---
 
@@ -135,23 +156,28 @@ To change it: put the page in Edit mode → click the web part pencil → select
 ```
 src/webparts/smartPermissions/
 ├── components/
-│   ├── App.tsx                     # Root component, banner, navigation, theme wiring
-│   ├── HomeView.tsx                # Home screen with feature cards
-│   ├── PermissionsReportView.tsx   # Report configuration, progress, export
-│   ├── PermissionsExplorerView.tsx # Interactive folder/file tree + permission panel
-│   ├── UserAccessView.tsx          # Per-user access scan
-│   └── SettingsView.tsx            # Full-page settings screen
+│   ├── App.tsx                        # Root component, banner, navigation, theme wiring
+│   ├── HomeView.tsx                   # Home screen — feature cards and More tools section
+│   ├── PermissionsReportView.tsx      # Report configuration, progress, export
+│   ├── PermissionsExplorerView.tsx    # Interactive folder/file tree + permission panel
+│   ├── UserAccessView.tsx             # Per-user access scan
+│   ├── SharingLinksView.tsx           # Sharing links browser (requires Sites.Read.All)
+│   ├── PermissionGroupsView.tsx       # SharePoint group membership browser
+│   ├── ExternalUsersView.tsx          # External (#EXT#) user report
+│   ├── BrokenInheritanceView.tsx      # Broken inheritance finder
+│   ├── AnonymousLinksView.tsx         # Anonymous and org-wide sharing links
+│   └── SettingsView.tsx               # Full-page settings screen
 ├── services/
-│   ├── SharePointService.ts        # All REST + Graph API calls
-│   └── ExcelExportService.ts       # ExcelJS workbook generation
+│   ├── SharePointService.ts           # All REST + Graph API calls
+│   └── ExcelExportService.ts          # ExcelJS workbook generation
 ├── models/
-│   └── models.ts                   # Shared TypeScript interfaces
-└── SmartPermissionsWebPart.ts      # SPFx entry point, property pane, theme wiring
+│   └── models.ts                      # Shared TypeScript interfaces
+└── SmartPermissionsWebPart.ts         # SPFx entry point, property pane, theme wiring
 ```
 
 ---
 
 ## Documentation
 
-- [User Guide](docs/UserGuide.md) — end-user documentation covering all three tools, settings, and web part configuration
+- [User Guide](docs/UserGuide.md) — end-user documentation covering all tools, settings, and web part configuration
 - `docs/screenshots/` — auto-generated UI screenshots (regenerate with `node docs/screenshot.js`)

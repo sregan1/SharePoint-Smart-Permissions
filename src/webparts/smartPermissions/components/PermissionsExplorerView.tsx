@@ -12,6 +12,8 @@ import {
   MessageBarBody,
   Select,
   Tooltip,
+  ToggleButton,
+  Divider,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
@@ -25,6 +27,8 @@ import {
   ChevronDown16Regular,
   ArrowCircleDown16Regular,
   Link16Regular,
+  PersonSearch16Regular,
+  Filter16Regular,
 } from '@fluentui/react-icons';
 
 import { SharePointService } from '../services/SharePointService';
@@ -95,6 +99,10 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorNeutralForeground2,
     whiteSpace: 'nowrap',
+    position: 'sticky',
+    top: 0,
+    background: tokens.colorNeutralBackground1,
+    zIndex: 1,
   },
   permTd: {
     padding: '5px 8px',
@@ -119,7 +127,7 @@ const useStyles = makeStyles({
   },
 });
 
-// ── Role badge colour ─────────────────────────────────────────────────────────
+// ── Role badge color ──────────────────────────────────────────────────────────
 
 function roleBadgeColor(
   roles: string[],
@@ -148,15 +156,17 @@ function roleBadgeColor(
 interface PermTableProps {
   users: UserPermissionInfo[];
   styles: ReturnType<typeof useStyles>;
+  onCheckAccess?: (loginName: string) => void;
 }
 
-const PermTable: React.FC<PermTableProps> = ({ users, styles }) => (
-  <table className={styles.permTable}>
+const PermTable: React.FC<PermTableProps> = ({ users, styles, onCheckAccess }) => (
+  <table className={styles.permTable} aria-label="Permission assignments">
     <thead>
       <tr>
         <th className={styles.permTh}>User / Group</th>
         <th className={styles.permTh}>Type</th>
         <th className={styles.permTh}>Permission Level</th>
+        {onCheckAccess && <th className={styles.permTh} />}
       </tr>
     </thead>
     <tbody>
@@ -200,6 +210,20 @@ const PermTable: React.FC<PermTableProps> = ({ users, styles }) => (
               </Badge>
             ))}
           </td>
+          {onCheckAccess && (
+            <td className={styles.permTd}>
+              {u.principalType === 'User' && u.loginName && !u.isGroupMember && (
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<PersonSearch16Regular />}
+                  onClick={() => onCheckAccess(u.loginName)}
+                  title={`Check access for ${u.displayName || u.loginName}`}
+                  aria-label={`Check access for ${u.displayName || u.loginName}`}
+                />
+              )}
+            </td>
+          )}
         </tr>
       ))}
     </tbody>
@@ -214,6 +238,7 @@ interface TreeNodeProps {
   selectedUrl: string;
   onSelect: (node: FolderFileNode) => void;
   onLoadChildren: (node: FolderFileNode) => void;
+  showUniqueOnly: boolean;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -222,6 +247,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   selectedUrl,
   onSelect,
   onLoadChildren,
+  showUniqueOnly,
 }) => {
   const styles = useStyles();
   const [expanded, setExpanded] = React.useState(false);
@@ -283,16 +309,19 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         )}
       </div>
 
-      {expanded && node.children.map((child) => (
-        <TreeNode
-          key={child.serverRelativeUrl}
-          node={child}
-          depth={depth + 1}
-          selectedUrl={selectedUrl}
-          onSelect={onSelect}
-          onLoadChildren={onLoadChildren}
-        />
-      ))}
+      {expanded && node.children
+        .filter((c) => !showUniqueOnly || c.hasUniquePermissions || c.hasUniquePermissionsBelow)
+        .map((child) => (
+          <TreeNode
+            key={child.serverRelativeUrl}
+            node={child}
+            depth={depth + 1}
+            selectedUrl={selectedUrl}
+            onSelect={onSelect}
+            onLoadChildren={onLoadChildren}
+            showUniqueOnly={showUniqueOnly}
+          />
+        ))}
     </div>
   );
 };
@@ -304,9 +333,10 @@ export interface PermissionsExplorerViewProps {
   siteUrl: string;
   includeHidden: boolean;
   onBack: () => void;
+  onNavigateToUserAccess?: (loginName: string) => void;
 }
 
-export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, onBack }) => {
+export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, onBack, onNavigateToUserAccess }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -321,6 +351,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // ── Browse tab ──
   const [selectedLibrary, setSelectedLibrary] = React.useState('');
   const [rootNodes, setRootNodes] = React.useState<FolderFileNode[]>([]);
+  const [showUniqueOnly, setShowUniqueOnly] = React.useState(false);
   const [treeStatus, setTreeStatus] = React.useState('');
   const [selectedNode, setSelectedNode] = React.useState<FolderFileNode | null>(null);
   const [nodePerms, setNodePerms] = React.useState<UserPermissionInfo[]>([]);
@@ -335,6 +366,10 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const [parentPermsError, setParentPermsError] = React.useState('');
 
   const abortRef = React.useRef<AbortController | null>(null);
+  const rawNodePermsRef = React.useRef<UserPermissionInfo[]>([]);
+  const rawParentPermsRef = React.useRef<UserPermissionInfo[] | null>(null);
+  const groupMemberCacheRef = React.useRef<Map<string, UserPermissionInfo[]>>(new Map());
+  const folderCacheRef = React.useRef<Map<string, FolderFileNode[]>>(new Map());
 
   // ── Connect ──────────────────────────────────────────────────────────────
 
@@ -378,6 +413,10 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setTreeStatus('');
     setSelectedNode(null);
     setNodePerms([]);
+    rawNodePermsRef.current = [];
+    rawParentPermsRef.current = null;
+    groupMemberCacheRef.current.clear();
+    folderCacheRef.current.clear();
 
     try {
       const nodes = await sp.getFolderContents(
@@ -390,10 +429,12 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
       // Pre-fetch one level deep for each root folder to detect hasUniquePermissionsBelow
       // at load time rather than requiring the user to expand each folder first.
+      // Results are stored in folderCacheRef so expanding a folder skips the API call.
       const signal = abortRef.current?.signal;
       nodes.filter((n) => n.isFolder).forEach((folder) => {
         sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, signal)
           .then((children) => {
+            folderCacheRef.current.set(folder.serverRelativeUrl, children);
             if (children.some((c) => c.hasUniquePermissions)) {
               folder.hasUniquePermissionsBelow = true;
               setRootNodes((prev) => [...prev]);
@@ -415,16 +456,18 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   // ── Load folder children ─────────────────────────────────────────────────
 
-  const loadChildren = async (node: FolderFileNode): Promise<void> => {
+  const loadChildren = React.useCallback(async (node: FolderFileNode): Promise<void> => {
     node.isLoading = true;
     setRootNodes((prev) => [...prev]);
 
     try {
-      const children = await sp.getFolderContents(
+      const cached = folderCacheRef.current.get(node.serverRelativeUrl);
+      const children = cached ?? await sp.getFolderContents(
         siteUrl.trim(),
         node.serverRelativeUrl,
         abortRef.current?.signal,
       );
+      if (!cached) folderCacheRef.current.set(node.serverRelativeUrl, children);
       node.children = children.map((c) => {
         c.parent = node;
         return c;
@@ -448,7 +491,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       node.isLoading = false;
       setRootNodes((prev) => [...prev]);
     }
-  };
+  }, [siteUrl]);
 
   const propagateUniqueBelow = (node: FolderFileNode): void => {
     node.hasUniquePermissionsBelow = true;
@@ -457,39 +500,52 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   // ── Expand groups helper ──────────────────────────────────────────────────
 
-  const withGroupExpansion = async (users: UserPermissionInfo[]): Promise<UserPermissionInfo[]> => {
+  const withGroupExpansion = React.useCallback(async (users: UserPermissionInfo[]): Promise<UserPermissionInfo[]> => {
+    // Fetch all group members in parallel, using a session cache to avoid repeat calls
+    await Promise.all(
+      users
+        .filter((u) => expandGroups && (u.principalType === 'SharePointGroup' || u.principalType === 'SecurityGroup'))
+        .map(async (u) => {
+          const key = u.loginName || u.displayName;
+          if (!groupMemberCacheRef.current.has(key)) {
+            const members = await sp.getGroupMembers(
+              siteUrl.trim(),
+              u.displayName,
+              u.loginName,
+              u.principalType,
+              abortRef.current?.signal,
+            );
+            groupMemberCacheRef.current.set(key, members);
+          }
+        }),
+    );
+
     const expanded: UserPermissionInfo[] = [];
     for (const u of users) {
       expanded.push(u);
       if (expandGroups && (u.principalType === 'SharePointGroup' || u.principalType === 'SecurityGroup')) {
-        const members = await sp.getGroupMembers(
-          siteUrl.trim(),
-          u.displayName,
-          u.loginName,
-          u.principalType,
-          abortRef.current?.signal,
-        );
-        members.forEach((m) => {
-          m.roles = [...u.roles];
-          expanded.push(m);
-        });
+        const key = u.loginName || u.displayName;
+        const members = groupMemberCacheRef.current.get(key) ?? [];
+        members.forEach((m) => expanded.push({ ...m, roles: [...u.roles] }));
       }
     }
     return expanded;
-  };
+  }, [expandGroups, siteUrl]);
 
   // ── Select node ──────────────────────────────────────────────────────────
 
   const handleSelectNode = async (node: FolderFileNode): Promise<void> => {
+    const keepParentPerms = showParentPerms;
     setSelectedNode(node);
     setNodeLoading(true);
     setNodePerms([]);
     setNodeHasUnique(false);
     setNodeError('');
-    setShowParentPerms(false);
     setParentPerms(null);
     setParentPermsName('');
     setParentPermsError('');
+    rawNodePermsRef.current = [];
+    rawParentPermsRef.current = null;
 
     try {
       const { hasUnique, users } = await sp.getItemPermissions(
@@ -497,8 +553,12 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         node,
         abortRef.current?.signal,
       );
+      rawNodePermsRef.current = users;
       setNodeHasUnique(hasUnique);
       setNodePerms(await withGroupExpansion(users));
+      if (!hasUnique && keepParentPerms) {
+        handleShowParentPerms(node).catch((e) => console.error('[SmartPermissions] handleShowParentPerms failed:', e));
+      }
     } catch (err: any) {
       setNodeError(err?.message ?? String(err));
     } finally {
@@ -508,46 +568,49 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   React.useEffect(() => {
     if (!selectedNode) return;
-    // Re-fetch permissions with the new expandGroups value without resetting
-    // showParentPerms — handleSelectNode would clear it, so we refresh in place.
-    const shouldRefreshParent = showParentPerms;
-    setNodeLoading(true);
-    setNodePerms([]);
-    setNodeError('');
-    sp.getItemPermissions(siteUrl.trim(), selectedNode, abortRef.current?.signal)
-      .then(async ({ hasUnique, users }) => {
-        setNodeHasUnique(hasUnique);
-        setNodePerms(await withGroupExpansion(users));
-        setNodeLoading(false);
-      })
-      .catch((e: any) => {
-        setNodeError(e?.message ?? String(e));
-        setNodeLoading(false);
-      });
-    if (shouldRefreshParent) {
+    // Re-expand node permissions (only relevant when the node has unique permissions).
+    if (rawNodePermsRef.current.length > 0) {
+      setNodeLoading(true);
+      setNodePerms([]);
+      setNodeError('');
+      withGroupExpansion(rawNodePermsRef.current)
+        .then((expanded) => {
+          setNodePerms(expanded);
+          setNodeLoading(false);
+        })
+        .catch((e: any) => {
+          setNodeError(e?.message ?? String(e));
+          setNodeLoading(false);
+        });
+    }
+    // Always re-expand parent permissions — inherited items rely solely on this path.
+    if (showParentPerms && rawParentPermsRef.current !== null) {
       setParentPerms(null);
-      setParentPermsName('');
-      setParentPermsError('');
-      handleShowParentPerms().catch((e) => console.error('[SmartPermissions] handleShowParentPerms failed:', e));
+      withGroupExpansion(rawParentPermsRef.current)
+        .then((expanded) => setParentPerms(expanded))
+        .catch((e: any) => setParentPermsError(e?.message ?? String(e)));
     }
   }, [expandGroups]);
 
   // ── Show parent permissions ──────────────────────────────────────────────
 
-  const handleShowParentPerms = async (): Promise<void> => {
-    if (!selectedNode) return;
+  const handleShowParentPerms = async (nodeOverride?: FolderFileNode): Promise<void> => {
+    const target = nodeOverride ?? selectedNode;
+    if (!target) return;
     setParentPermsLoading(true);
     setParentPermsError('');
     try {
       const result = await sp.getParentPermissions(
         siteUrl.trim(),
-        selectedNode.serverRelativeUrl,
+        target.serverRelativeUrl,
         abortRef.current?.signal,
       );
       if (result) {
+        rawParentPermsRef.current = result.users;
         setParentPermsName(result.name);
         setParentPerms(await withGroupExpansion(result.users));
       } else {
+        rawParentPermsRef.current = [];
         setParentPerms([]);
         setParentPermsName('');
       }
@@ -589,6 +652,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
           icon={<ArrowLeft24Regular />}
           onClick={onBack}
           disabled={isConnecting}
+          aria-label="Back to home"
         >
           Back
         </Button>
@@ -632,6 +696,36 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
             </Field>
           </div>
 
+          {/* Unique-only toggle + icon legend */}
+          <div style={{ marginBottom: tokens.spacingVerticalM, display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalXS }}>
+            <ToggleButton
+              size="small"
+              checked={showUniqueOnly}
+              onClick={() => setShowUniqueOnly((prev) => !prev)}
+              icon={<Filter16Regular />}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              Unique permissions only
+            </ToggleButton>
+            <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalL, flexWrap: 'wrap' }}>
+              <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Legend:</Text>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Badge appearance="filled" color="warning" size="small">Unique</Badge>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Item has unique permissions</Text>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ArrowCircleDown16Regular style={{ color: tokens.colorNeutralForeground3 }} />
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Folder contains unique permissions</Text>
+              </span>
+              <Divider vertical style={{ height: '16px' }} />
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Badge appearance="filled" color="danger" size="small">Full Control</Badge>
+                <Badge appearance="filled" color="warning" size="small">Edit</Badge>
+                <Badge appearance="filled" color="success" size="small">Read</Badge>
+              </span>
+            </div>
+          </div>
+
           <div className={styles.twoCol}>
             {/* Tree panel */}
             <div className={styles.treePanel}>
@@ -640,16 +734,19 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   {treeStatus}
                 </Body1>
               )}
-              {rootNodes.map((node) => (
-                <TreeNode
-                  key={node.serverRelativeUrl}
-                  node={node}
-                  depth={0}
-                  selectedUrl={selectedNode?.serverRelativeUrl ?? ''}
-                  onSelect={handleSelectNode}
-                  onLoadChildren={loadChildren}
-                />
-              ))}
+              {rootNodes
+                .filter((node) => !showUniqueOnly || node.hasUniquePermissions || node.hasUniquePermissionsBelow)
+                .map((node) => (
+                  <TreeNode
+                    key={node.serverRelativeUrl}
+                    node={node}
+                    depth={0}
+                    selectedUrl={selectedNode?.serverRelativeUrl ?? ''}
+                    onSelect={handleSelectNode}
+                    onLoadChildren={loadChildren}
+                    showUniqueOnly={showUniqueOnly}
+                  />
+                ))}
             </div>
 
             {/* Permissions panel */}
@@ -714,7 +811,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
                   {/* Unique permissions table */}
                   {!nodeLoading && !nodeError && nodeHasUnique && (
-                    <PermTable users={nodePerms} styles={styles} />
+                    <PermTable users={nodePerms} styles={styles} onCheckAccess={onNavigateToUserAccess} />
                   )}
 
                   {/* Parent permissions */}
@@ -745,7 +842,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                               No permissions found on parent.
                             </Body1>
                           ) : (
-                            <PermTable users={parentPerms} styles={styles} />
+                            <PermTable users={parentPerms} styles={styles} onCheckAccess={onNavigateToUserAccess} />
                           )}
                         </>
                       )}

@@ -10,14 +10,17 @@ import {
   MessageBar,
   MessageBarBody,
   ProgressBar,
-  Select,
+  Combobox,
+  Option,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowLeft24Regular } from '@fluentui/react-icons';
+import { ArrowLeft24Regular, ArrowDownload24Regular, History24Regular, Delete24Regular } from '@fluentui/react-icons';
 
 import { SharePointService } from '../services/SharePointService';
-import { SiteUserInfo, PermissionEntry, ObjectType } from '../models/models';
+import { ExcelExportService } from '../services/ExcelExportService';
+import { ReportHistoryService } from '../services/ReportHistoryService';
+import { SiteUserInfo, PermissionEntry, ObjectType, StoredUserAccessReport } from '../models/models';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -59,15 +62,41 @@ const useStyles = makeStyles({
     borderBottom: `2px solid ${tokens.colorNeutralStroke1}`,
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorNeutralForeground2,
+    position: 'sticky',
+    top: 0,
+    background: tokens.colorNeutralBackground1,
+    zIndex: 1,
   },
   accessTd: {
     padding: '5px 8px',
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
     verticalAlign: 'top',
   },
+  historyTable: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    fontSize: tokens.fontSizeBase200,
+  },
+  historyTh: {
+    textAlign: 'left' as const,
+    padding: '8px',
+    borderBottom: `2px solid ${tokens.colorNeutralStroke1}`,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground2,
+    whiteSpace: 'nowrap' as const,
+    position: 'sticky' as const,
+    top: 0,
+    background: tokens.colorNeutralBackground1,
+    zIndex: 1,
+  },
+  historyTd: {
+    padding: '8px',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    verticalAlign: 'middle' as const,
+  },
 });
 
-// ── Role badge colour ─────────────────────────────────────────────────────────
+// ── Role badge color ──────────────────────────────────────────────────────────
 
 function roleBadgeColor(
   roles: string[],
@@ -102,12 +131,15 @@ function formatElapsed(seconds: number): string {
 
 export interface UserAccessViewProps {
   sp: SharePointService;
+  excel: ExcelExportService;
   siteUrl: string;
   includeHidden: boolean;
+  prefillLogin?: string;
+  onPrefillUsed?: () => void;
   onBack: () => void;
 }
 
-export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, includeHidden, onBack }) => {
+export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, prefillLogin, onPrefillUsed, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -119,17 +151,94 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
 
   // ── User access ──
   const [selectedUser, setSelectedUser] = React.useState('');
+  const [userFilter, setUserFilter] = React.useState('');
   const [userAccessBusy, setUserAccessBusy] = React.useState(false);
   const [userAccessStatus, setUserAccessStatus] = React.useState('');
   const [userAccessItems, setUserAccessItems] = React.useState<PermissionEntry[]>([]);
   const [isFullSiteAccess, setIsFullSiteAccess] = React.useState(false);
   const [userAccessError, setUserAccessError] = React.useState('');
 
+  // ── Pagination ──
+  const PAGE_SIZE = 200;
+  const [visibleCount, setVisibleCount] = React.useState(PAGE_SIZE);
+
+  // Reset pagination when results change
+  React.useEffect(() => { setVisibleCount(PAGE_SIZE); }, [userAccessItems]);
+
+  // ── Sort ──
+  const [sortCol, setSortCol] = React.useState<'type' | 'name' | 'path' | 'permission'>('type');
+  const [sortAsc, setSortAsc] = React.useState(true);
+
+  const sortedAccessItems = React.useMemo(() => {
+    return [...userAccessItems].sort((a, b) => {
+      let va: string, vb: string;
+      if (sortCol === 'type') { va = a.objectType; vb = b.objectType; }
+      else if (sortCol === 'name') { va = a.name; vb = b.name; }
+      else if (sortCol === 'path') { va = a.serverRelativeUrl; vb = b.serverRelativeUrl; }
+      else { va = (a.uniquePermissions[0]?.roles ?? []).join(','); vb = (b.uniquePermissions[0]?.roles ?? []).join(','); }
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [userAccessItems, sortCol, sortAsc]);
+
+  const handleSort = (col: typeof sortCol): void => {
+    if (sortCol === col) { setSortAsc((v) => !v); } else { setSortCol(col); setSortAsc(true); }
+  };
+
+  const sortInd = (col: typeof sortCol): string =>
+    sortCol !== col ? '' : sortAsc ? ' ▲' : ' ▼';
+
+  // ── History ──
+  const historyService = React.useRef(new ReportHistoryService());
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [historyItems, setHistoryItems] = React.useState<StoredUserAccessReport[]>([]);
+  const [exportingHistoryId, setExportingHistoryId] = React.useState<string | null>(null);
+  const scanStartRef = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    historyService.current.getAllUserAccess()
+      .then(setHistoryItems)
+      .catch(() => { /* IndexedDB unavailable */ });
+  }, []);
+
+  const handleHistoryExport = async (item: StoredUserAccessReport): Promise<void> => {
+    setExportingHistoryId(item.id);
+    try {
+      await excel.exportUserAccess(item.entries, item.siteUrl, item.userDisplayName);
+    } catch (err: any) {
+      console.error('[SmartPermissions] history export failed:', err);
+    } finally {
+      setExportingHistoryId(null);
+    }
+  };
+
+  const handleHistoryDelete = async (id: string): Promise<void> => {
+    await historyService.current.deleteUserAccess(id).catch(() => { /* ignore */ });
+    setHistoryItems((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  // ── Export ──
+  const [isExporting, setIsExporting] = React.useState(false);
+
+  const handleExport = async (): Promise<void> => {
+    const user = siteUsers.find((u) => u.loginName === selectedUser);
+    setIsExporting(true);
+    try {
+      await excel.exportUserAccess(sortedAccessItems, siteUrl.trim(), user?.displayName ?? selectedUser);
+    } catch (err: any) {
+      console.error('[SmartPermissions] exportUserAccess failed:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // ── Scan timer ──
   const [scanElapsed, setScanElapsed] = React.useState(0);
   const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
+  const prefillHandledRef = React.useRef(false);
 
   React.useEffect(() => {
     if (userAccessBusy) {
@@ -143,6 +252,13 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
       }
     };
   }, [userAccessBusy]);
+
+  // Request notification permission on mount
+  React.useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => { /* ignore */ });
+    }
+  }, []);
 
   // ── Connect ──────────────────────────────────────────────────────────────
 
@@ -164,6 +280,17 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
       setSiteUsers(users);
       setIsConnected(true);
       setConnectStatus(`Connected — ${users.length} user${users.length === 1 ? '' : 's'} found`);
+
+      // Auto-scan for prefill user (from Explorer cross-navigation)
+      if (prefillLogin && !prefillHandledRef.current) {
+        prefillHandledRef.current = true;
+        onPrefillUsed?.();
+        const match = users.find((u) => u.loginName === prefillLogin);
+        setUserFilter(match?.displayName ?? prefillLogin);
+        handleUserSelect(prefillLogin).catch((e) =>
+          console.error('[SmartPermissions] prefill handleUserSelect failed:', e),
+        );
+      }
     } catch (err: any) {
       setConnectError(`Connection failed: ${err?.message ?? String(err)}`);
       setConnectStatus('');
@@ -179,13 +306,13 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
 
   // ── User selection ───────────────────────────────────────────────────────
 
-  const handleUserChange = async (e: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
-    const login = e.target.value;
+  const handleUserSelect = async (login: string): Promise<void> => {
     setSelectedUser(login);
     if (!login) return;
 
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    scanStartRef.current = Date.now();
 
     setUserAccessBusy(true);
     setIsFullSiteAccess(false);
@@ -204,13 +331,37 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
       );
       setIsFullSiteAccess(fullSiteAccess);
       setUserAccessItems(items);
-      setUserAccessStatus(
-        fullSiteAccess
-          ? ''
-          : items.length > 0
-          ? `${items.length} accessible location(s) found.`
-          : 'No accessible locations found.',
-      );
+      const statusMsg = fullSiteAccess
+        ? 'Full site access detected.'
+        : items.length > 0
+        ? `${items.length} accessible location(s) found.`
+        : 'No accessible locations found.';
+      setUserAccessStatus(fullSiteAccess ? '' : statusMsg);
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Smart Permissions — User Access scan complete', {
+          body: `${user?.displayName ?? login}: ${statusMsg}`,
+        });
+      }
+
+      // Save to history (errors swallowed — never block the user)
+      const storedReport: StoredUserAccessReport = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        siteUrl: siteUrl.trim(),
+        userLoginName: login,
+        userDisplayName: user?.displayName ?? login,
+        summary: {
+          accessibleLocations: items.length,
+          fullSiteAccess,
+          durationSeconds: Math.round((Date.now() - scanStartRef.current) / 1000),
+        },
+        entries: items,
+      };
+      historyService.current.addUserAccess(storedReport)
+        .then(() => historyService.current.getAllUserAccess())
+        .then(setHistoryItems)
+        .catch(() => { /* storage unavailable */ });
     } catch (err: any) {
       setUserAccessError(err?.message ?? String(err));
     } finally {
@@ -222,25 +373,109 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
 
   return (
     <div className={styles.root}>
+      {/* Screen reader announcements */}
+      <div role="status" aria-live="polite" style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>
+        {!userAccessBusy && userAccessStatus ? userAccessStatus : ''}
+      </div>
+
       {/* Header */}
       <div className={styles.header}>
         <Button
           appearance="subtle"
           icon={<ArrowLeft24Regular />}
-          onClick={onBack}
+          onClick={() => {
+            if (userAccessBusy && !window.confirm('A scan is in progress. Leave and cancel?')) return;
+            onBack();
+          }}
           disabled={isConnecting}
+          aria-label="Back to home"
         >
           Back
         </Button>
-        <Title3>User Access</Title3>
+        <Title3 style={{ flex: 1 }}>User Access</Title3>
+        <Button
+          appearance="subtle"
+          icon={<History24Regular />}
+          onClick={() => setShowHistory((v) => !v)}
+          disabled={isConnecting}
+        >
+          History{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
+        </Button>
       </div>
 
-      {connectError && (
+      {/* ── History panel ── */}
+      {showHistory && (
+        <div>
+          <div style={{ marginBottom: tokens.spacingVerticalM }}>
+            <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setShowHistory(false)}>
+              Back to scan
+            </Button>
+          </div>
+          {historyItems.length === 0 ? (
+            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>No user access scans saved yet.</Body1>
+          ) : (
+            <table className={styles.historyTable}>
+              <thead>
+                <tr>
+                  <th className={styles.historyTh}>Date / Time</th>
+                  <th className={styles.historyTh}>User</th>
+                  <th className={styles.historyTh}>Site</th>
+                  <th className={styles.historyTh}>Locations</th>
+                  <th className={styles.historyTh}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyItems.map((item) => (
+                  <tr key={item.id}>
+                    <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
+                      {new Date(item.timestamp).toLocaleString()}
+                    </td>
+                    <td className={styles.historyTd}>
+                      {item.userDisplayName}
+                      {item.summary.fullSiteAccess && (
+                        <Badge appearance="filled" color="danger" size="small" style={{ marginLeft: '6px' }}>Full Control</Badge>
+                      )}
+                    </td>
+                    <td className={styles.historyTd}>
+                      <Text style={{ fontSize: tokens.fontSizeBase200, wordBreak: 'break-all' }}>
+                        {item.siteUrl}
+                      </Text>
+                    </td>
+                    <td className={styles.historyTd}>{item.summary.accessibleLocations}</td>
+                    <td className={styles.historyTd}>
+                      <div style={{ display: 'flex', gap: tokens.spacingHorizontalS }}>
+                        <Button
+                          size="small"
+                          appearance="primary"
+                          icon={<ArrowDownload24Regular />}
+                          onClick={() => handleHistoryExport(item)}
+                          disabled={exportingHistoryId === item.id || item.entries.length === 0}
+                        >
+                          {exportingHistoryId === item.id ? 'Exporting…' : 'Export'}
+                        </Button>
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<Delete24Regular />}
+                          onClick={() => handleHistoryDelete(item.id)}
+                          title="Delete this record"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {!showHistory && connectError && (
         <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
           <MessageBarBody>{connectError}</MessageBarBody>
         </MessageBar>
       )}
-      {connectStatus && !connectError && (
+      {!showHistory && connectStatus && !connectError && (
         <Body1
           style={{
             color: isConnected
@@ -253,29 +488,43 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
         </Body1>
       )}
 
-      {isConnected && (
+      {!showHistory && isConnected && (
         <>
           <div style={{ marginBottom: tokens.spacingVerticalM }}>
             <Field label="Select a user">
-              <Select
-                value={selectedUser}
-                onChange={handleUserChange}
-                style={{ maxWidth: '400px' }}
+              <Combobox
+                placeholder="Search users…"
+                value={userFilter}
+                onInput={(e) => setUserFilter((e.target as HTMLInputElement).value)}
+                onOptionSelect={(_, d) => {
+                  setUserFilter(d.optionText ?? '');
+                  handleUserSelect(d.optionValue ?? '').catch((err) =>
+                    console.error('[SmartPermissions] handleUserSelect failed:', err),
+                  );
+                }}
                 disabled={userAccessBusy}
+                style={{ maxWidth: '400px' }}
+                aria-label="Select a user to check access"
               >
-                <option value="">— pick a user —</option>
-                {siteUsers.map((u) => (
-                  <option key={u.loginName} value={u.loginName}>
-                    {u.displayName}
-                  </option>
-                ))}
-              </Select>
+                {siteUsers
+                  .filter(
+                    (u) =>
+                      u.displayName.toLowerCase().includes(userFilter.toLowerCase()) ||
+                      u.loginName.toLowerCase().includes(userFilter.toLowerCase()) ||
+                      (u.email != null && u.email.toLowerCase().includes(userFilter.toLowerCase())),
+                  )
+                  .map((u) => (
+                    <Option key={u.loginName} value={u.loginName}>
+                      {u.email ? `${u.displayName} (${u.email})` : u.displayName}
+                    </Option>
+                  ))}
+              </Combobox>
             </Field>
           </div>
 
           {userAccessBusy && (
-            <div className={styles.scanArea}>
-              <ProgressBar />
+            <div className={styles.scanArea} role="status" aria-label="Scan in progress">
+              <ProgressBar aria-label="Scanning user access" />
               <div className={styles.scanRow}>
                 <Spinner size="tiny" />
                 <Text>{userAccessStatus}</Text>
@@ -321,17 +570,53 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
           )}
 
           {!userAccessBusy && userAccessItems.length > 0 && (
-            <table className={styles.accessTable}>
+            <div style={{ display: 'flex', gap: tokens.spacingHorizontalS, justifyContent: 'flex-end', marginBottom: tokens.spacingVerticalS }}>
+              <Button
+                appearance="secondary"
+                icon={<ArrowDownload24Regular />}
+                onClick={() => handleExport().catch((e) => console.error('[SmartPermissions] handleExport failed:', e))}
+                disabled={isExporting}
+              >
+                {isExporting ? 'Exporting…' : 'Export to Excel'}
+              </Button>
+              <Button
+                appearance="secondary"
+                icon={<ArrowDownload24Regular />}
+                onClick={() => {
+                  const user = siteUsers.find((u) => u.loginName === selectedUser);
+                  excel.exportUserAccessCsv(sortedAccessItems, siteUrl.trim(), user?.displayName ?? selectedUser);
+                }}
+                disabled={isExporting}
+              >
+                Export to CSV
+              </Button>
+            </div>
+          )}
+          {!userAccessBusy && userAccessItems.length > 0 && (
+            <table className={styles.accessTable} aria-label="User access results">
               <thead>
                 <tr>
-                  <th className={styles.accessTh}>Type</th>
-                  <th className={styles.accessTh}>Name</th>
-                  <th className={styles.accessTh}>Path</th>
-                  <th className={styles.accessTh}>Permission Level</th>
+                  {(
+                    [
+                      { col: 'type', label: 'Type' },
+                      { col: 'name', label: 'Name' },
+                      { col: 'path', label: 'Path' },
+                      { col: 'permission', label: 'Permission Level' },
+                    ] as { col: typeof sortCol; label: string }[]
+                  ).map(({ col, label }) => (
+                    <th
+                      key={col}
+                      className={styles.accessTh}
+                      onClick={() => handleSort(col)}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
+                      {label}{sortInd(col)}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {userAccessItems.map((item, i) => (
+                {sortedAccessItems.slice(0, visibleCount).map((item, i) => (
                   <tr key={i}>
                     <td className={styles.accessTd}>
                       <Badge
@@ -383,6 +668,16 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, siteUrl, inc
                 ))}
               </tbody>
             </table>
+          )}
+          {!userAccessBusy && visibleCount < sortedAccessItems.length && (
+            <div style={{ textAlign: 'center', marginTop: tokens.spacingVerticalM }}>
+              <Button
+                appearance="secondary"
+                onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+              >
+                Load more ({(sortedAccessItems.length - visibleCount).toLocaleString()} remaining)
+              </Button>
+            </div>
           )}
         </>
       )}

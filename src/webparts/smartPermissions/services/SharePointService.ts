@@ -3,11 +3,26 @@ import { SPHttpClient, MSGraphClientV3 } from '@microsoft/sp-http';
 import {
   UserPermissionInfo, PermissionEntry, FolderFileNode, LibraryInfo,
   SiteCollectionInfo, SiteUserInfo, ReportOptions, ReportScope, ObjectType, ScanProgress,
+  SharingLinkEntry, PermissionGroup, ExternalUserEntry, BrokenInheritanceEntry,
 } from '../models/models';
 
 // Escape single-quotes in OData string literals (SQL-style doubling).
 function odata(s: string): string {
   return s.replace(/'/g, "''");
+}
+
+// Detect Graph API permission errors (HTTP 401/403 or well-known message patterns).
+// Exported so views can use it without duplicating the detection logic.
+export function isGraphPermissionError(err: any): boolean {
+  const msg = String(err?.message ?? err ?? '').toLowerCase();
+  return (
+    err?.statusCode === 401 ||
+    err?.statusCode === 403 ||
+    msg.includes('forbidden') ||
+    msg.includes('unauthorized') ||
+    msg.includes('accessdenied') ||
+    msg.includes('does not represent a site')
+  );
 }
 
 // Map numeric SPO PrincipalType to label string.
@@ -59,13 +74,23 @@ function isSystemLibrary(lib: any): boolean {
 
 export class SharePointService {
   private readonly context: WebPartContext;
+  /** Max concurrent API requests during scans. Settable from Settings. */
+  public scanConcurrency = 4;
+  /** Max group members fetched before capping. Settable from Settings. */
+  public groupMemberCap = 500;
 
   constructor(context: WebPartContext) {
     this.context = context;
   }
 
-  private async getJson(url: string): Promise<any> {
+  // Retries on 429/503 using the Retry-After header, with a 3-attempt cap.
+  private async getJson(url: string, attempt = 0): Promise<any> {
     const resp = await this.context.spHttpClient.get(url, SPHttpClient.configurations.v1);
+    if ((resp.status === 429 || resp.status === 503) && attempt < 3) {
+      const retryAfter = parseInt(resp.headers.get('Retry-After') ?? '10', 10);
+      await new Promise((r) => setTimeout(r, (isNaN(retryAfter) ? 10 : retryAfter) * 1000));
+      return this.getJson(url, attempt + 1);
+    }
     if (!resp.ok) {
       const txt = await resp.text();
       throw new Error(`HTTP ${resp.status} — ${txt.substring(0, 300)}`);
@@ -139,7 +164,7 @@ export class SharePointService {
     const url =
       `${siteUrl}/_api/web/siteusers` +
       `?$filter=IsHiddenInUI eq false and PrincipalType eq 1` +
-      `&$select=LoginName,Title&$orderby=Title&$top=2000`;
+      `&$select=LoginName,Title,Email&$orderby=Title&$top=2000`;
     const data = await this.getJson(url);
     return valueArray(data)
       .filter(
@@ -147,7 +172,7 @@ export class SharePointService {
           !u.LoginName?.includes('_spo_') &&
           !u.LoginName?.includes('app@sharepoint'),
       )
-      .map((u: any) => ({ loginName: u.LoginName, displayName: u.Title }));
+      .map((u: any) => ({ loginName: u.LoginName, displayName: u.Title, email: u.Email || undefined }));
   }
 
   // ── Permissions Report scan ───────────────────────────────────────────────
@@ -156,8 +181,10 @@ export class SharePointService {
     options: ReportOptions,
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
-  ): Promise<PermissionEntry[]> {
+    onEntry?: (entry: PermissionEntry) => void,
+  ): Promise<{ entries: PermissionEntry[]; groupPermissionDenied: boolean }> {
     const entries: PermissionEntry[] = [];
+    const flags = { groupPermissionDenied: false };
     const emit0 = (message: string): void =>
       onProgress({ message, scanned: entries.length, libsDone: 0, libsTotal: 0 });
 
@@ -167,13 +194,13 @@ export class SharePointService {
       for (const site of sites) {
         if (signal?.aborted) break;
         emit0(`Scanning: ${site.title}`);
-        await this.scanSite(site.url, options, entries, onProgress, signal);
+        await this.scanSite(site.url, options, entries, onProgress, signal, onEntry, flags);
       }
     } else {
-      await this.scanSite(options.siteUrl, options, entries, onProgress, signal);
+      await this.scanSite(options.siteUrl, options, entries, onProgress, signal, onEntry, flags);
     }
 
-    return entries;
+    return { entries, groupPermissionDenied: flags.groupPermissionDenied };
   }
 
   private async scanSite(
@@ -182,6 +209,8 @@ export class SharePointService {
     entries: PermissionEntry[],
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
+    onEntry?: (entry: PermissionEntry) => void,
+    flags?: { groupPermissionDenied: boolean },
   ): Promise<void> {
     const startIndex = entries.length;
     let libsDone = 0;
@@ -200,7 +229,7 @@ export class SharePointService {
           `&$expand=RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings`,
       );
       sitePerms = this.toPermissionInfoList(valueArray(webData.RoleAssignments));
-      entries.push({
+      const siteEntry: PermissionEntry = {
         objectType: ObjectType.Site,
         name: webData.Title ?? siteUrl,
         serverRelativeUrl: webData.ServerRelativeUrl ?? '',
@@ -208,14 +237,16 @@ export class SharePointService {
         hasUniquePermissions: true,
         depth: 0,
         uniquePermissions: sitePerms,
-      });
+      };
+      entries.push(siteEntry);
+      onEntry?.(siteEntry);
     } catch {
       // Fallback: no role assignments, just record the site.
       try {
         const webData = await this.getJson(
           `${siteUrl}/_api/web?$select=Title,Url,ServerRelativeUrl`,
         );
-        entries.push({
+        const siteEntry: PermissionEntry = {
           objectType: ObjectType.Site,
           name: webData.Title ?? siteUrl,
           serverRelativeUrl: webData.ServerRelativeUrl ?? '',
@@ -223,7 +254,9 @@ export class SharePointService {
           hasUniquePermissions: true,
           depth: 0,
           uniquePermissions: [],
-        });
+        };
+        entries.push(siteEntry);
+        onEntry?.(siteEntry);
       } catch { /* skip */ }
     }
 
@@ -253,6 +286,10 @@ export class SharePointService {
       if (!options.includeHidden) {
         libs = libs.filter((l: any) => !isSystemLibrary(l));
       }
+      if (options.libraryUrls) {
+        const allowed = new Set(options.libraryUrls);
+        libs = libs.filter((l: any) => allowed.has(l.RootFolder?.ServerRelativeUrl ?? ''));
+      }
 
       libsTotal = libs.length;
       emit('Starting library scan…');
@@ -273,7 +310,7 @@ export class SharePointService {
           } catch { /* fall back to site perms */ }
         }
 
-        entries.push({
+        const libEntry: PermissionEntry = {
           objectType: ObjectType.Library,
           name: lib.Title,
           serverRelativeUrl: lib.RootFolder?.ServerRelativeUrl ?? '',
@@ -281,7 +318,9 @@ export class SharePointService {
           hasUniquePermissions: !!lib.HasUniqueRoleAssignments,
           depth: 1,
           uniquePermissions: libPerms,
-        });
+        };
+        entries.push(libEntry);
+        onEntry?.(libEntry);
 
         if (
           options.scope === ReportScope.Folder ||
@@ -298,6 +337,7 @@ export class SharePointService {
               libPerms,
               emit,
               signal,
+              onEntry,
             );
           } catch { /* partial results OK */ }
         }
@@ -308,11 +348,24 @@ export class SharePointService {
     }
 
     if (options.expandGroups && !signal?.aborted) {
+      // memberCache: group login/name → expanded UserPermissionInfo[] (avoids re-fetching same group)
       const memberCache = new Map<string, UserPermissionInfo[]>();
+      // expandedCache: original perms array reference → expanded array reference.
+      // Inherited entries share the SAME parentPerms object reference, so this eliminates
+      // duplicate expanded arrays for the thousands of entries that inherit from the same source.
+      const expandedCache = new Map<UserPermissionInfo[], UserPermissionInfo[]>();
+
       for (const entry of entries.slice(startIndex)) {
         if (signal?.aborted) break;
+
+        if (expandedCache.has(entry.uniquePermissions)) {
+          entry.uniquePermissions = expandedCache.get(entry.uniquePermissions)!;
+          continue;
+        }
+
+        const originalRef = entry.uniquePermissions;
         const expanded: UserPermissionInfo[] = [];
-        for (const up of entry.uniquePermissions) {
+        for (const up of originalRef) {
           expanded.push(up);
           if (up.principalType === 'SharePointGroup' || up.principalType === 'SecurityGroup') {
             const cacheKey = up.loginName || up.displayName;
@@ -320,13 +373,19 @@ export class SharePointService {
             if (memberCache.has(cacheKey)) {
               members = memberCache.get(cacheKey)!;
             } else {
-              members = await this.getGroupMembers(siteUrl, up.displayName, up.loginName, up.principalType, signal);
+              try {
+                members = await this.getGroupMembers(siteUrl, up.displayName, up.loginName, up.principalType, signal);
+              } catch (err: any) {
+                if (err?.isGraphPermissionError && flags) flags.groupPermissionDenied = true;
+                members = [];
+              }
               memberCache.set(cacheKey, members);
             }
             members.forEach((m) => expanded.push({ ...m, roles: [...up.roles], sourceGroup: up.displayName }));
           }
         }
         entry.uniquePermissions = expanded;
+        expandedCache.set(originalRef, expanded);
       }
     }
   }
@@ -341,6 +400,7 @@ export class SharePointService {
     parentPerms: UserPermissionInfo[],
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
+    onEntry?: (entry: PermissionEntry) => void,
   ): Promise<void> {
     if (signal?.aborted) return;
 
@@ -410,7 +470,7 @@ export class SharePointService {
         } catch { /* inherit parent */ }
       }
 
-      results.push({
+      const folderEntry: PermissionEntry = {
         objectType: ObjectType.Folder,
         name: subfolder.Name,
         serverRelativeUrl: subfolder.ServerRelativeUrl,
@@ -418,7 +478,9 @@ export class SharePointService {
         hasUniquePermissions: hasUnique,
         depth,
         uniquePermissions: folderPerms,
-      });
+      };
+      results.push(folderEntry);
+      onEntry?.(folderEntry);
       onProgress(subfolder.Name);
 
       const shouldRecurse =
@@ -435,6 +497,7 @@ export class SharePointService {
             folderPerms,
             onProgress,
             signal,
+            onEntry,
           );
         } catch { /* continue */ }
       }
@@ -460,7 +523,7 @@ export class SharePointService {
         } catch { /* inherit parent */ }
       }
 
-      results.push({
+      const fileEntry: PermissionEntry = {
         objectType: ObjectType.File,
         name: file.Name,
         serverRelativeUrl: file.ServerRelativeUrl,
@@ -468,7 +531,9 @@ export class SharePointService {
         hasUniquePermissions: hasUnique,
         depth,
         uniquePermissions: filePerms,
-      });
+      };
+      results.push(fileEntry);
+      onEntry?.(fileEntry);
       onProgress(file.Name);
     }
   }
@@ -636,9 +701,10 @@ export class SharePointService {
       try {
         const data = await this.getJson(
           `${siteUrl}/_api/web/sitegroups/getbyname('${odata(groupName)}')/users` +
-            `?$select=LoginName,Title,IsHiddenInUI&$top=2000`,
+            // Fetch one extra to detect truncation without a separate count call
+            `?$select=LoginName,Title,IsHiddenInUI&$top=${this.groupMemberCap + 1}`,
         );
-        return valueArray(data)
+        const all = valueArray(data)
           .filter((u: any) => !u.IsHiddenInUI)
           .map(
             (u: any): UserPermissionInfo => ({
@@ -650,6 +716,18 @@ export class SharePointService {
             }),
           )
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        if (all.length > this.groupMemberCap) {
+          const capped = all.slice(0, this.groupMemberCap);
+          capped.push({
+            loginName: '',
+            displayName: `(group has more than ${this.groupMemberCap} members — only first ${this.groupMemberCap} shown)`,
+            principalType: 'User',
+            roles: [],
+            isGroupMember: true,
+          });
+          return capped;
+        }
+        return all;
       } catch {
         return [];
       }
@@ -658,21 +736,30 @@ export class SharePointService {
     if (principalType === 'SecurityGroup') {
       const groupId = extractAadGroupId(loginName);
       if (!groupId) return [];
-      return this._getAadGroupMembers(groupId);
+      const result = await this._getAadGroupMembers(groupId);
+      if (result === null) {
+        const e: any = new Error(
+          'Group member expansion requires the GroupMember.Read.All Graph permission. ' +
+          'A tenant admin must approve it in SharePoint Admin Center → Advanced → API access.',
+        );
+        e.isGraphPermissionError = true;
+        throw e;
+      }
+      return result;
     }
 
     return [];
   }
 
-  private async _getAadGroupMembers(groupId: string): Promise<UserPermissionInfo[]> {
+  private async _getAadGroupMembers(groupId: string): Promise<UserPermissionInfo[] | null> {
     try {
       const client: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
       const result = await client
         .api(`/groups/${groupId}/members`)
         .select('displayName,userPrincipalName,mail,id')
-        .top(999)
+        .top(this.groupMemberCap + 1)
         .get();
-      return (result?.value ?? [])
+      const all = (result?.value ?? [])
         .map((m: any): UserPermissionInfo => ({
           loginName: m.userPrincipalName ?? m.mail ?? m.id ?? '',
           displayName: m.displayName ?? m.userPrincipalName ?? m.id ?? '',
@@ -683,7 +770,20 @@ export class SharePointService {
         .sort((a: UserPermissionInfo, b: UserPermissionInfo) =>
           a.displayName.localeCompare(b.displayName),
         );
-    } catch {
+      if (all.length > this.groupMemberCap) {
+        const capped = all.slice(0, this.groupMemberCap);
+        capped.push({
+          loginName: '',
+          displayName: `(group has more than ${this.groupMemberCap} members — only first ${this.groupMemberCap} shown)`,
+          principalType: 'User',
+          roles: [],
+          isGroupMember: true,
+        });
+        return capped;
+      }
+      return all;
+    } catch (err: any) {
+      if (isGraphPermissionError(err)) return null;
       return [];
     }
   }
@@ -859,7 +959,7 @@ export class SharePointService {
         onProgress,
         signal,
       );
-    }), 3);
+    }), this.scanConcurrency);
 
     return { fullSiteAccess: false, items };
   }
@@ -971,7 +1071,7 @@ export class SharePointService {
       }));
     }
 
-    // Recurse into all visible subfolders that have content (3 concurrent branches).
+    // Recurse into all visible subfolders concurrently.
     await this.runConcurrent(
       visibleFolders
         .filter((subfolder: any) => !signal?.aborted && (subfolder.ItemCount ?? 0) > 0)
@@ -988,7 +1088,280 @@ export class SharePointService {
             signal,
           ),
         ),
-      3,
+      this.scanConcurrency,
+    );
+  }
+
+  // ── Sharing links ─────────────────────────────────────────────────────────
+
+  async getSharingLinks(
+    siteUrl: string,
+    onProgress: (msg: string) => void,
+    signal?: AbortSignal,
+  ): Promise<SharingLinkEntry[]> {
+    const { hostname, pathname } = new URL(siteUrl);
+    const sitePath = pathname.replace(/\/$/, ''); // '' for root site, '/sites/mysite' for subsite
+    // Graph hostname:path notation requires a non-empty path; for root sites skip the colon.
+    const graphSite = sitePath ? `${hostname}:${sitePath}` : hostname;
+    const graphClient: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
+
+    onProgress('Loading document libraries…');
+    const drivesResp = await graphClient
+      .api(`/sites/${graphSite}/drives`)
+      .select('id,name')
+      .get();
+    const drives: any[] = drivesResp?.value ?? [];
+
+    const results: SharingLinkEntry[] = [];
+
+    for (const drive of drives) {
+      if (signal?.aborted) break;
+      onProgress(`Scanning library: ${drive.name}`);
+
+      // Delta lists every item in the drive, paginated
+      let apiPath: string = `/drives/${drive.id}/root/delta?$select=id,name,webUrl,shared,parentReference`;
+
+      while (apiPath && !signal?.aborted) {
+        const resp = await graphClient.api(apiPath).get();
+        const items: any[] = resp?.value ?? [];
+
+        // Collect IDs of shared items so we can batch-fetch their permissions
+        const sharedIds: string[] = items
+          .filter((item: any) => item.shared)
+          .map((item: any) => item.id);
+
+        await this.runConcurrent(
+          sharedIds.map((itemId) => async () => {
+            if (signal?.aborted) return;
+            const item = items.find((i: any) => i.id === itemId)!;
+            try {
+              const permResp = await graphClient
+                .api(`/drives/${drive.id}/items/${itemId}/permissions`)
+                .get();
+              const perms: any[] = permResp?.value ?? [];
+              for (const perm of perms) {
+                if (!perm.link) continue;
+                results.push({
+                  name: item.name,
+                  webUrl: item.webUrl,
+                  libraryName: drive.name,
+                  linkScope: perm.link.scope ?? 'unknown',
+                  linkType: perm.link.type ?? 'view',
+                  linkUrl: perm.link.webUrl ?? '',
+                  sharedWith: (perm.grantedToIdentitiesV2 ?? [])
+                    .map((g: any) => g.user?.displayName ?? g.group?.displayName ?? '')
+                    .filter(Boolean)
+                    .join(', '),
+                  expiresAt: perm.expirationDateTime,
+                });
+              }
+            } catch { /* skip inaccessible items */ }
+          }),
+          this.scanConcurrency,
+        );
+
+        // Follow @odata.nextLink for pagination; delta uses @odata.deltaLink when done
+        const next = resp['@odata.nextLink'];
+        if (next) {
+          // Strip base URL — Graph client prepends it
+          apiPath = next.replace('https://graph.microsoft.com/v1.0', '');
+        } else {
+          apiPath = '';
+        }
+      }
+    }
+
+    return results;
+  }
+
+  // ── Permission groups ──────────────────────────────────────────────────────
+
+  async getPermissionGroups(
+    siteUrl: string,
+    signal?: AbortSignal,
+  ): Promise<PermissionGroup[]> {
+    // Fetch all site groups with their role assignments
+    const [groupsData, raData] = await Promise.all([
+      this.getJson(
+        `${siteUrl}/_api/web/sitegroups` +
+          `?$select=Id,Title,LoginName,Description,Users/LoginName,Users/Title` +
+          `&$expand=Users&$top=200`,
+      ),
+      this.getJson(
+        `${siteUrl}/_api/web/RoleAssignments` +
+          `?$expand=Member,RoleDefinitionBindings` +
+          `&$select=Member/Id,Member/LoginName,RoleDefinitionBindings/Name`,
+      ),
+    ]);
+
+    // Build a map of group login → roles from site-level role assignments
+    const rolesByGroupId = new Map<number, string[]>();
+    for (const ra of valueArray(raData)) {
+      const memberId: number = ra.Member?.Id;
+      const roles = rdbArray(ra.RoleDefinitionBindings)
+        .map((r: any) => r.Name as string)
+        .filter((r) => r.toLowerCase() !== 'limited access');
+      if (memberId && roles.length > 0) {
+        rolesByGroupId.set(memberId, roles);
+      }
+    }
+
+    return valueArray(groupsData).map((g: any): PermissionGroup => {
+      const members: { loginName: string; displayName: string }[] = valueArray(g.Users)
+        .filter((u: any) => !u.LoginName?.includes('_spo_') && !u.LoginName?.includes('app@sharepoint'))
+        .map((u: any) => ({ loginName: u.LoginName, displayName: u.Title }));
+      return {
+        id: g.Id,
+        title: g.Title,
+        loginName: g.LoginName,
+        description: g.Description ?? '',
+        roles: rolesByGroupId.get(g.Id) ?? [],
+        memberCount: members.length,
+        members,
+      };
+    });
+  }
+
+  // ── External users ────────────────────────────────────────────────────────
+
+  async getExternalUsers(siteUrl: string, signal?: AbortSignal): Promise<ExternalUserEntry[]> {
+    const data = await this.getJson(
+      `${siteUrl}/_api/web/siteusers?$filter=IsHiddenInUI eq false` +
+      `&$select=LoginName,Title,Email,IsSiteAdmin&$orderby=Title&$top=2000`,
+    );
+    if (signal?.aborted) return [];
+    const external = valueArray(data).filter(
+      (u: any) => (u.LoginName ?? '').toLowerCase().indexOf('#ext#') !== -1,
+    );
+    const raw = await this.runConcurrent(
+      external.map((u: any) => async () => {
+        if (signal?.aborted) return undefined;
+        try {
+          const ud = await this.getJson(
+            `${siteUrl}/_api/web/siteusers/getbyloginname('${encodeURIComponent(odata(u.LoginName))}')` +
+            `?$expand=Groups&$select=LoginName,Groups/Title`,
+          );
+          return {
+            loginName: u.LoginName,
+            displayName: u.Title,
+            email: u.Email ?? '',
+            isSiteAdmin: !!u.IsSiteAdmin,
+            groups: valueArray(ud.Groups).map((g: any) => g.Title as string),
+          } as ExternalUserEntry;
+        } catch {
+          return { loginName: u.LoginName, displayName: u.Title, email: u.Email ?? '', isSiteAdmin: !!u.IsSiteAdmin, groups: [] } as ExternalUserEntry;
+        }
+      }),
+      this.scanConcurrency,
+    );
+    return raw.filter((r): r is ExternalUserEntry => r !== undefined);
+  }
+
+  // ── Broken inheritance finder ──────────────────────────────────────────────
+
+  async scanBrokenInheritance(
+    siteUrl: string,
+    includeHidden: boolean,
+    onProgress: (msg: string) => void,
+    signal?: AbortSignal,
+  ): Promise<BrokenInheritanceEntry[]> {
+    const results: BrokenInheritanceEntry[] = [];
+    onProgress('Loading document libraries…');
+
+    // Single request that includes HasUniqueRoleAssignments, avoiding a separate call per library.
+    const filter = encodeURIComponent(
+      includeHidden ? 'BaseTemplate eq 101' : 'BaseTemplate eq 101 and Hidden eq false',
+    );
+    let libs: any[] = [];
+    try {
+      const listsData = await this.getJson(
+        `${siteUrl}/_api/web/lists?$filter=${filter}` +
+        `&$select=Title,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
+        `&$expand=RootFolder&$top=200`,
+      );
+      libs = valueArray(listsData);
+    } catch { return results; }
+
+    if (!includeHidden) libs = libs.filter((l: any) => !isSystemLibrary(l));
+    if (signal?.aborted) return results;
+
+    onProgress(`Scanning ${libs.length} librar${libs.length !== 1 ? 'ies' : 'y'}…`);
+
+    await this.runConcurrent(
+      libs.map((lib: any) => async () => {
+        if (signal?.aborted) return;
+        onProgress(`Scanning library: ${lib.Title}`);
+        const libUrl = lib.RootFolder?.ServerRelativeUrl ?? '';
+        if (lib.HasUniqueRoleAssignments) {
+          results.push({ objectType: 'Library', name: lib.Title, serverRelativeUrl: libUrl, depth: 1 });
+        }
+        try {
+          await this.walkForUniquePerms(siteUrl, libUrl, 2, results, onProgress, signal);
+        } catch { /* skip inaccessible library */ }
+      }),
+      this.scanConcurrency,
+    );
+
+    return results;
+  }
+
+  private async walkForUniquePerms(
+    siteUrl: string,
+    folderUrl: string,
+    depth: number,
+    results: BrokenInheritanceEntry[],
+    onProgress: (msg: string) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted) return;
+    const enc = odata(folderUrl);
+
+    let subFolders: any[] = [];
+    let files: any[] = [];
+    try {
+      const [fData, fiData] = await Promise.all([
+        this.getJson(
+          `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${enc}')/Folders` +
+          `?$select=Name,ServerRelativeUrl,ItemCount,ListItemAllFields/HasUniqueRoleAssignments` +
+          `&$expand=ListItemAllFields&$top=2000`,
+        ),
+        this.getJson(
+          `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${enc}')/Files` +
+          `?$select=Name,ServerRelativeUrl,ListItemAllFields/HasUniqueRoleAssignments` +
+          `&$expand=ListItemAllFields&$top=2000`,
+        ),
+      ]);
+      subFolders = valueArray(fData);
+      files = valueArray(fiData);
+    } catch { return; }
+
+    const visibleFolders = subFolders.filter(
+      (f: any) => !f.Name.startsWith('_') && f.Name.toLowerCase() !== 'forms',
+    );
+
+    // Record all unique-perms items at this level first (synchronous, no concurrency issue).
+    for (const folder of visibleFolders) {
+      if (signal?.aborted) return;
+      onProgress(folder.Name);
+      if (folder.ListItemAllFields?.HasUniqueRoleAssignments) {
+        results.push({ objectType: 'Folder', name: folder.Name, serverRelativeUrl: folder.ServerRelativeUrl, depth });
+      }
+    }
+    for (const file of files) {
+      if (signal?.aborted) return;
+      if (file.ListItemAllFields?.HasUniqueRoleAssignments) {
+        results.push({ objectType: 'File', name: file.Name, serverRelativeUrl: file.ServerRelativeUrl, depth });
+      }
+    }
+
+    // Recurse into non-empty subfolders concurrently.
+    await this.runConcurrent(
+      visibleFolders
+        .filter((f: any) => !signal?.aborted && (f.ItemCount ?? 0) > 0)
+        .map((folder: any) => () =>
+          this.walkForUniquePerms(siteUrl, folder.ServerRelativeUrl, depth + 1, results, onProgress, signal),
+        ),
+      this.scanConcurrency,
     );
   }
 

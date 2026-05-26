@@ -19,9 +19,19 @@ import { HomeView } from './HomeView';
 import { PermissionsReportView } from './PermissionsReportView';
 import { PermissionsExplorerView } from './PermissionsExplorerView';
 import { UserAccessView } from './UserAccessView';
+import { SharingLinksView } from './SharingLinksView';
+import { PermissionGroupsView } from './PermissionGroupsView';
+import { ExternalUsersView } from './ExternalUsersView';
+import { BrokenInheritanceView } from './BrokenInheritanceView';
+import { AnonymousLinksView } from './AnonymousLinksView';
 import { SettingsView } from './SettingsView';
 
-export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'settings';
+export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'sharingLinks' | 'groups' | 'externalUsers' | 'brokenInheritance' | 'anonymousLinks' | 'settings';
+
+const LS_SITE_URL   = 'sp-smart-perms-siteUrl';
+const LS_CONCURRENCY = 'sp-smart-perms-concurrency';
+const LS_GROUP_CAP   = 'sp-smart-perms-groupCap';
+const LS_HIDDEN      = 'sp-smart-perms-includeHidden';
 
 export interface IBrandColors {
   primary: string;
@@ -139,10 +149,41 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
   const [view, setView] = React.useState<AppView>(defaultView ?? 'home');
   const [prevView, setPrevView] = React.useState<AppView>('home');
 
-  const [siteUrl, setSiteUrl] = React.useState(context.pageContext.web.absoluteUrl);
-  const [editUrl, setEditUrl] = React.useState(context.pageContext.web.absoluteUrl);
+  // Restore last-used site URL from localStorage, fall back to current web
+  const defaultUrl = context.pageContext.web.absoluteUrl;
+  const [siteUrl, setSiteUrl] = React.useState(
+    () => localStorage.getItem(LS_SITE_URL) ?? defaultUrl,
+  );
+  const [editUrl, setEditUrl] = React.useState(siteUrl);
   const [isEditing, setIsEditing] = React.useState(false);
-  const [includeHidden, setIncludeHidden] = React.useState(false);
+
+  // Persist settings to localStorage and keep service in sync
+  const [includeHidden, setIncludeHidden] = React.useState(
+    () => localStorage.getItem(LS_HIDDEN) === 'true',
+  );
+  const [scanConcurrency, setScanConcurrency] = React.useState(
+    () => parseInt(localStorage.getItem(LS_CONCURRENCY) ?? '4', 10),
+  );
+  const [groupMemberCap, setGroupMemberCap] = React.useState(
+    () => parseInt(localStorage.getItem(LS_GROUP_CAP) ?? '500', 10),
+  );
+
+  React.useEffect(() => { localStorage.setItem(LS_SITE_URL, siteUrl); }, [siteUrl]);
+  React.useEffect(() => { localStorage.setItem(LS_HIDDEN, String(includeHidden)); }, [includeHidden]);
+  React.useEffect(() => {
+    localStorage.setItem(LS_CONCURRENCY, String(scanConcurrency));
+    sp.scanConcurrency = scanConcurrency;
+  }, [scanConcurrency]);
+  React.useEffect(() => {
+    localStorage.setItem(LS_GROUP_CAP, String(groupMemberCap));
+    sp.groupMemberCap = groupMemberCap;
+  }, [groupMemberCap]);
+
+  // Pre-fill login for the User Access view when launched from Explorer
+  const [userAccessPrefill, setUserAccessPrefill] = React.useState<string | undefined>();
+
+  // Tracks whether any view has a scan in progress (set via callback)
+  const [scanBusy, setScanBusy] = React.useState(false);
 
   const handleConnect = (): void => {
     if (editUrl.trim()) {
@@ -166,6 +207,10 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
     setView('settings');
   };
 
+  const handleNavigateToUserAccess = (loginName: string): void => {
+    setUserAccessPrefill(loginName);
+    setView('userAccess');
+  };
 
   return (
     <ErrorBoundary>
@@ -291,10 +336,48 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           siteUrl={siteUrl}
           includeHidden={includeHidden}
           onBack={() => setView('home')}
+          onNavigateToUserAccess={handleNavigateToUserAccess}
         />
       )}
       {view === 'userAccess' && (
         <UserAccessView
+          key={siteUrl + String(includeHidden)}
+          sp={sp}
+          excel={excel}
+          siteUrl={siteUrl}
+          includeHidden={includeHidden}
+          prefillLogin={userAccessPrefill}
+          onPrefillUsed={() => setUserAccessPrefill(undefined)}
+          onBack={() => setView('home')}
+        />
+      )}
+      {view === 'sharingLinks' && (
+        <SharingLinksView
+          key={siteUrl}
+          sp={sp}
+          siteUrl={siteUrl}
+          onBack={() => setView('home')}
+        />
+      )}
+      {view === 'groups' && (
+        <PermissionGroupsView
+          key={siteUrl}
+          sp={sp}
+          siteUrl={siteUrl}
+          onBack={() => setView('home')}
+        />
+      )}
+      {view === 'externalUsers' && (
+        <ExternalUsersView
+          key={siteUrl}
+          sp={sp}
+          siteUrl={siteUrl}
+          onBack={() => setView('home')}
+          onNavigateToUserAccess={handleNavigateToUserAccess}
+        />
+      )}
+      {view === 'brokenInheritance' && (
+        <BrokenInheritanceView
           key={siteUrl + String(includeHidden)}
           sp={sp}
           siteUrl={siteUrl}
@@ -302,10 +385,22 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           onBack={() => setView('home')}
         />
       )}
+      {view === 'anonymousLinks' && (
+        <AnonymousLinksView
+          key={siteUrl}
+          sp={sp}
+          siteUrl={siteUrl}
+          onBack={() => setView('home')}
+        />
+      )}
       {view === 'settings' && (
         <SettingsView
           includeHidden={includeHidden}
           onIncludeHiddenChange={setIncludeHidden}
+          scanConcurrency={scanConcurrency}
+          onScanConcurrencyChange={setScanConcurrency}
+          groupMemberCap={groupMemberCap}
+          onGroupMemberCapChange={setGroupMemberCap}
           onBack={() => setView(prevView)}
         />
       )}

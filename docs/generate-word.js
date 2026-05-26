@@ -18,7 +18,7 @@ const sizeOf = require('image-size');
 const SCREENSHOTS = path.join(__dirname, 'screenshots');
 const OUT = path.join(__dirname, 'UserGuide.docx');
 
-// ─── colour palette ───────────────────────────────────────────────────────────
+// ─── color palette ────────────────────────────────────────────────────────────
 const C = {
   brand:      '0078D4',
   brandDark:  '005A9E',
@@ -210,7 +210,7 @@ function titlePage() {
       spacing: { before: 0, after: 80 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: 'Version 1.0', size: pt(12), color: C.subtle })],
+      children: [new TextRun({ text: 'Version 1.1.0', size: pt(12), color: C.subtle })],
       alignment: AlignmentType.CENTER,
       spacing: { before: 0, after: 40 },
     }),
@@ -241,9 +241,14 @@ function body() {
     buildTable(
       ['Tool', 'Purpose'],
       [
-        ['Permissions Report',    'Generate a full Excel report of every unique permission assignment across a site or the entire tenant'],
-        ['Permissions Explorer',  'Interactively browse a document library and inspect permissions on any folder or file in real time'],
-        ['User Access',           'Look up any user and see every location they can access, with their exact permission level at each location'],
+        ['Permissions Report',       'Generate a full Excel report of every unique permission assignment across a site or the entire tenant'],
+        ['Permissions Explorer',     'Interactively browse a document library and inspect permissions on any folder or file in real time'],
+        ['User Access',              'Look up any user and see every location they can access, with their exact permission level at each location'],
+        ['Permission Groups',        'View all SharePoint groups on the site and their members'],
+        ['External Users',           'Report on all external (#EXT#) accounts that have been granted site access, with a one-click shortcut to check each user\'s full access'],
+        ['Broken Inheritance Finder','Scan the entire site to find every item that has had its permissions explicitly changed from its parent'],
+        ['Sharing Links',            'Browse all sharing links across the site — internal, external, and anonymous (requires Sites.Read.All)'],
+        ['Anonymous Access Summary', 'Enumerate all anonymous and org-wide sharing links across the site (requires Sites.Read.All)'],
       ],
       [0.25, 0.75]
     ),
@@ -267,13 +272,15 @@ function body() {
     spacer(),
     h2('Accessing the Web Part'),
     para('The SharePoint Smart Permissions web part is added to a SharePoint page by a site administrator. Once added, simply navigate to the page where it has been placed.'),
-    para('When you first open the web part, you will see the Home Screen with three options. The web part automatically connects to the current SharePoint site — no configuration is needed to get started.'),
+    para('When you first open the web part, you will see the Home Screen with three main feature cards and a collapsible More tools section. The web part automatically connects to the current SharePoint site — no configuration is needed to get started.'),
     img('01_home.png'),
 
     // ── 4. The Home Screen ────────────────────────────────────────────────────
     h1('The Home Screen'),
     para([
-      run('The home screen is your starting point. It presents the three tools as cards, each with a brief description of its purpose and a button to launch it.'),
+      run('The home screen is your starting point. It presents three main tools as cards, each with a brief description and a button to launch it. Below the cards, a collapsible '),
+      bold('More tools'),
+      run(' section provides access to five additional reports: Permission Groups, External Users, Broken Inheritance Finder, Sharing Links, and Anonymous Access Summary.'),
     ]),
     para([
       run('Click any button to enter that tool. You can always return to the home screen using the '),
@@ -291,7 +298,7 @@ function body() {
     ]),
     para([
       run('Once the scan is complete, you can export the results as a '),
-      bold('colour-coded Excel workbook'),
+      bold('color-coded Excel workbook'),
       run(' that is suitable for sharing with stakeholders or retaining for compliance records.'),
     ]),
     img('02_report_config.png'),
@@ -310,7 +317,7 @@ function body() {
     ),
     spacer(),
     para([bold('Step 3: '), run('If you select '), bold('Folders'), run(', set the '), bold('Folder depth limit'), run(' (1–10 levels deep).')]),
-    para([bold('Step 4: '), run('If you are on the root site and have tenant-wide access, you can enable '), bold('Scan all site collections in this tenant'), run(' to audit the entire organisation.')]),
+    para([bold('Step 4: '), run('If you are on the root site and have tenant-wide access, you can enable '), bold('Scan all site collections in this tenant'), run(' to audit the entire organization.')]),
     para([bold('Step 5: '), run('Click '), bold('Run Report'), run('.')]),
     img('03_report_running.png'),
     para([bold('Step 6: '), run('Wait for the scan to complete. A summary shows the number of objects found and how many have unique permissions.')]),
@@ -351,7 +358,7 @@ function body() {
     para('When you select an item, the right panel shows:'),
     bullet([run('A '), bold('Unique permissions'), run(' badge (orange) if the item has its own permission assignment, or an '), bold('Inherited permissions'), run(' badge (grey) if it inherits from a parent')]),
     bullet('A table of every user and group that has access, their type (User, SP Group, Security Group), and their permission level'),
-    bullet([run('Colour-coded permission badges: '), bold('red'), run(' for Full Control, '), bold('orange'), run(' for Edit/Contribute, '), bold('green'), run(' for Read/View')]),
+    bullet([run('Color-coded permission badges: '), bold('red'), run(' for Full Control, '), bold('orange'), run(' for Edit/Contribute, '), bold('green'), run(' for Read/View')]),
     spacer(),
     h2('Expand Group Members'),
     para([
@@ -407,7 +414,7 @@ function body() {
     ),
     spacer(),
     para([
-      run('Permission level badges use the same colour coding as the Permissions Explorer ('),
+      run('Permission level badges use the same color coding as the Permissions Explorer ('),
       bold('red'),
       run(' = Full Control, '),
       bold('orange'),
@@ -423,7 +430,111 @@ function body() {
     ]),
     img('08_user_access_full_site.png'),
 
-    // ── 8. Settings ───────────────────────────────────────────────────────────
+    // ── 8. More Tools ─────────────────────────────────────────────────────────
+    h1('More Tools'),
+    para([
+      run('The '),
+      bold('More tools'),
+      run(' section on the home screen provides six additional reports, accessible from the collapsible panel below the main feature cards.'),
+    ]),
+
+    // Permission Groups
+    h2('Permission Groups'),
+    h3('What It Does'),
+    para('The Permission Groups tool shows all SharePoint groups defined on the site and lists every member of each group. It is useful for quickly understanding who belongs to the Owners, Members, Visitors, and any custom permission groups.'),
+    h3('How to Use It'),
+    bullet([bold('Step 1: '), run('Click '), bold('Permission Groups'), run(' from the More tools section on the home screen.')]),
+    bullet([bold('Step 2: '), run('The tool automatically loads and displays all SharePoint groups.')]),
+    bullet([bold('Step 3: '), run('Each group shows its name, description, and a list of members with their display names and login names.')]),
+    spacer(),
+    note('Expanding Security groups or M365 groups nested inside a SharePoint group requires the optional GroupMember.Read.All Graph permission.'),
+
+    // External Users
+    h2('External Users'),
+    h3('What It Does'),
+    para([
+      run('The External Users report lists all accounts that SharePoint identifies as external — typically federated users from outside your organization whose login names contain '),
+      run('#EXT#', { font: 'Courier New', size: pt(10) }),
+      run('. For each external user, it shows which SharePoint groups they belong to so you can quickly assess their level of access.'),
+    ]),
+    h3('How to Use It'),
+    bullet([bold('Step 1: '), run('Click '), bold('External Users'), run(' from the More tools section.')]),
+    bullet([bold('Step 2: '), run('Click '), bold('Scan'), run(' to load external users.')]),
+    bullet([bold('Step 3: '), run('Use the filter box to search by name, email, or login name.')]),
+    bullet([bold('Step 4: '), run('Click '), bold('Check Access'), run(' on any row to navigate directly to User Access pre-loaded for that user.')]),
+    bullet([bold('Step 5: '), run('Click '), bold('Export to CSV'), run(' to download the list.')]),
+    spacer(),
+    buildTable(
+      ['Column', 'Description'],
+      [
+        ['Display Name', 'The user\'s full name'],
+        ['Email',        'The user\'s email address'],
+        ['Site Admin',   'Whether the user has site collection administrator rights'],
+        ['Groups',       'SharePoint groups the user belongs to'],
+        ['Actions',      'A Check Access button that launches User Access for this user'],
+      ],
+      [0.25, 0.75]
+    ),
+
+    // Broken Inheritance Finder
+    h2('Broken Inheritance Finder'),
+    h3('What It Does'),
+    para([
+      run('In SharePoint, permissions normally flow down from the site to its libraries, folders, and files. When someone explicitly changes the permissions on a specific item, that item '),
+      italic('breaks inheritance'),
+      run(' — it now has its own unique permission set, separate from its parent. The Broken Inheritance Finder scans the entire site and lists every item where inheritance has been broken.'),
+    ]),
+    h3('How to Use It'),
+    bullet([bold('Step 1: '), run('Click '), bold('Broken Inheritance Finder'), run(' from the More tools section.')]),
+    bullet([bold('Step 2: '), run('Click '), bold('Scan for broken inheritance'), run(' to begin. A progress message and elapsed timer are shown during the scan.')]),
+    bullet([bold('Step 3: '), run('Click '), bold('Cancel'), run(' at any time to stop and see partial results.')]),
+    bullet([bold('Step 4: '), run('Use the '), bold('Type'), run(' filter to narrow results to Libraries, Folders, or Files only.')]),
+    bullet([bold('Step 5: '), run('Click any item name to open it directly in SharePoint.')]),
+    bullet([bold('Step 6: '), run('Click '), bold('Export to CSV'), run(' to download the full results.')]),
+    spacer(),
+    note('Enable Include hidden and system libraries in Settings before scanning if you want to check system libraries such as Style Library and Site Assets.'),
+
+    // Sharing Links
+    h2('Sharing Links'),
+    h3('What It Does'),
+    para('The Sharing Links tool lists all sharing links created across every document library on the site. It shows whether each link is internal-only, organization-wide, or accessible to specific people — giving you a quick view of what has been shared outside the intended audience.'),
+    note('This tool uses the Microsoft Graph API and requires the Sites.Read.All permission to be approved in SharePoint Admin Center → Advanced → API access. If the permission has not been approved, the tool will display a clear message explaining what is needed.'),
+    h3('How to Use It'),
+    bullet([bold('Step 1: '), run('Click '), bold('Sharing Links'), run(' from the More tools section.')]),
+    bullet([bold('Step 2: '), run('Click '), bold('Load sharing links'), run(' to begin the scan.')]),
+    bullet([bold('Step 3: '), run('Results are displayed in a table grouped by library.')]),
+    bullet([bold('Step 4: '), run('Click '), bold('Export to CSV'), run(' to download the full results.')]),
+    spacer(),
+    buildTable(
+      ['Column', 'Description'],
+      [
+        ['Library',    'The document library the link belongs to'],
+        ['Item',       'The specific file or folder the link points to'],
+        ['Scope',      'Anonymous, Organization, or Specific People'],
+        ['Type',       'View or Edit'],
+        ['Shared With','Who the link has been granted to (for Specific People links)'],
+        ['Link URL',   'The full sharing link URL'],
+        ['Expires',    'Expiry date of the link, if one was set'],
+      ],
+      [0.18, 0.82]
+    ),
+
+    // Anonymous Access Summary
+    h2('Anonymous Access Summary'),
+    h3('What It Does'),
+    para('The Anonymous Access Summary enumerates all anonymous and organization-wide sharing links across every document library on the site using the Microsoft Graph API. It provides a count of broad-access links, shows which libraries they belong to, and lists each individual link with its target item and expiry date.'),
+    note('This tool uses the Microsoft Graph API and requires the Sites.Read.All permission to be approved in SharePoint Admin Center → Advanced → API access.'),
+    h3('How to Use It'),
+    bullet([bold('Step 1: '), run('Click '), bold('Anonymous Access Summary'), run(' from the More tools section.')]),
+    bullet([bold('Step 2: '), run('Click '), bold('Scan for anonymous links'), run(' to begin.')]),
+    bullet([bold('Step 3: '), run('Summary statistics appear at the top — total anonymous links, organization-wide links, and specific-person links.')]),
+    bullet([bold('Step 4: '), run('Click '), bold('Export to CSV'), run(' to download the full link details.')]),
+    spacer(),
+    para([bold('Summary cards'), run(' — counts by link type: Anonymous (anyone with the URL), Organization (any signed-in tenant member), and Specific People (named recipients).')]),
+    para([bold('Library summary table'), run(' — one row per library showing the count of broad-access links found.')]),
+    para([bold('Link detail table'), run(' — one row per individual link, with Library, Item, Scope, Type, Shared With, Link URL, and Expires columns.')]),
+
+    // ── 9. Settings ───────────────────────────────────────────────────────────
     h1('Settings'),
     para([
       run('The '),
@@ -558,7 +669,7 @@ function body() {
         ['Scan completes but shows 0 results',            'Insufficient permissions to read library metadata',               'Try enabling Include system and hidden libraries in Settings.'],
         ['"Export to Excel" button is greyed out',        'Scan has not yet completed',                                      'Run the scan first — the export button activates when the scan finishes.'],
         ['The scan hangs on one library',                 'Very large library with thousands of items',                      'Click Cancel and try a narrower scan scope (e.g., Libraries instead of Files & Folders).'],
-        ['"You do not have permission" in browser console', 'Account lacks access to some areas of the site',               'Results for those areas will be omitted. This is expected behaviour — the tool only reports what it can see.'],
+        ['"You do not have permission" in browser console', 'Account lacks access to some areas of the site',               'Results for those areas will be omitted. This is expected behavior — the tool only reports what it can see.'],
       ],
       [0.25, 0.3, 0.45]
     ),

@@ -54,7 +54,7 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       );
     }
 
-    // Read the current SharePoint site theme colour and re-render when it changes.
+    // Read the current SharePoint site theme color and re-render when it changes.
     try {
       const themeProvider = this.context.serviceScope.consume(ThemeProvider.serviceKey);
       const applyTheme = (theme: IReadonlyTheme | undefined): void => {

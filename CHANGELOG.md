@@ -4,15 +4,29 @@ All notable changes to this project are documented here.
 
 ---
 
-## [1.1.0] — 2026-05-13
+## [1.1.0] — 2026-05-26
 
 ### Added
+
+- **Five new tools in a collapsible "More tools" section on the home screen**
+  The home screen retains its three main feature cards and adds a collapsible
+  "More tools" panel with five additional reports:
+  - **Permission Groups** — all SharePoint groups on the site with their members
+  - **External Users** — all external (#EXT#) accounts with group memberships and
+    a per-row "Check Access" shortcut to the User Access report
+  - **Broken Inheritance Finder** — every library, folder, and file with unique permissions
+  - **Sharing Links** — all sharing links by library (requires `Sites.Read.All`)
+  - **Anonymous Access Summary** — anonymous and org-wide links by library (requires `Sites.Read.All`)
+
+- **`Sites.Read.All` Graph permission request**
+  Added to `webApiPermissionRequests` in `package-solution.json` to support the
+  Sharing Links and Anonymous Access Summary tools. Approval is optional — all
+  other tools work without it.
 
 - **Permissions Report — "Access Via" column in Excel export**
   The Excel output now has 8 columns. The new "Access Via" column shows which
   SharePoint group, Security group, or M365 group a user was expanded from, or
-  "Direct" if they were assigned permissions directly. This makes it easy to see
-  both group-level and individual assignments in the same row.
+  "Direct" if they were assigned permissions directly.
 
 - **Permissions Report — Expand Groups works for all scan depths including Site**
   Group expansion (SharePoint groups, Security groups, M365 groups) now runs
@@ -21,57 +35,66 @@ All notable changes to this project are documented here.
 
 - **Settings — dedicated full-page view**
   The settings gear icon now opens a full-page settings screen (with a Back button
-  to return) instead of a floating popover. The settings view contains two sections:
-  "Include system and hidden libraries" (checkbox) and "Default view on load"
-  (instructions for the web part property pane).
+  to return) instead of a floating popover.
 
 - **Web Part Configuration section in documentation**
   New section in the user guide explains how site administrators can use the SharePoint
-  property pane to set a default view (Home, Permissions Report, Permissions Explorer,
-  or User Access) so the web part opens directly on that screen.
+  property pane to set a default view so the web part opens directly on that screen.
 
 ### Fixed
 
+- **`GroupMember.Read.All` not approved — graceful error instead of silent failure**
+  When the optional `GroupMember.Read.All` Graph permission has not been approved,
+  the Permissions Report now shows a warning banner after the scan completes and the
+  Permissions Explorer shows an error message when expanding a group — rather than
+  silently returning empty member lists.
+
+- **`getExternalUsers` — concurrent group expansion and cancellation**
+  Group membership lookups were fired all at once with `Promise.all`, causing
+  throttling (HTTP 429) on sites with more than a handful of external users.
+  Replaced with `runConcurrent` respecting `scanConcurrency`. The `AbortSignal`
+  is now also checked between each lookup so cancellation is immediate.
+
+- **`scanBrokenInheritance` — N+1 API pattern eliminated**
+  Previously called `getLibraries` (no `HasUniqueRoleAssignments` field) followed
+  by a separate `GetList` call per library to check inheritance status. Replaced
+  with a single `lists?$select=...,HasUniqueRoleAssignments` request.
+
+- **`scanBrokenInheritance` — parallel library and subfolder scanning**
+  Libraries and subfolder recursion are now scanned concurrently via `runConcurrent`,
+  matching the pattern used by the Permissions Report and User Access tools.
+
+- **Permissions Report — "External users only" export now filters permission rows**
+  When the "External users only (#ext#)" filter is active and the user exports,
+  the Excel and CSV output contain only the external-user rows within each matching
+  entry. Previously all principals for those entries were included.
+
 - **Permissions Report — stale results persisting after changing scan options**
-  Changing the scan depth, folder depth, site scope, or expand-groups setting
-  while results were already shown left the previous result set visible. Options
-  changes now clear the result panel immediately so the display is never stale.
+  Changing scan depth, folder depth, site scope, or expand-groups while results
+  were shown left the previous result set visible. Options changes now clear the
+  result panel immediately.
 
 - **Web part property — default view not loading on first render**
-  When the "Default view on open" property was set to anything other than Home via
-  the SharePoint property pane, the web part crashed on load with "Cannot read
-  properties of undefined (reading 'getLibraries')". Root cause: `applyTheme()`
-  (inside the theme provider setup) called `this.render()` synchronously before
-  `this._sp` had been assigned. Fixed by moving service initialisation ahead of
-  theme provider setup in `onInit()`.
+  When "Default view on open" was set via the property pane, the web part crashed
+  on load. Root cause: `applyTheme()` called `this.render()` before `this._sp` was
+  assigned. Fixed by moving service initialization ahead of theme provider setup.
 
 - **Settings — site URL field removed**
-  The URL input that appeared in settings was redundant (the URL is already
-  editable via the banner's "Change URL" button) and could confuse users.
+  The URL input in settings was redundant (the URL is editable via the banner's
+  "Change URL" button).
 
 ### Changed
 
 - **Permissions Report — default scan depth changed to "Site only"**
-  The radio group now defaults to "Site only" instead of "Libraries". Site-only is
-  the fastest scope and the most common starting point for an audit; users can
-  switch to a deeper scan when needed.
+  The radio group now defaults to "Site only" instead of "Libraries".
 
 - **Settings — "Default view on open" picker removed**
-  The dropdown for selecting the default view has been removed from the settings
-  panel. This is a deployment-time configuration that belongs in the SharePoint
-  property pane, not a per-session user setting.
+  Moved to the SharePoint property pane where it belongs as a deployment-time setting.
 
-- **Documentation — all screenshots refreshed**
-  All nine documentation screenshots regenerated to reflect the current UI, including
-  the new full-page settings view and the updated report configuration screen.
-
-- **Documentation — UserGuide.docx updated**
-  Word document updated to match the current UserGuide.md: Settings section
-  rewritten (full-page view description), new "Default View on Load" subsection,
-  new "Web Part Configuration" section with property pane walkthrough, Step 4
-  (Expand group members) added to the Permissions Report how-to with steps
-  renumbered, and the Understanding the Results column list updated to reflect
-  the 8-column Excel output (including the new Access Via column).
+- **Documentation updated throughout**
+  README and User Guide updated to cover all tools, the revised home screen layout,
+  both Graph API permissions, and the expanded project structure. All British
+  spellings corrected to American English.
 
 ---
 

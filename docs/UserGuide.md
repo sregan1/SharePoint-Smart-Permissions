@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.0**
+**Version 1.1.0**
 **Applies to:** SharePoint Online
 
 ---
@@ -14,13 +14,19 @@
 5. [Permissions Report](#permissions-report)
 6. [Permissions Explorer](#permissions-explorer)
 7. [User Access](#user-access)
-8. [Settings](#settings)
-9. [Web Part Configuration](#web-part-configuration)
-10. [Changing the Target Site](#changing-the-target-site)
-11. [Security & Privacy](#security--privacy)
-12. [Frequently Asked Questions](#frequently-asked-questions)
-13. [Troubleshooting](#troubleshooting)
-14. [Administrator: Tenant-Wide Provisioning](#administrator-tenant-wide-provisioning)
+8. [More Tools](#more-tools)
+   - [Permission Groups](#permission-groups)
+   - [External Users](#external-users)
+   - [Broken Inheritance Finder](#broken-inheritance-finder)
+   - [Sharing Links](#sharing-links)
+   - [Anonymous Access Summary](#anonymous-access-summary)
+9. [Settings](#settings)
+10. [Web Part Configuration](#web-part-configuration)
+11. [Changing the Target Site](#changing-the-target-site)
+12. [Security & Privacy](#security--privacy)
+13. [Frequently Asked Questions](#frequently-asked-questions)
+14. [Troubleshooting](#troubleshooting)
+15. [Administrator: Tenant-Wide Provisioning](#administrator-tenant-wide-provisioning)
 
 ---
 
@@ -37,6 +43,11 @@ SharePoint's default interface makes it difficult to understand the full picture
 | **Permissions Report** | Generate a full Excel report of every unique permission assignment across a site or the entire tenant |
 | **Permissions Explorer** | Interactively browse a document library and inspect permissions on any folder or file in real time |
 | **User Access** | Look up any user and see every location they can access, with their exact permission level at each location |
+| **Permission Groups** | View all SharePoint groups on the site and their members |
+| **External Users** | Report on all external (#EXT#) accounts that have been granted site access, with a one-click shortcut to check each user's full access |
+| **Broken Inheritance Finder** | Scan the entire site to find every item that has had its permissions explicitly changed from its parent |
+| **Sharing Links** | Browse all sharing links across the site — internal, external, and anonymous |
+| **Anonymous Access Summary** | Enumerate all anonymous and org-wide sharing links across the site |
 
 ---
 
@@ -64,22 +75,30 @@ SharePoint's default interface makes it difficult to understand the full picture
 
 The SharePoint Smart Permissions web part is added to a SharePoint page by a site administrator. Once added, simply navigate to the page where it has been placed.
 
-![The web part home screen showing three feature cards](screenshots/01_home.png)
+![The web part home screen showing the feature cards](screenshots/01_home.png)
 
-When you first open the web part, you will see the **Home Screen** with three options. The web part automatically connects to the current SharePoint site — no configuration is needed to get started.
+When you first open the web part, you will see the **Home Screen** with the main feature cards and a **More tools** section. The web part automatically connects to the current SharePoint site — no configuration is needed to get started.
 
 ---
 
 ## The Home Screen
 
-The home screen is your starting point. A blue brand banner runs across the top, followed by three feature cards — one for each tool — each with a brief description and a launch button.
+The home screen is your starting point. A blue brand banner runs across the top, followed by three main feature cards — one for each primary tool — each with a brief description and a launch button.
 
-![Home screen showing all three feature cards with the brand banner at the top](screenshots/01_home.png)
+![Home screen showing the feature cards with the brand banner at the top](screenshots/01_home.png)
 
-**What you see:**
+**Main feature cards:**
 - **Permissions Report** — for generating exportable audit reports
 - **Permissions Explorer** — for real-time interactive browsing
 - **User Access** — for per-user access lookups
+
+Below the main cards is a collapsible **More tools** section. Click the **More tools** heading to expand or collapse it. The section contains five additional tools presented as compact rows:
+
+- **Permission Groups** — view SharePoint group membership
+- **External Users** — report on #EXT# external accounts with one-click access checks
+- **Broken Inheritance Finder** — find all items with non-inherited permissions
+- **Sharing Links** — browse all sharing links on the site (requires `Sites.Read.All`)
+- **Anonymous Access Summary** — enumerate anonymous and org-wide sharing links (requires `Sites.Read.All`)
 
 Click any button to enter that tool. Use the **Back** button at the top left of any tool screen to return to the home screen.
 
@@ -111,7 +130,7 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 
 3. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
 4. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership. Expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
-5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organisation.
+5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organization.
 6. Click **Run Report**.
 
 ![Report scan in progress showing progress bar, elapsed timer, and item count](screenshots/03_report_running.png)
@@ -127,7 +146,7 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 
 ![Completed report with result summary and Export to Excel button](screenshots/04_report_complete.png)
 
-8. Click **Export to Excel** to download the results as a colour-coded workbook.
+8. Click **Export to Excel** to download the results as a color-coded workbook.
 
 ![Excel workbook downloaded after clicking Export to Excel](screenshots/04b_report_export.png)
 
@@ -232,7 +251,7 @@ The results table shows one row per accessible location:
 | **Path** | Server-relative URL |
 | **Permission Level** | The user's effective role at this location |
 
-Permission level badges use the same colour coding as the Permissions Explorer (red = Full Control, amber = Edit, green = Read).
+Permission level badges use the same color coding as the Permissions Explorer (red = Full Control, amber = Edit, green = Read).
 
 ### Full Site Access
 
@@ -241,6 +260,162 @@ If a user has Full Control or Owner-level access at the site level, the tool det
 ![Full Site Access message shown for an owner-level user](screenshots/08_user_access_full_site.png)
 
 Individual item listing is not shown for owner-level accounts because they can access everything.
+
+---
+
+## More Tools
+
+The **More tools** section on the home screen provides six additional reports. Each is launched from the collapsible row in the home screen and includes a **Back** button to return to the home screen.
+
+---
+
+### Permission Groups
+
+#### What It Does
+
+The Permission Groups tool shows all SharePoint groups defined on the site and lists every member of each group. It is useful for quickly understanding who belongs to the Owners, Members, Visitors, and any custom permission groups.
+
+#### How to Use It
+
+1. Click **Permission Groups** from the More tools section on the home screen.
+2. The tool automatically loads and displays all SharePoint groups.
+3. Each group shows its name, description, and a list of members with their display names and login names.
+
+#### Understanding the Results
+
+Groups are displayed as expandable panels. Each group shows:
+- **Group name** and **description**
+- **Members** — individual accounts or nested groups within each SharePoint group
+
+> **Note:** Expanding Security groups or M365 groups nested inside a SharePoint group requires the optional `GroupMember.Read.All` Graph permission.
+
+---
+
+### External Users
+
+#### What It Does
+
+The External Users report lists all accounts that SharePoint identifies as external — typically federated users from outside your organization whose login names contain `#EXT#`. For each external user, it shows which SharePoint groups they belong to, and provides a one-click shortcut to run a full **User Access** check for that account.
+
+#### How to Use It
+
+1. Click **External Users** from the More tools section on the home screen.
+2. Click **Scan** to load external users.
+3. Use the filter box to search by name, email, or login name.
+4. Click **Check Access** on any row to navigate directly to the User Access tool pre-loaded for that user.
+5. Click **Export to CSV** to download the list.
+
+#### Understanding the Results
+
+| Column | Description |
+|--------|-------------|
+| **Display Name** | The user's full name |
+| **Email** | The user's email address |
+| **Site Admin** | Whether the user has site collection administrator rights |
+| **Groups** | SharePoint groups the user belongs to |
+| **Actions** | A **Check Access** button that launches User Access for this user |
+
+---
+
+### Broken Inheritance Finder
+
+#### What It Does
+
+In SharePoint, permissions normally flow down from the site to its libraries, folders, and files. When someone explicitly changes the permissions on a specific item, that item "breaks inheritance" — it now has its own unique permission set, separate from its parent.
+
+The Broken Inheritance Finder scans the entire site and lists every item where inheritance has been broken. This is the fastest way to identify permission sprawl — places where permissions have been customized individually rather than managed at a higher level.
+
+#### How to Use It
+
+1. Click **Broken Inheritance Finder** from the More tools section on the home screen.
+2. Click **Scan for broken inheritance** to begin.
+3. The tool scans all libraries, folders, and files. A progress message and elapsed timer are shown during the scan.
+4. Click **Cancel** at any time to stop and see partial results.
+5. Use the **Type** filter to narrow results to Libraries, Folders, or Files only.
+6. Click any item name to open it directly in SharePoint.
+7. Click **Export to CSV** to download the full results.
+
+#### Understanding the Results
+
+Each row represents an item that has had its permissions explicitly changed:
+
+| Column | Description |
+|--------|-------------|
+| **Type** | Library, Folder, or File |
+| **Name** | The display name of the item (clickable — opens the item in SharePoint) |
+| **Path** | The server-relative URL of the item |
+
+> **Tip:** Enable **Include hidden and system libraries** in Settings before scanning if you want to check system libraries such as Style Library and Site Assets.
+
+---
+
+### Sharing Links
+
+#### What It Does
+
+The Sharing Links tool lists all sharing links created across every document library on the site. It shows whether each link is internal-only, organization-wide, or accessible to specific people — giving you a quick view of what has been shared outside the intended audience.
+
+> **Requirement:** This tool uses the Microsoft Graph API and requires the `Sites.Read.All` permission to be approved in SharePoint Admin Center → Advanced → API access. If the permission has not been approved, the tool will display a clear message explaining what is needed.
+
+#### How to Use It
+
+1. Click **Sharing Links** from the More tools section on the home screen.
+2. Click **Load sharing links** to begin the scan.
+3. The tool scans all document libraries and retrieves their sharing links.
+4. Results are displayed in a table grouped by library.
+
+#### Understanding the Results
+
+| Column | Description |
+|--------|-------------|
+| **Library** | The document library the link belongs to |
+| **Item** | The specific file or folder the link points to |
+| **Scope** | Anonymous, Organization, or Specific People |
+| **Type** | View or Edit |
+| **Shared With** | Who the link has been granted to (for Specific People links) |
+| **Link URL** | The full sharing link URL |
+| **Expires** | Expiry date of the link, if one was set |
+
+Click **Export to CSV** to download the full results.
+
+---
+
+### Anonymous Access Summary
+
+#### What It Does
+
+The Anonymous Access Summary enumerates all anonymous and organization-wide sharing links across every document library on the site using the Microsoft Graph API. It provides a count of broad-access links, shows which libraries they belong to, and lists each individual link with its target item and expiry date.
+
+> **Requirement:** This tool uses the Microsoft Graph API and requires the `Sites.Read.All` permission to be approved in SharePoint Admin Center → Advanced → API access. If the permission has not been approved, the tool will display a clear message explaining what is needed.
+
+#### How to Use It
+
+1. Click **Anonymous Access Summary** from the More tools section on the home screen.
+2. Click **Scan for anonymous links** to begin.
+3. The tool scans all document libraries for sharing links with broad access.
+4. Summary statistics appear at the top: total anonymous links, organization-wide links, and specific-person links.
+5. Click **Export to CSV** to download the full link details.
+
+#### Understanding the Results
+
+**Summary cards** at the top show counts by link type:
+- **Anonymous** — links accessible to anyone with the URL, no sign-in required
+- **Organization** — links accessible to anyone within your Microsoft 365 tenant
+- **Specific People** — links scoped to named individuals or groups
+
+**Library summary table** — one row per library showing the count of broad-access links found.
+
+**Link detail table** — one row per individual link:
+
+| Column | Description |
+|--------|-------------|
+| **Library** | The library the link belongs to |
+| **Item** | The file or folder the link targets |
+| **Scope** | Anonymous or Organization |
+| **Type** | View or Edit |
+| **Shared With** | Recipient details |
+| **Link URL** | The full sharing link |
+| **Expires** | Expiry date, if set |
 
 ---
 
@@ -273,11 +448,11 @@ The Settings page also shows step-by-step instructions for changing which screen
 
 ## Web Part Configuration
 
-Site administrators can configure the web part's default behaviour through the SharePoint property pane.
+Site administrators can configure the web part's default behavior through the SharePoint property pane.
 
 ### Setting a Default View
 
-By default the web part opens on the **Home** screen. You can change this so it opens directly on one of the three tools — useful when the web part is placed on a dedicated audit page.
+By default the web part opens on the **Home** screen. You can change this so it opens directly on one of the primary tools — useful when the web part is placed on a dedicated audit page.
 
 **To change the default view:**
 
@@ -286,7 +461,7 @@ By default the web part opens on the **Home** screen. You can change this so it 
 3. Click anywhere on the web part, then click the **Edit web part** pencil icon that appears on the web part's left edge.
 4. The property pane opens on the right. Under **General**, locate the **Default view on open** dropdown.
 5. Choose one of:
-   - **Home** — shows the home screen with all three feature cards *(default)*
+   - **Home** — shows the home screen with feature cards and More tools *(default)*
    - **Permissions Report** — opens directly on the report configuration screen
    - **Permissions Explorer** — opens directly on the explorer with library picker
    - **User Access** — opens directly on the user access lookup screen
@@ -430,7 +605,7 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 ### "You do not have permission" errors in the browser console
 
-- Your account does not have sufficient access to some areas of the site. Results for those areas will be omitted. This is expected behaviour — the tool only reports what it can see.
+- Your account does not have sufficient access to some areas of the site. Results for those areas will be omitted. This is expected behavior — the tool only reports what it can see.
 
 ### Some system libraries (Style Library, Form Templates) still appear
 
@@ -441,7 +616,7 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 ## Administrator: Tenant-Wide Provisioning
 
-For organisations that want to make Smart Permissions available on every site collection, the included PowerShell script automates the creation of a **Permissions.aspx** page with the web part pre-added across all sites in the tenant.
+For organizations that want to make Smart Permissions available on every site collection, the included PowerShell script automates the creation of a **Permissions.aspx** page with the web part pre-added across all sites in the tenant.
 
 ### Prerequisites
 

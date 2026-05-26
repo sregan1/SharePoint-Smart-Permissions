@@ -4,8 +4,10 @@ import {
   Checkbox,
   Text,
   Title3,
+  Label,
   Divider,
   Tooltip,
+  SpinButton,
   tokens,
   makeStyles,
 } from '@fluentui/react-components';
@@ -28,6 +30,17 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: tokens.spacingHorizontalS,
   },
+  section: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalS,
+  },
+  hint: {
+    display: 'block',
+    color: tokens.colorNeutralForeground3,
+    marginLeft: '24px',
+    lineHeight: '1.5',
+  },
   instructionList: {
     margin: '8px 0 0 0',
     paddingLeft: '20px',
@@ -38,12 +51,20 @@ const useStyles = makeStyles({
 export interface SettingsViewProps {
   includeHidden: boolean;
   onIncludeHiddenChange: (val: boolean) => void;
+  scanConcurrency: number;
+  onScanConcurrencyChange: (val: number) => void;
+  groupMemberCap: number;
+  onGroupMemberCapChange: (val: number) => void;
   onBack: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   includeHidden,
   onIncludeHiddenChange,
+  scanConcurrency,
+  onScanConcurrencyChange,
+  groupMemberCap,
+  onGroupMemberCapChange,
   onBack,
 }) => {
   const styles = useStyles();
@@ -60,10 +81,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalXL }}>
 
         {/* ── Libraries ── */}
-        <div>
-          <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
-            Libraries
-          </Text>
+        <div className={styles.section}>
+          <Text weight="semibold" style={{ display: 'block' }}>Libraries</Text>
           <div className={styles.row}>
             <Checkbox
               label="Include system and hidden libraries"
@@ -71,7 +90,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               onChange={(_, d) => onIncludeHiddenChange(!!d.checked)}
             />
             <Tooltip
-              content="When checked, includes system and hidden libraries such as Style Library, Form Templates, Site Assets, and others not shown in default views. Applies to Permissions Explorer and User Access."
+              content="When checked, includes Style Library, Form Templates, Site Assets, and other libraries hidden from default views. Applies to all tools."
               relationship="description"
               withArrow
             >
@@ -84,52 +103,97 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               />
             </Tooltip>
           </div>
-          <Text
-            size={200}
-            style={{
-              display: 'block',
-              color: tokens.colorNeutralForeground3,
-              marginTop: tokens.spacingVerticalXS,
-              marginLeft: '24px',
-              lineHeight: '1.5',
-            }}
-          >
-            When checked, includes Style Library, Form Templates, Site Assets, and other libraries
-            hidden from default views. Applies to Permissions Explorer and User Access.
+        </div>
+
+        <Divider />
+
+        {/* ── Performance ── */}
+        <div className={styles.section}>
+          <Text weight="semibold" style={{ display: 'block' }}>Performance</Text>
+
+          <div className={styles.row}>
+            <Label>Concurrent API requests:</Label>
+            <SpinButton
+              value={scanConcurrency}
+              min={1}
+              max={10}
+              onChange={(_, d) =>
+                onScanConcurrencyChange(
+                  d.value !== undefined ? d.value : parseInt(d.displayValue ?? '4', 10),
+                )
+              }
+              style={{ width: '80px' }}
+            />
+            <Tooltip
+              content="How many SharePoint API requests run in parallel during scans. Higher values are faster but more likely to trigger throttling (HTTP 429). 3–5 is recommended."
+              relationship="description"
+              withArrow
+            >
+              <Button
+                appearance="transparent"
+                icon={<Info16Regular />}
+                size="small"
+                style={{ minWidth: 'unset', padding: '2px' }}
+                aria-label="More info about concurrency"
+              />
+            </Tooltip>
+          </div>
+          <Text size={200} className={styles.hint}>
+            Higher values scan faster but may trigger SharePoint throttling. Recommended: 3–5.
+          </Text>
+
+          <div className={styles.row} style={{ marginTop: tokens.spacingVerticalS }}>
+            <Label>Group member display cap:</Label>
+            <SpinButton
+              value={groupMemberCap}
+              min={50}
+              max={5000}
+              step={50}
+              onChange={(_, d) =>
+                onGroupMemberCapChange(
+                  d.value !== undefined ? d.value : parseInt(d.displayValue ?? '500', 10),
+                )
+              }
+              style={{ width: '100px' }}
+            />
+            <Tooltip
+              content="Maximum members shown per group when 'Expand group members' is enabled. Larger groups are capped and a notice is shown. Increasing this uses more memory."
+              relationship="description"
+              withArrow
+            >
+              <Button
+                appearance="transparent"
+                icon={<Info16Regular />}
+                size="small"
+                style={{ minWidth: 'unset', padding: '2px' }}
+                aria-label="More info about group member cap"
+              />
+            </Tooltip>
+          </div>
+          <Text size={200} className={styles.hint}>
+            Groups larger than this limit show a truncation notice. Default: 500.
           </Text>
         </div>
 
         <Divider />
 
         {/* ── Default view instructions ── */}
-        <div>
-          <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
-            Default view on load
-          </Text>
+        <div className={styles.section}>
+          <Text weight="semibold" style={{ display: 'block' }}>Default view on load</Text>
           <Text size={300} style={{ display: 'block', color: tokens.colorNeutralForeground2 }}>
             To change which screen opens when the web part first loads, edit the web part properties:
           </Text>
           <ol className={styles.instructionList}>
-            <li>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>
-                Put the SharePoint page into <strong>Edit</strong> mode.
-              </Text>
-            </li>
-            <li>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>
-                Click the <strong>pencil (edit)</strong> icon on the Smart Permissions web part.
-              </Text>
-            </li>
-            <li>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>
-                In the property panel, choose a view from the <strong>Default view on open</strong> dropdown.
-              </Text>
-            </li>
-            <li>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>
-                <strong>Republish</strong> the page to save the change.
-              </Text>
-            </li>
+            {[
+              <>Put the SharePoint page into <strong>Edit</strong> mode.</>,
+              <>Click the <strong>pencil (edit)</strong> icon on the Smart Permissions web part.</>,
+              <>In the property panel, choose a view from the <strong>Default view on open</strong> dropdown.</>,
+              <><strong>Republish</strong> the page to save the change.</>,
+            ].map((step, i) => (
+              <li key={i}>
+                <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{step}</Text>
+              </li>
+            ))}
           </ol>
         </div>
 

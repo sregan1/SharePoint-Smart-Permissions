@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { PermissionEntry, ObjectType, UserPermissionInfo } from '../models/models';
 
-// Colours matching ExcelExportService.cs
+// Colors matching ExcelExportService.cs
 const COLOR = {
   siteFill: 'FF0078D4',
   libraryFill: 'FF00BCF2',
@@ -64,6 +64,161 @@ function typeFillArgb(t: ObjectType): string {
 }
 
 export class ExcelExportService {
+  async exportUserAccess(
+    entries: PermissionEntry[],
+    siteUrl: string,
+    userDisplayName: string,
+  ): Promise<void> {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('User Access');
+
+    // Title
+    const titleCell = ws.getCell('A1');
+    titleCell.value = `User Access Report — ${userDisplayName}`;
+    titleCell.font = { bold: true, size: 16, color: { argb: COLOR.titleFont } };
+
+    const meta: [string, string][] = [
+      ['Site URL', siteUrl],
+      ['User', userDisplayName],
+      ['Generated', new Date().toLocaleString()],
+      ['Accessible Locations', String(entries.length)],
+    ];
+    meta.forEach(([label, value], i) => {
+      const row = i + 3;
+      ws.getCell(row, 1).value = label;
+      ws.getCell(row, 1).font = { bold: true };
+      ws.getCell(row, 2).value = value;
+    });
+
+    // Headers
+    const headerRow = ws.getRow(8);
+    ['Type', 'Name', 'Path', 'Permission Level'].forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h;
+      cell.fill = argbFill(COLOR.headerFill);
+      cell.font = { bold: true, color: { argb: COLOR.headerFont } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+    headerRow.commit();
+
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 8 }];
+
+    entries.forEach((entry, idx) => {
+      const row = ws.getRow(9 + idx);
+      const typeCell = row.getCell(1);
+      typeCell.value = typeLabel(entry.objectType);
+      typeCell.fill = argbFill(typeFillArgb(entry.objectType));
+      typeCell.font = {
+        bold: true,
+        color: {
+          argb: entry.objectType === ObjectType.Folder ? COLOR.folderTypeFont : COLOR.headerFont,
+        },
+      };
+      typeCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      const nameCell = row.getCell(2);
+      nameCell.value = entry.name;
+      nameCell.alignment = { indent: entry.depth, vertical: 'middle' };
+
+      row.getCell(3).value = entry.serverRelativeUrl;
+      row.getCell(3).alignment = { vertical: 'middle' };
+
+      const roles = entry.uniquePermissions[0]?.roles ?? [];
+      const roleCell = row.getCell(4);
+      roleCell.value = roles.join(', ');
+      roleCell.fill = argbFill(roleColor(roles));
+      roleCell.alignment = { vertical: 'middle' };
+
+      row.commit();
+    });
+
+    ws.getColumn(1).width = 10;
+    ws.getColumn(2).width = 40;
+    ws.getColumn(3).width = 60;
+    ws.getColumn(4).width = 25;
+    ws.autoFilter = { from: 'A8', to: 'D8' };
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer as ArrayBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const ts = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15).replace('.', '');
+    const safeName = userDisplayName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `SP_UserAccess_${safeName}_${ts}.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  // ── CSV exports ───────────────────────────────────────────────────────────
+
+  private csvEscape(v: string | number): string {
+    const s = String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  }
+
+  private downloadCsv(rows: string[][], filename: string): void {
+    const content = rows.map((r) => r.map((c) => this.csvEscape(c)).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  exportPermissionsCsv(entries: PermissionEntry[], siteUrl: string): void {
+    const ts = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15).replace('.', '');
+    const rows: string[][] = [
+      ['Type', 'Path', 'Name', 'Permission Source', 'User / Group', 'Access Via', 'Principal Type', 'Permission Level', 'Site URL'],
+    ];
+    for (const entry of entries) {
+      if (entry.uniquePermissions.length === 0) {
+        rows.push([entry.objectType, entry.serverRelativeUrl, entry.name, entry.hasUniquePermissions ? 'Unique' : 'Inherited', '', '', '', '', siteUrl]);
+      } else {
+        for (const user of entry.uniquePermissions) {
+          rows.push([
+            entry.objectType,
+            entry.serverRelativeUrl,
+            entry.name,
+            entry.hasUniquePermissions ? 'Unique' : 'Inherited',
+            user.displayName,
+            user.sourceGroup ?? 'Direct',
+            friendlyPrincipalType(user.principalType),
+            user.roles.join('; '),
+            siteUrl,
+          ]);
+        }
+      }
+    }
+    this.downloadCsv(rows, `SP_Permissions_${ts}.csv`);
+  }
+
+  exportUserAccessCsv(entries: PermissionEntry[], siteUrl: string, userDisplayName: string): void {
+    const ts = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15).replace('.', '');
+    const safeName = userDisplayName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const rows: string[][] = [['Type', 'Name', 'Path', 'Permission Level']];
+    for (const entry of entries) {
+      rows.push([
+        entry.objectType,
+        entry.name,
+        entry.serverRelativeUrl,
+        (entry.uniquePermissions[0]?.roles ?? []).join('; '),
+      ]);
+    }
+    this.downloadCsv(rows, `SP_UserAccess_${safeName}_${ts}.csv`);
+  }
+
   async export(entries: PermissionEntry[], siteUrl: string): Promise<void> {
     const wb = new ExcelJS.Workbook();
     this.addSummarySheet(wb, entries, siteUrl);
