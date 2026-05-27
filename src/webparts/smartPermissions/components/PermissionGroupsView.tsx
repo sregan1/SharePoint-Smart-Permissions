@@ -28,6 +28,7 @@ const useStyles = makeStyles({
     padding: tokens.spacingVerticalL,
     maxWidth: '900px',
     margin: '0 auto',
+    minHeight: '500px',
   },
   header: {
     display: 'flex',
@@ -92,25 +93,23 @@ function roleBadgeColor(roles: string[]): 'danger' | 'warning' | 'success' | 'in
 interface GroupRowProps {
   group: PermissionGroup;
   styles: ReturnType<typeof useStyles>;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
-const GroupRow: React.FC<GroupRowProps> = ({ group, styles }) => {
-  const [expanded, setExpanded] = React.useState(false);
-
-  const toggle = (): void => setExpanded((v) => !v);
-
+const GroupRow: React.FC<GroupRowProps> = ({ group, styles, expanded, onToggle }) => {
   return (
     <div className={styles.groupCard}>
       <div
         className={styles.groupHeader}
-        onClick={toggle}
+        onClick={onToggle}
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            toggle();
+            onToggle();
           }
         }}
       >
@@ -220,6 +219,7 @@ export const PermissionGroupsView: React.FC<PermissionGroupsViewProps> = ({
   const [error, setError] = React.useState('');
   const [groups, setGroups] = React.useState<PermissionGroup[] | null>(null);
   const [filter, setFilter] = React.useState('');
+  const [expandedIds, setExpandedIds] = React.useState<{ [id: number]: boolean }>({});
   const abortRef = React.useRef<AbortController | null>(null);
 
   const handleLoad = async (): Promise<void> => {
@@ -317,19 +317,36 @@ export const PermissionGroupsView: React.FC<PermissionGroupsViewProps> = ({
             </div>
           ) : (
             <>
-              <Body1
-                style={{
-                  color: tokens.colorNeutralForeground3,
-                  marginBottom: tokens.spacingVerticalS,
-                  display: 'block',
-                }}
-              >
-                {filteredGroups.length} group{filteredGroups.length !== 1 ? 's' : ''}
-                {filter && ` matching "${filter}"`}
-                {' · click a row to expand members'}
-              </Body1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalM, marginBottom: tokens.spacingVerticalS }}>
+                <Body1 style={{ color: tokens.colorNeutralForeground3, flex: 1 }}>
+                  {filteredGroups.length} group{filteredGroups.length !== 1 ? 's' : ''}
+                  {filter && ` matching "${filter}"`}
+                </Body1>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  onClick={() => {
+                    const allExpanded = filteredGroups.every((g) => expandedIds[g.id]);
+                    if (allExpanded) {
+                      setExpandedIds({});
+                    } else {
+                      const next: { [id: number]: boolean } = {};
+                      filteredGroups.forEach((g) => { next[g.id] = true; });
+                      setExpandedIds(next);
+                    }
+                  }}
+                >
+                  {filteredGroups.every((g) => expandedIds[g.id]) ? 'Collapse all' : 'Expand all'}
+                </Button>
+              </div>
               {filteredGroups.map((g) => (
-                <GroupRow key={g.id} group={g} styles={styles} />
+                <GroupRow
+                  key={g.id}
+                  group={g}
+                  styles={styles}
+                  expanded={!!expandedIds[g.id]}
+                  onToggle={() => setExpandedIds((prev) => ({ ...prev, [g.id]: !prev[g.id] }))}
+                />
               ))}
             </>
           )}

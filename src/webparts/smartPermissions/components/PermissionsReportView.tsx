@@ -42,6 +42,7 @@ const useStyles = makeStyles({
     padding: tokens.spacingVerticalL,
     maxWidth: '760px',
     margin: '0 auto',
+    minHeight: '500px',
   },
   header: {
     display: 'flex',

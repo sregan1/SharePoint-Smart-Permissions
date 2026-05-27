@@ -29,6 +29,7 @@ const useStyles = makeStyles({
     padding: tokens.spacingVerticalL,
     maxWidth: '900px',
     margin: '0 auto',
+    minHeight: '500px',
   },
   header: {
     display: 'flex',
@@ -393,6 +394,18 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           Back
         </Button>
         <Title3 style={{ flex: 1 }}>User Access</Title3>
+        {selectedUser && !userAccessBusy && isConnected && (
+          <Button
+            appearance="primary"
+            onClick={() =>
+              handleUserSelect(selectedUser).catch((e) =>
+                console.error('[SmartPermissions] scan again failed:', e),
+              )
+            }
+          >
+            Scan again
+          </Button>
+        )}
         <Button
           appearance="subtle"
           icon={<History24Regular />}
