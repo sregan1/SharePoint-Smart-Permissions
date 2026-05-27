@@ -13,7 +13,6 @@ import {
   Select,
   Tooltip,
   ToggleButton,
-  Divider,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
@@ -716,12 +715,6 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ArrowCircleDown16Regular style={{ color: tokens.colorNeutralForeground3 }} />
                 <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Folder contains unique permissions</Text>
-              </span>
-              <Divider vertical style={{ height: '16px' }} />
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Badge appearance="filled" color="danger" size="small">Full Control</Badge>
-                <Badge appearance="filled" color="warning" size="small">Edit</Badge>
-                <Badge appearance="filled" color="success" size="small">Read</Badge>
               </span>
             </div>
           </div>

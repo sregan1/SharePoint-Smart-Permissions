@@ -1101,8 +1101,9 @@ export class SharePointService {
   ): Promise<SharingLinkEntry[]> {
     const { hostname, pathname } = new URL(siteUrl);
     const sitePath = pathname.replace(/\/$/, ''); // '' for root site, '/sites/mysite' for subsite
-    // Graph hostname:path notation requires a non-empty path; for root sites skip the colon.
-    const graphSite = sitePath ? `${hostname}:${sitePath}` : hostname;
+    // Path notation needs a trailing colon before sub-resources: hostname:/sites/foo:/drives
+    // Root sites use plain hostname notation: hostname/drives
+    const graphSite = sitePath ? `${hostname}:${sitePath}:` : hostname;
     const graphClient: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
 
     onProgress('Loading document libraries…');
@@ -1112,63 +1113,71 @@ export class SharePointService {
       .get();
     const drives: any[] = drivesResp?.value ?? [];
 
+    if (drives.length === 0) return [];
+
+    // ── Phase 1: scan all drives in parallel, collect shared items ────────────
+    // Each drive independently paginates its delta and builds a Map<itemId, item>.
+    type DriveItems = { drive: any; items: Map<string, any> };
+
+    const driveResults = await this.runConcurrent(
+      drives.map((drive) => async (): Promise<DriveItems | undefined> => {
+        const sharedItems: Map<string, any> = new Map();
+        let apiPath: string =
+          `/drives/${drive.id}/root/delta?$select=id,name,webUrl,shared,parentReference`;
+
+        while (apiPath && !signal?.aborted) {
+          const resp = await graphClient.api(apiPath).get();
+          for (const item of (resp?.value ?? []) as any[]) {
+            if (item.shared) sharedItems.set(item.id, item);
+          }
+          const next: string | undefined = resp['@odata.nextLink'];
+          apiPath = next ? next.replace('https://graph.microsoft.com/v1.0', '') : '';
+        }
+
+        onProgress(`${drive.name}: ${sharedItems.size} shared item(s) found`);
+        return { drive, items: sharedItems };
+      }),
+      this.scanConcurrency,
+    );
+
+    // ── Phase 2: fetch permissions for all shared items across all drives ─────
+    // One unified task list so the concurrency budget is shared globally,
+    // not reset per library. O(1) item lookup via the Map from Phase 1.
     const results: SharingLinkEntry[] = [];
 
-    for (const drive of drives) {
-      if (signal?.aborted) break;
-      onProgress(`Scanning library: ${drive.name}`);
+    const permTasks = (driveResults as (DriveItems | undefined)[])
+      .filter((r): r is DriveItems => r !== undefined)
+      .reduce<(() => Promise<undefined>)[]>((acc, { drive, items }) =>
+        acc.concat(Array.from(items.entries()).map(([itemId, item]) => async (): Promise<undefined> => {
+          if (signal?.aborted) return undefined;
+          try {
+            const permResp = await graphClient
+              .api(`/drives/${drive.id}/items/${itemId}/permissions`)
+              .get();
+            for (const perm of (permResp?.value ?? []) as any[]) {
+              if (!perm.link) continue;
+              results.push({
+                name: item.name,
+                webUrl: item.webUrl,
+                libraryName: drive.name,
+                linkScope: perm.link.scope ?? 'unknown',
+                linkType: perm.link.type ?? 'view',
+                linkUrl: perm.link.webUrl ?? '',
+                sharedWith: ((perm.grantedToIdentitiesV2 ?? []) as any[])
+                  .map((g: any) => g.user?.displayName ?? g.group?.displayName ?? '')
+                  .filter(Boolean)
+                  .join(', '),
+                expiresAt: perm.expirationDateTime,
+              });
+            }
+          } catch { /* skip inaccessible items */ }
+          return undefined;
+        })),
+      []);
 
-      // Delta lists every item in the drive, paginated
-      let apiPath: string = `/drives/${drive.id}/root/delta?$select=id,name,webUrl,shared,parentReference`;
-
-      while (apiPath && !signal?.aborted) {
-        const resp = await graphClient.api(apiPath).get();
-        const items: any[] = resp?.value ?? [];
-
-        // Collect IDs of shared items so we can batch-fetch their permissions
-        const sharedIds: string[] = items
-          .filter((item: any) => item.shared)
-          .map((item: any) => item.id);
-
-        await this.runConcurrent(
-          sharedIds.map((itemId) => async () => {
-            if (signal?.aborted) return;
-            const item = items.find((i: any) => i.id === itemId)!;
-            try {
-              const permResp = await graphClient
-                .api(`/drives/${drive.id}/items/${itemId}/permissions`)
-                .get();
-              const perms: any[] = permResp?.value ?? [];
-              for (const perm of perms) {
-                if (!perm.link) continue;
-                results.push({
-                  name: item.name,
-                  webUrl: item.webUrl,
-                  libraryName: drive.name,
-                  linkScope: perm.link.scope ?? 'unknown',
-                  linkType: perm.link.type ?? 'view',
-                  linkUrl: perm.link.webUrl ?? '',
-                  sharedWith: (perm.grantedToIdentitiesV2 ?? [])
-                    .map((g: any) => g.user?.displayName ?? g.group?.displayName ?? '')
-                    .filter(Boolean)
-                    .join(', '),
-                  expiresAt: perm.expirationDateTime,
-                });
-              }
-            } catch { /* skip inaccessible items */ }
-          }),
-          this.scanConcurrency,
-        );
-
-        // Follow @odata.nextLink for pagination; delta uses @odata.deltaLink when done
-        const next = resp['@odata.nextLink'];
-        if (next) {
-          // Strip base URL — Graph client prepends it
-          apiPath = next.replace('https://graph.microsoft.com/v1.0', '');
-        } else {
-          apiPath = '';
-        }
-      }
+    if (permTasks.length > 0) {
+      onProgress(`Fetching permissions for ${permTasks.length} shared item(s)…`);
+      await this.runConcurrent(permTasks, this.scanConcurrency);
     }
 
     return results;

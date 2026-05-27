@@ -174,7 +174,7 @@ export const AnonymousLinksView: React.FC<AnonymousLinksViewProps> = ({ sp, site
       } else {
         const msg = err?.message ?? String(err);
         setError(
-          (isGraphPermissionError(err) || err?.statusCode === 404)
+          isGraphPermissionError(err)
             ? 'Graph API access denied. The Sites.Read.All permission must be approved in the ' +
               'SharePoint Admin Center → Advanced → API access before this report can be used. ' +
               `(Detail: ${msg})`
@@ -276,14 +276,16 @@ export const AnonymousLinksView: React.FC<AnonymousLinksViewProps> = ({ sp, site
         </Button>
       </div>
 
-      {/* Upfront permission requirement notice */}
-      <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
-        <MessageBarBody>
-          <strong>Requires Sites.Read.All</strong> — This report uses the Microsoft Graph API.
-          Before first use, a SharePoint Admin must approve the <em>Sites.Read.All</em> permission in the
-          SharePoint Admin Center → Advanced → API access.
-        </MessageBarBody>
-      </MessageBar>
+      {/* Permission notice — only shown before any scan has returned results */}
+      {links === null && !error && !isBusy && (
+        <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
+          <MessageBarBody>
+            <strong>Requires Sites.Read.All</strong> — This report uses the Microsoft Graph API.
+            Before first use, a SharePoint Admin must approve the <em>Sites.Read.All</em> permission in the
+            SharePoint Admin Center → Advanced → API access.
+          </MessageBarBody>
+        </MessageBar>
+      )}
 
       {(isBusy || progressMsg) && !error && (
         <div className={styles.progressArea}>
@@ -315,8 +317,7 @@ export const AnonymousLinksView: React.FC<AnonymousLinksViewProps> = ({ sp, site
           <Globe24Regular style={{ fontSize: '48px', opacity: 0.4 }} />
           <Text weight="semibold">No sharing links found</Text>
           <Body1>
-            This site has no active sharing links, or the Microsoft Graph API does not have
-            permission to enumerate them. Make sure Sites.Read.All has been approved.
+            This site has no active sharing links. The scan completed successfully with Sites.Read.All access confirmed.
           </Body1>
         </div>
       )}

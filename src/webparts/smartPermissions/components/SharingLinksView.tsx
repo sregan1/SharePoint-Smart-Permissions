@@ -163,7 +163,7 @@ export const SharingLinksView: React.FC<SharingLinksViewProps> = ({ sp, siteUrl,
       } else {
         const msg = err?.message ?? String(err);
         setError(
-          (isGraphPermissionError(err) || err?.statusCode === 404)
+          isGraphPermissionError(err)
             ? 'Graph API access denied. The Sites.Read.All permission must be approved in the ' +
               'SharePoint Admin Center → Advanced → API access before Sharing Links can be used. ' +
               `(Detail: ${msg})`
@@ -281,8 +281,7 @@ export const SharingLinksView: React.FC<SharingLinksViewProps> = ({ sp, siteUrl,
           <Link24Regular style={{ fontSize: '48px', opacity: 0.4 }} />
           <Text weight="semibold">No sharing links found</Text>
           <Body1>
-            This site has no active sharing links, or the Microsoft Graph API does not have
-            permission to enumerate them. Make sure the web part has been granted Sites.Read.All.
+            This site has no active sharing links. The scan completed successfully with Sites.Read.All access confirmed.
           </Body1>
         </div>
       )}

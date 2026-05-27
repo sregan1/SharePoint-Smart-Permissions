@@ -135,7 +135,33 @@ Both permissions are **optional** — all other tools work without them:
 - Without `GroupMember.Read.All`: Security groups and M365 groups cannot be expanded to list individual members. SharePoint group expansion works without it.
 - Without `Sites.Read.All`: The **Sharing Links** and **Anonymous Access Summary** tools will show a permission error.
 
-To enable these features, a SharePoint or Global Administrator must approve the request(s) in **SharePoint Admin Center → Advanced → API access** after the package is deployed.
+To enable these features, a SharePoint or Global Administrator must approve the permission requests after the package is deployed.
+
+**Step 1 — Deploy the package**
+
+Upload the `.sppkg` to the Tenant App Catalog and click **Deploy** when prompted. The *"Make this solution available to all sites"* checkbox controls where the web part can be placed but has no effect on permission approval.
+
+**Step 2 — Check whether the permissions are already approved**
+
+Go to **SharePoint Admin Center → Advanced → API access** (or open `https://<your-tenant>-admin.sharepoint.com/_layouts/15/online/ManageApiPermissions.aspx` directly).
+
+> **What approved SPFx permissions look like:** Once approved, `GroupMember.Read.All` and `Sites.Read.All` appear in the list under **Microsoft Graph** with a blank app name (`—`) and no date — they do *not* show "Smart Permissions" as the app. This is normal. If you see both entries with "Yes" in the consent column, the permissions are active and no further action is needed.
+
+If there are **pending requests** for Smart Permissions, approve them. If you see nothing pending and the permissions described above are already in the list, the web part is fully enabled.
+
+**Option B — PnP PowerShell**
+
+If the Admin Center shows no pending requests and you need to grant the permissions from scratch, use [PnP PowerShell](https://pnp.github.io/powershell/):
+
+```powershell
+Connect-PnPOnline -Url "https://<your-tenant>-admin.sharepoint.com" -Interactive
+
+# List pending requests and note their IDs
+Get-PnPTenantServicePrincipalPermissionRequests
+
+# Approve each request by its ID
+Approve-PnPTenantServicePrincipalPermissionRequest -RequestId "<guid-from-above>"
+```
 
 ---
 
