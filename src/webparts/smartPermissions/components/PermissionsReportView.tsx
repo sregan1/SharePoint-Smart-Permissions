@@ -115,6 +115,7 @@ export interface PermissionsReportViewProps {
   excel: ExcelExportService;
   siteUrl: string;
   includeHidden: boolean;
+  excludeLimitedAccess: boolean;
   onBack: () => void;
 }
 
@@ -123,6 +124,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   excel,
   siteUrl,
   includeHidden,
+  excludeLimitedAccess,
   onBack,
 }) => {
   const styles = useStyles();
@@ -157,13 +159,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       if (filterTypes.indexOf(e.objectType) === -1) return false;
       if (filterUniqueOnly && !e.hasUniquePermissions) return false;
       if (filterExternalOnly && !e.uniquePermissions.some((u) => u.loginName.toLowerCase().indexOf('#ext#') !== -1)) return false;
+      if (excludeLimitedAccess && !e.uniquePermissions.some((u) => u.roles.length > 0)) return false;
       if (!lc) return true;
       if (e.name.toLowerCase().includes(lc)) return true;
       if (e.serverRelativeUrl.toLowerCase().includes(lc)) return true;
       if (e.uniquePermissions.some((u) => u.displayName.toLowerCase().includes(lc))) return true;
       return false;
     });
-  }, [entries, filterText, filterTypes, filterExternalOnly, filterUniqueOnly]);
+  }, [entries, filterText, filterTypes, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
 
   // ── Library picker state ──
   const [availableLibraries, setAvailableLibraries] = React.useState<LibraryInfo[]>([]);

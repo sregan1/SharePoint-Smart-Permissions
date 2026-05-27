@@ -18,6 +18,7 @@ import {
   Person24Regular,
   ChevronRight16Regular,
   ChevronDown16Regular,
+  Link16Regular,
 } from '@fluentui/react-icons';
 
 import { SharePointService } from '../services/SharePointService';
@@ -72,6 +73,10 @@ const useStyles = makeStyles({
   },
 });
 
+function isSharingLinkGroup(title: string): boolean {
+  return /^SharingLinks\./i.test(title);
+}
+
 function roleBadgeColor(roles: string[]): 'danger' | 'warning' | 'success' | 'informative' {
   if (roles.some((r) => r.toLowerCase().includes('full control'))) return 'danger';
   if (
@@ -95,9 +100,11 @@ interface GroupRowProps {
   styles: ReturnType<typeof useStyles>;
   expanded: boolean;
   onToggle: () => void;
+  siteOrigin: string;
 }
 
-const GroupRow: React.FC<GroupRowProps> = ({ group, styles, expanded, onToggle }) => {
+const GroupRow: React.FC<GroupRowProps> = ({ group, styles, expanded, onToggle, siteOrigin }) => {
+  const isSharingLink = isSharingLinkGroup(group.title);
   return (
     <div className={styles.groupCard}>
       <div
@@ -118,9 +125,13 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, styles, expanded, onToggle }
         ) : (
           <ChevronRight16Regular style={{ flexShrink: 0 }} />
         )}
-        <People24Regular style={{ flexShrink: 0, fontSize: '18px' }} />
-        <Text weight="semibold" style={{ flex: 1 }}>
-          {group.title}
+        {isSharingLink ? (
+          <Link16Regular style={{ flexShrink: 0, fontSize: '18px', color: tokens.colorNeutralForeground3 }} />
+        ) : (
+          <People24Regular style={{ flexShrink: 0, fontSize: '18px' }} />
+        )}
+        <Text weight="semibold" style={{ flex: 1, color: isSharingLink ? tokens.colorNeutralForeground2 : undefined }}>
+          {isSharingLink ? 'Sharing link group' : group.title}
         </Text>
         <Text
           size={200}
@@ -149,7 +160,34 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, styles, expanded, onToggle }
 
       {expanded && (
         <div>
-          {group.description && (
+          {isSharingLink && (
+            <div
+              style={{
+                padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalL}`,
+                borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: tokens.spacingHorizontalS,
+              }}
+            >
+              <Text size={200} style={{ color: tokens.colorNeutralForeground3, flexShrink: 0 }}>
+                Associated item:
+              </Text>
+              {group.description ? (
+                <a
+                  href={siteOrigin + group.description}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorBrandForegroundLink, wordBreak: 'break-all' }}
+                >
+                  {group.description}
+                </a>
+              ) : (
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>—</Text>
+              )}
+            </div>
+          )}
+          {!isSharingLink && group.description && (
             <div
               style={{
                 padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalL}`,
@@ -205,15 +243,18 @@ const GroupRow: React.FC<GroupRowProps> = ({ group, styles, expanded, onToggle }
 export interface PermissionGroupsViewProps {
   sp: SharePointService;
   siteUrl: string;
+  excludeLimitedAccess: boolean;
   onBack: () => void;
 }
 
 export const PermissionGroupsView: React.FC<PermissionGroupsViewProps> = ({
   sp,
   siteUrl,
+  excludeLimitedAccess,
   onBack,
 }) => {
   const styles = useStyles();
+  const siteOrigin = React.useMemo(() => { try { return new URL(siteUrl).origin; } catch { return ''; } }, [siteUrl]);
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -245,9 +286,13 @@ export const PermissionGroupsView: React.FC<PermissionGroupsViewProps> = ({
 
   const filteredGroups = React.useMemo(() => {
     if (!groups) return [];
-    if (!filter.trim()) return groups;
+    let result = groups;
+    if (excludeLimitedAccess) {
+      result = result.filter((g) => g.roles.length > 0);
+    }
+    if (!filter.trim()) return result;
     const lc = filter.toLowerCase();
-    return groups.filter(
+    return result.filter(
       (g) =>
         g.title.toLowerCase().includes(lc) ||
         g.description.toLowerCase().includes(lc) ||
@@ -258,7 +303,7 @@ export const PermissionGroupsView: React.FC<PermissionGroupsViewProps> = ({
             m.loginName.toLowerCase().includes(lc),
         ),
     );
-  }, [groups, filter]);
+  }, [groups, filter, excludeLimitedAccess]);
 
   return (
     <div className={styles.root}>
@@ -346,6 +391,7 @@ export const PermissionGroupsView: React.FC<PermissionGroupsViewProps> = ({
                   styles={styles}
                   expanded={!!expandedIds[g.id]}
                   onToggle={() => setExpandedIds((prev) => ({ ...prev, [g.id]: !prev[g.id] }))}
+                  siteOrigin={siteOrigin}
                 />
               ))}
             </>

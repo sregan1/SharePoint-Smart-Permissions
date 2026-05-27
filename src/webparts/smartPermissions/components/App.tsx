@@ -28,10 +28,10 @@ import { SettingsView } from './SettingsView';
 
 export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'sharingLinks' | 'groups' | 'externalUsers' | 'brokenInheritance' | 'anonymousLinks' | 'settings';
 
-const LS_SITE_URL   = 'sp-smart-perms-siteUrl';
-const LS_CONCURRENCY = 'sp-smart-perms-concurrency';
-const LS_GROUP_CAP   = 'sp-smart-perms-groupCap';
-const LS_HIDDEN      = 'sp-smart-perms-includeHidden';
+const LS_CONCURRENCY      = 'sp-smart-perms-concurrency';
+const LS_GROUP_CAP        = 'sp-smart-perms-groupCap';
+const LS_HIDDEN           = 'sp-smart-perms-includeHidden';
+const LS_LIMITED_ACCESS   = 'sp-smart-perms-excludeLimitedAccess';
 
 export interface IBrandColors {
   primary: string;
@@ -149,11 +149,9 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
   const [view, setView] = React.useState<AppView>(defaultView ?? 'home');
   const [prevView, setPrevView] = React.useState<AppView>('home');
 
-  // Restore last-used site URL from localStorage, fall back to current web
+  // Always start from the current site — avoids stale cross-site URL from a previous session
   const defaultUrl = context.pageContext.web.absoluteUrl;
-  const [siteUrl, setSiteUrl] = React.useState(
-    () => localStorage.getItem(LS_SITE_URL) ?? defaultUrl,
-  );
+  const [siteUrl, setSiteUrl] = React.useState(() => defaultUrl);
   const [editUrl, setEditUrl] = React.useState(siteUrl);
   const [isEditing, setIsEditing] = React.useState(false);
 
@@ -167,9 +165,12 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
   const [groupMemberCap, setGroupMemberCap] = React.useState(
     () => parseInt(localStorage.getItem(LS_GROUP_CAP) ?? '500', 10),
   );
+  const [excludeLimitedAccess, setExcludeLimitedAccess] = React.useState(
+    () => localStorage.getItem(LS_LIMITED_ACCESS) === 'true',
+  );
 
-  React.useEffect(() => { localStorage.setItem(LS_SITE_URL, siteUrl); }, [siteUrl]);
   React.useEffect(() => { localStorage.setItem(LS_HIDDEN, String(includeHidden)); }, [includeHidden]);
+  React.useEffect(() => { localStorage.setItem(LS_LIMITED_ACCESS, String(excludeLimitedAccess)); }, [excludeLimitedAccess]);
   React.useEffect(() => {
     localStorage.setItem(LS_CONCURRENCY, String(scanConcurrency));
     sp.scanConcurrency = scanConcurrency;
@@ -326,6 +327,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           excel={excel}
           siteUrl={siteUrl}
           includeHidden={includeHidden}
+          excludeLimitedAccess={excludeLimitedAccess}
           onBack={() => setView('home')}
         />
       )}
@@ -335,6 +337,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           sp={sp}
           siteUrl={siteUrl}
           includeHidden={includeHidden}
+          excludeLimitedAccess={excludeLimitedAccess}
           onBack={() => setView('home')}
           onNavigateToUserAccess={handleNavigateToUserAccess}
         />
@@ -346,6 +349,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           excel={excel}
           siteUrl={siteUrl}
           includeHidden={includeHidden}
+          excludeLimitedAccess={excludeLimitedAccess}
           prefillLogin={userAccessPrefill}
           onPrefillUsed={() => setUserAccessPrefill(undefined)}
           onBack={() => setView('home')}
@@ -364,6 +368,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           key={siteUrl}
           sp={sp}
           siteUrl={siteUrl}
+          excludeLimitedAccess={excludeLimitedAccess}
           onBack={() => setView('home')}
         />
       )}
@@ -397,6 +402,8 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
         <SettingsView
           includeHidden={includeHidden}
           onIncludeHiddenChange={setIncludeHidden}
+          excludeLimitedAccess={excludeLimitedAccess}
+          onExcludeLimitedAccessChange={setExcludeLimitedAccess}
           scanConcurrency={scanConcurrency}
           onScanConcurrencyChange={setScanConcurrency}
           groupMemberCap={groupMemberCap}

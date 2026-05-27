@@ -135,12 +135,13 @@ export interface UserAccessViewProps {
   excel: ExcelExportService;
   siteUrl: string;
   includeHidden: boolean;
+  excludeLimitedAccess: boolean;
   prefillLogin?: string;
   onPrefillUsed?: () => void;
   onBack: () => void;
 }
 
-export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, prefillLogin, onPrefillUsed, onBack }) => {
+export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, excludeLimitedAccess, prefillLogin, onPrefillUsed, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -170,8 +171,13 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const [sortCol, setSortCol] = React.useState<'type' | 'name' | 'path' | 'permission'>('type');
   const [sortAsc, setSortAsc] = React.useState(true);
 
+  const displayAccessItems = React.useMemo(() => {
+    if (!excludeLimitedAccess) return userAccessItems;
+    return userAccessItems.filter((e) => e.uniquePermissions.some((p) => p.roles.length > 0));
+  }, [userAccessItems, excludeLimitedAccess]);
+
   const sortedAccessItems = React.useMemo(() => {
-    return [...userAccessItems].sort((a, b) => {
+    return [...displayAccessItems].sort((a, b) => {
       let va: string, vb: string;
       if (sortCol === 'type') { va = a.objectType; vb = b.objectType; }
       else if (sortCol === 'name') { va = a.name; vb = b.name; }

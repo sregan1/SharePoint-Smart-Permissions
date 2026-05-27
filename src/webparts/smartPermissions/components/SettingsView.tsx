@@ -51,6 +51,8 @@ const useStyles = makeStyles({
 export interface SettingsViewProps {
   includeHidden: boolean;
   onIncludeHiddenChange: (val: boolean) => void;
+  excludeLimitedAccess: boolean;
+  onExcludeLimitedAccessChange: (val: boolean) => void;
   scanConcurrency: number;
   onScanConcurrencyChange: (val: number) => void;
   groupMemberCap: number;
@@ -61,6 +63,8 @@ export interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({
   includeHidden,
   onIncludeHiddenChange,
+  excludeLimitedAccess,
+  onExcludeLimitedAccessChange,
   scanConcurrency,
   onScanConcurrencyChange,
   groupMemberCap,
@@ -100,6 +104,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
                 aria-label="More info about hidden libraries"
+              />
+            </Tooltip>
+          </div>
+          <div className={styles.row}>
+            <Checkbox
+              label="Exclude Limited Access entries"
+              checked={excludeLimitedAccess}
+              onChange={(_, d) => onExcludeLimitedAccessChange(!!d.checked)}
+            />
+            <Tooltip
+              content="Hides users and groups whose only SharePoint permission is Limited Access — automatically assigned when files are shared via links. Applies to Permissions Report, Explorer, and User Access."
+              relationship="description"
+              withArrow
+            >
+              <Button
+                appearance="transparent"
+                icon={<Info16Regular />}
+                size="small"
+                style={{ minWidth: 'unset', padding: '2px' }}
+                aria-label="More info about Limited Access"
               />
             </Tooltip>
           </div>

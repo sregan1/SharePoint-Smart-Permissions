@@ -332,11 +332,12 @@ export interface PermissionsExplorerViewProps {
   sp: SharePointService;
   siteUrl: string;
   includeHidden: boolean;
+  excludeLimitedAccess: boolean;
   onBack: () => void;
   onNavigateToUserAccess?: (loginName: string) => void;
 }
 
-export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, onBack, onNavigateToUserAccess }) => {
+export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, excludeLimitedAccess, onBack, onNavigateToUserAccess }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -805,7 +806,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
                   {/* Unique permissions table */}
                   {!nodeLoading && !nodeError && nodeHasUnique && (
-                    <PermTable users={nodePerms} styles={styles} onCheckAccess={onNavigateToUserAccess} />
+                    <PermTable
+                      users={excludeLimitedAccess ? nodePerms.filter((u) => u.roles.length > 0) : nodePerms}
+                      styles={styles}
+                      onCheckAccess={onNavigateToUserAccess}
+                    />
                   )}
 
                   {/* Parent permissions */}
@@ -836,7 +841,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                               No permissions found on parent.
                             </Body1>
                           ) : (
-                            <PermTable users={parentPerms} styles={styles} onCheckAccess={onNavigateToUserAccess} />
+                            <PermTable
+                            users={excludeLimitedAccess ? parentPerms.filter((u) => u.roles.length > 0) : parentPerms}
+                            styles={styles}
+                            onCheckAccess={onNavigateToUserAccess}
+                          />
                           )}
                         </>
                       )}
