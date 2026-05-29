@@ -38,6 +38,8 @@ export interface FolderFileNode {
   hasChildren: boolean;
   hasUniquePermissions?: boolean;
   hasUniquePermissionsBelow?: boolean;
+  hasExternalUsers?: boolean;
+  hasExternalUsersBelow?: boolean;
   isLoading?: boolean;
   parent?: FolderFileNode;
   children: FolderFileNode[];

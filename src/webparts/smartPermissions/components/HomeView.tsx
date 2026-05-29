@@ -13,14 +13,7 @@ import {
   DataBarVertical24Regular,
   FolderSearch24Regular,
   PersonSearch24Regular,
-  Link24Regular,
-  PeopleTeam24Regular,
-  Person24Regular,
-  BranchFork24Regular,
-  Globe24Regular,
   Checkmark16Filled,
-  ChevronDown20Regular,
-  ChevronUp20Regular,
 } from '@fluentui/react-icons';
 import { AppView } from './App';
 
@@ -92,80 +85,8 @@ const useStyles = makeStyles({
     whiteSpace: 'normal',
     height: 'auto',
   },
-  moreToolsSection: {
-    marginTop: tokens.spacingVerticalXL,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: tokens.borderRadiusMedium,
-    overflow: 'hidden',
-  },
-  moreToolsHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalL}`,
-    cursor: 'pointer',
-    background: tokens.colorNeutralBackground2,
-    ':hover': {
-      background: tokens.colorNeutralBackground3,
-    },
-  },
-  toolRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: tokens.spacingHorizontalM,
-    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalL}`,
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    ':hover': {
-      background: tokens.colorNeutralBackground2,
-    },
-  },
-  toolIcon: {
-    flexShrink: 0,
-    color: tokens.colorBrandForeground1,
-  },
-  toolText: {
-    flexGrow: 1,
-    minWidth: 0,
-  },
 });
 
-const MORE_TOOLS: Array<{
-  view: AppView;
-  icon: React.ReactElement;
-  title: string;
-  description: string;
-}> = [
-  {
-    view: 'groups',
-    icon: <PeopleTeam24Regular />,
-    title: 'Permission Groups',
-    description: 'List all SharePoint permission groups, their site roles, and members.',
-  },
-  {
-    view: 'externalUsers',
-    icon: <Person24Regular />,
-    title: 'External Users',
-    description: 'List external (#ext#) accounts with their group memberships and check their full access with one click.',
-  },
-  {
-    view: 'brokenInheritance',
-    icon: <BranchFork24Regular />,
-    title: 'Broken Inheritance Finder',
-    description: 'Find all libraries, folders, and files that have unique permissions set.',
-  },
-  {
-    view: 'sharingLinks',
-    icon: <Link24Regular />,
-    title: 'Sharing Links',
-    description: 'Enumerate all active sharing links — anonymous, org-wide, and user-specific.',
-  },
-  {
-    view: 'anonymousLinks',
-    icon: <Globe24Regular />,
-    title: 'Anonymous Access Summary',
-    description: 'Summarize anonymous and org-wide sharing links by library.',
-  },
-];
 
 export interface HomeViewProps {
   onNavigate: (view: AppView) => void;
@@ -174,7 +95,6 @@ export interface HomeViewProps {
 
 export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor }) => {
   const styles = useStyles();
-  const [moreExpanded, setMoreExpanded] = React.useState(false);
 
   return (
     <div>
@@ -304,53 +224,6 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor }) 
               Check User Access
             </Button>
           </Card>
-        </div>
-
-        {/* More Tools — collapsible */}
-        <div className={styles.moreToolsSection}>
-          <div
-            className={styles.moreToolsHeader}
-            onClick={() => setMoreExpanded(!moreExpanded)}
-            role="button"
-            tabIndex={0}
-            aria-expanded={moreExpanded}
-            aria-controls="more-tools-list"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMoreExpanded(!moreExpanded); } }}
-          >
-            <Text style={{ fontWeight: tokens.fontWeightSemibold }}>
-              More tools ({MORE_TOOLS.length})
-            </Text>
-            {moreExpanded ? <ChevronUp20Regular /> : <ChevronDown20Regular />}
-          </div>
-
-          {moreExpanded && (
-            <div id="more-tools-list">
-              {MORE_TOOLS.map((tool) => (
-                <div
-                  key={tool.view}
-                  className={styles.toolRow}
-                  onClick={() => onNavigate(tool.view)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={tool.title}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(tool.view); } }}
-                >
-                  <span className={styles.toolIcon}>{tool.icon}</span>
-                  <div className={styles.toolText}>
-                    <Text style={{ fontWeight: tokens.fontWeightSemibold, display: 'block' }}>
-                      {tool.title}
-                    </Text>
-                    <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
-                      {tool.description}
-                    </Body1>
-                  </div>
-                  <Button appearance="subtle" size="small" tabIndex={-1}>
-                    Open
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         <div

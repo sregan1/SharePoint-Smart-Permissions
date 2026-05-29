@@ -4,6 +4,73 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.1.1] — 2026-05-29
+
+### Added
+
+- **Permissions Explorer — automatic external user detection**
+  The Explorer now runs a background scan when a library loads (and again whenever a
+  folder is expanded) that checks every unique-permission node for external accounts.
+  The red warning-person icon appears automatically — no clicking required — within
+  seconds of the library loading. The scan is optimized: inherited nodes are skipped
+  entirely (they require no API call), and each unique-permission node requires only
+  one direct `RoleAssignments` fetch instead of two calls, reducing API traffic by
+  roughly 90% on typical libraries.
+
+- **Permissions Explorer — "External users only" filter now filters the tree**
+  The toggle previously filtered only the permissions table for the selected item.
+  It now filters the entire folder tree, showing only folders and files where external
+  users have access (direct or inherited) and the ancestor path leading to them —
+  mirroring how the "Unique permissions only" filter works.
+
+- **Permissions Explorer — external user email shown in permissions panel**
+  The permissions table now shows the decoded email address of external users (e.g.
+  `john@contoso.com`) beneath their display name. The email is decoded from the
+  SharePoint `#EXT#` login-name format and is only shown when it differs from the
+  display name already shown.
+
+- **Permissions Explorer — down-arrow indicator extended to external users below**
+  The grey down-arrow (↓) icon on a folder previously indicated only that unique
+  permissions existed somewhere below. It now also appears when external user access
+  exists somewhere below. The tooltip is context-aware: it reads "Contains items with
+  unique permissions", "Contains items with external user access", or "Contains items
+  with unique permissions and external user access" depending on what is present.
+  The legend entry is updated to match.
+
+### Fixed
+
+- **Permissions Explorer — level-2 folder icons not appearing without expanding**
+  The library load pre-fetch fetched second-level folder contents for structural
+  inspection but never set `parent` references on the pre-fetched nodes and never
+  called the external-user scan on them. Icons on second-level unique-permission
+  folders now appear at library-load time, not only after the user expands their
+  parent folder. Both `parent` assignment and `scanExternalUsers` are now called
+  inside the pre-fetch callback.
+
+- **Permissions Explorer — warning icon incorrectly shown on inherited folders**
+  The red warning-person icon was appearing on folders that merely inherited external
+  access from an ancestor, not on folders where access was explicitly granted. The
+  icon is now restricted to items where `hasUniquePermissions` is true — the exact
+  location where the external access was assigned — so it serves as a direct action
+  point. Folders that pass through inherited external access show only the down-arrow
+  indicator instead.
+
+- **Permissions Explorer — external user access propagated to inherited descendants**
+  When a unique-permission item is found to have external users during the scan, all
+  already-loaded descendant folders that inherit (no unique permissions of their own)
+  are now marked immediately. This ensures the "External users only" tree filter and
+  the down-arrow indicator are correct even before the user expands those folders.
+
+### Removed
+
+- **Five secondary tools removed from the home screen**
+  The collapsible "More tools" panel and its five reports — Permission Groups,
+  External Users, Broken Inheritance Finder, Sharing Links, and Anonymous Access
+  Summary — have been removed. The home screen returns to the original three-tool
+  layout: Permissions Report, Permissions Explorer, and User Access.
+
+---
+
 ## [1.1.0] — 2026-05-26
 
 ### Added

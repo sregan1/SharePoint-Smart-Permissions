@@ -376,37 +376,6 @@ function homeHTML() {
         <button class="btn-primary" style="width:100%;justify-content:center;padding:9px 0;margin-top:4px">${c.btn}</button>
       </div>`).join('')}
     </div>
-    <div style="border:1px solid ${T.border};border-radius:${T.radiusLg};overflow:hidden;margin-bottom:24px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:${T.bg}">
-        <span style="font-weight:600;font-size:14px">More tools (5)</span>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M7 14l5-5 5 5H7z"/></svg>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid ${T.border}">
-        <span style="color:${T.brand};flex-shrink:0">${icons.people}</span>
-        <div style="flex-grow:1;min-width:0"><span style="font-weight:600;font-size:13px;display:block">Permission Groups</span><span style="font-size:12px;color:${T.textSubtle}">List all SharePoint permission groups, their site roles, and members.</span></div>
-        <button class="btn-secondary" style="font-size:12px;padding:4px 12px;flex-shrink:0">Open</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid ${T.border}">
-        <span style="color:${T.brand};flex-shrink:0">${icons.person}</span>
-        <div style="flex-grow:1;min-width:0"><span style="font-weight:600;font-size:13px;display:block">External Users</span><span style="font-size:12px;color:${T.textSubtle}">List external (#ext#) accounts with their group memberships and check their full access with one click.</span></div>
-        <button class="btn-secondary" style="font-size:12px;padding:4px 12px;flex-shrink:0">Open</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid ${T.border}">
-        <span style="color:${T.brand};flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${T.brand}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><line x1="6" y1="8" x2="6" y2="16"/><path d="M8 6h6a4 4 0 0 1 4 4v2"/></svg></span>
-        <div style="flex-grow:1;min-width:0"><span style="font-weight:600;font-size:13px;display:block">Broken Inheritance Finder</span><span style="font-size:12px;color:${T.textSubtle}">Find all libraries, folders, and files that have unique permissions set.</span></div>
-        <button class="btn-secondary" style="font-size:12px;padding:4px 12px;flex-shrink:0">Open</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid ${T.border}">
-        <span style="color:${T.brand};flex-shrink:0">${icons.link}</span>
-        <div style="flex-grow:1;min-width:0"><span style="font-weight:600;font-size:13px;display:block">Sharing Links</span><span style="font-size:12px;color:${T.textSubtle}">Enumerate all active sharing links — anonymous, org-wide, and user-specific.</span></div>
-        <button class="btn-secondary" style="font-size:12px;padding:4px 12px;flex-shrink:0">Open</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid ${T.border}">
-        <span style="color:${T.brand};flex-shrink:0">${icons.globe}</span>
-        <div style="flex-grow:1;min-width:0"><span style="font-weight:600;font-size:13px;display:block">Anonymous Access Summary</span><span style="font-size:12px;color:${T.textSubtle}">Summarize anonymous and org-wide sharing links by library.</span></div>
-        <button class="btn-secondary" style="font-size:12px;padding:4px 12px;flex-shrink:0">Open</button>
-      </div>
-    </div>
     <div style="padding:12px 14px;background:${T.bg};border-radius:${T.radius}">
       <p style="font-size:12px;color:${T.textSubtle};line-height:1.5">
         <strong>Note:</strong> This web part runs as the currently signed-in user. It can only see sites and items that user has permission to view. For a full tenant scan, use an account with appropriate read access across all sites.
@@ -671,6 +640,20 @@ function reportExportHTML() {
       <button class="btn-primary" style="font-size:14px;padding:8px 20px;gap:8px">
         ${icons.docArrow} Export to Excel
       </button>
+    </div>
+
+    <!-- Filter row -->
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;max-width:680px;margin-bottom:16px">
+      <input type="text" placeholder="Filter by name, path, or user/group…"
+        style="border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:13px;flex:1;min-width:180px;max-width:300px;color:${T.textSubtle}"/>
+      <div class="checkbox-row" style="margin:0">
+        <span class="checkbox-box"></span>
+        <span style="font-size:13px">Unique permissions only</span>
+      </div>
+      <div class="checkbox-row" style="margin:0">
+        <span class="checkbox-box"></span>
+        <span style="font-size:13px">External users only (#ext#)</span>
+      </div>
     </div>
 
     <!-- Preview table of unique items -->
@@ -949,17 +932,61 @@ function settingsHTML() {
     <div class="title" style="margin-bottom:24px">Settings</div>
 
     <!-- Libraries section -->
-    <div style="margin-bottom:24px">
+    <div style="margin-bottom:16px">
       <div style="font-weight:600;font-size:14px;margin-bottom:10px">Libraries</div>
       <div class="checkbox-row" style="margin-bottom:6px">
         <span class="checkbox-box checked"></span>
         <label style="font-size:13px">Include system and hidden libraries</label>
         <span style="margin-left:2px">${icons.info}</span>
       </div>
-      <p style="font-size:12px;color:${T.textSubtle};margin-left:24px;line-height:1.5">
+      <p style="font-size:12px;color:${T.textSubtle};margin-left:24px;line-height:1.5;margin-bottom:10px">
         When checked, includes Style Library, Form Templates, Site Assets, and other libraries hidden
-        from default views. Applies to Permissions Explorer and User Access.
+        from default views. Applies to all tools.
       </p>
+      <div class="checkbox-row" style="margin-bottom:6px">
+        <span class="checkbox-box"></span>
+        <label style="font-size:13px">Exclude Limited Access entries</label>
+        <span style="margin-left:2px">${icons.info}</span>
+      </div>
+      <p style="font-size:12px;color:${T.textSubtle};margin-left:24px;line-height:1.5">
+        Hides users and groups whose only SharePoint permission is Limited Access — automatically
+        assigned when files are shared via links. Applies to Permissions Report, Explorer, and User Access.
+      </p>
+    </div>
+
+    <hr class="divider" style="margin:20px 0"/>
+
+    <!-- Performance section -->
+    <div style="margin-bottom:24px">
+      <div style="font-weight:600;font-size:14px;margin-bottom:10px">Performance</div>
+      <div style="margin-bottom:14px">
+        <span class="form-label" style="margin-bottom:6px">Concurrent API requests</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="spinbutton">
+            <input value="4" readonly style="width:44px"/>
+            <button>▲</button>
+            <button style="border-left:1px solid ${T.border}">▼</button>
+          </div>
+          <span style="margin-left:2px">${icons.info}</span>
+        </div>
+        <p style="font-size:12px;color:${T.textSubtle};margin-top:4px;line-height:1.5">
+          Higher values scan faster but may trigger SharePoint throttling. Recommended: 3–5.
+        </p>
+      </div>
+      <div>
+        <span class="form-label" style="margin-bottom:6px">Group member display cap</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="spinbutton">
+            <input value="500" readonly style="width:56px"/>
+            <button>▲</button>
+            <button style="border-left:1px solid ${T.border}">▼</button>
+          </div>
+          <span style="margin-left:2px">${icons.info}</span>
+        </div>
+        <p style="font-size:12px;color:${T.textSubtle};margin-top:4px;line-height:1.5">
+          Groups larger than this limit show a truncation notice. Default: 500.
+        </p>
+      </div>
     </div>
 
     <hr class="divider" style="margin:20px 0"/>

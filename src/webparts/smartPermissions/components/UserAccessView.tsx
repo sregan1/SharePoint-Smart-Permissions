@@ -97,6 +97,21 @@ const useStyles = makeStyles({
   },
 });
 
+// ── System account filter ─────────────────────────────────────────────────────
+
+function isSystemAccount(u: SiteUserInfo): boolean {
+  const ln = u.loginName.toLowerCase();
+  return (
+    ln.startsWith('sharepoint\\') ||
+    ln.startsWith('nt authority\\') ||
+    ln.startsWith('c:0(.s|') ||
+    ln.startsWith('c:0!.s|') ||
+    ln.indexOf('spsearch') !== -1 ||
+    ln.indexOf('spapp') !== -1 ||
+    u.displayName === 'System Account'
+  );
+}
+
 // ── Role badge color ──────────────────────────────────────────────────────────
 
 function roleBadgeColor(
@@ -176,18 +191,36 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     return userAccessItems.filter((e) => e.uniquePermissions.some((p) => p.roles.length > 0));
   }, [userAccessItems, excludeLimitedAccess]);
 
+  const TYPE_ORDER: Record<string, number> = {
+    [ObjectType.Site]: 0,
+    [ObjectType.Library]: 1,
+    [ObjectType.Folder]: 2,
+    [ObjectType.File]: 3,
+  };
+
   const sortedAccessItems = React.useMemo(() => {
     return [...displayAccessItems].sort((a, b) => {
-      let va: string, vb: string;
-      if (sortCol === 'type') { va = a.objectType; vb = b.objectType; }
-      else if (sortCol === 'name') { va = a.name; vb = b.name; }
-      else if (sortCol === 'path') { va = a.serverRelativeUrl; vb = b.serverRelativeUrl; }
-      else { va = (a.uniquePermissions[0]?.roles ?? []).join(','); vb = (b.uniquePermissions[0]?.roles ?? []).join(','); }
-      if (va < vb) return sortAsc ? -1 : 1;
-      if (va > vb) return sortAsc ? 1 : -1;
-      return 0;
+      let diff = 0;
+      if (sortCol === 'type') {
+        diff = (TYPE_ORDER[a.objectType] ?? 4) - (TYPE_ORDER[b.objectType] ?? 4);
+      } else if (sortCol === 'name') {
+        const va = a.name, vb = b.name;
+        diff = va < vb ? -1 : va > vb ? 1 : 0;
+      } else if (sortCol === 'path') {
+        const va = a.serverRelativeUrl, vb = b.serverRelativeUrl;
+        diff = va < vb ? -1 : va > vb ? 1 : 0;
+      } else {
+        const va = (a.uniquePermissions[0]?.roles ?? []).join(',');
+        const vb = (b.uniquePermissions[0]?.roles ?? []).join(',');
+        diff = va < vb ? -1 : va > vb ? 1 : 0;
+      }
+      if (diff !== 0) return sortAsc ? diff : -diff;
+      // Secondary sort: Site → Library → Folder → File, then by path
+      const typeDiff = (TYPE_ORDER[a.objectType] ?? 4) - (TYPE_ORDER[b.objectType] ?? 4);
+      if (typeDiff !== 0) return typeDiff;
+      return a.serverRelativeUrl.localeCompare(b.serverRelativeUrl);
     });
-  }, [userAccessItems, sortCol, sortAsc]);
+  }, [displayAccessItems, sortCol, sortAsc]);
 
   const handleSort = (col: typeof sortCol): void => {
     if (sortCol === col) { setSortAsc((v) => !v); } else { setSortCol(col); setSortAsc(true); }
@@ -283,7 +316,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     setUserAccessStatus('');
 
     try {
-      const users = await sp.getSiteUsers(siteUrl.trim(), abortRef.current.signal);
+      const rawUsers = await sp.getSiteUsers(siteUrl.trim(), abortRef.current.signal);
+      const users = rawUsers.filter((u) => !isSystemAccount(u));
       setSiteUsers(users);
       setIsConnected(true);
       setConnectStatus(`Connected — ${users.length} user${users.length === 1 ? '' : 's'} found`);

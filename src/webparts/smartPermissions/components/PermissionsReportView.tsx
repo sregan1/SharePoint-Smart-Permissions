@@ -35,7 +35,6 @@ import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportHistoryService } from '../services/ReportHistoryService';
 import { ReportOptions, ReportScope, PermissionEntry, ObjectType, ScanProgress, StoredReport, LibraryInfo } from '../models/models';
 
-const ALL_OBJECT_TYPES: ObjectType[] = [ObjectType.Site, ObjectType.Library, ObjectType.Folder, ObjectType.File];
 
 const useStyles = makeStyles({
   root: {
@@ -148,7 +147,6 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
   // ── Filter state ──
   const [filterText, setFilterText] = React.useState('');
-  const [filterTypes, setFilterTypes] = React.useState<ObjectType[]>(ALL_OBJECT_TYPES);
   const [filterExternalOnly, setFilterExternalOnly] = React.useState(false);
   const [filterUniqueOnly, setFilterUniqueOnly] = React.useState(false);
 
@@ -156,7 +154,6 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     if (!entries) return null;
     const lc = filterText.toLowerCase();
     return entries.filter((e) => {
-      if (filterTypes.indexOf(e.objectType) === -1) return false;
       if (filterUniqueOnly && !e.hasUniquePermissions) return false;
       if (filterExternalOnly && !e.uniquePermissions.some((u) => u.loginName.toLowerCase().indexOf('#ext#') !== -1)) return false;
       if (excludeLimitedAccess && !e.uniquePermissions.some((u) => u.roles.length > 0)) return false;
@@ -166,7 +163,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       if (e.uniquePermissions.some((u) => u.displayName.toLowerCase().includes(lc))) return true;
       return false;
     });
-  }, [entries, filterText, filterTypes, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
 
   // ── Library picker state ──
   const [availableLibraries, setAvailableLibraries] = React.useState<LibraryInfo[]>([]);
@@ -271,7 +268,6 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     setError('');
     setEntries(null);
     setFilterText('');
-    setFilterTypes(ALL_OBJECT_TYPES);
     setFilterExternalOnly(false);
     setFilterUniqueOnly(false);
     setLiveCount(0);
@@ -730,20 +726,6 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               aria-label="Filter results"
             />
             <div className={styles.row}>
-              {ALL_OBJECT_TYPES.map((t) => (
-                <Checkbox
-                  key={t}
-                  label={t}
-                  checked={filterTypes.indexOf(t) !== -1}
-                  onChange={(_, d) =>
-                    setFilterTypes((prev) =>
-                      d.checked ? [...prev, t] : prev.filter((x) => x !== t),
-                    )
-                  }
-                />
-              ))}
-            </div>
-            <div className={styles.row}>
               <Checkbox
                 label="Unique permissions only"
                 checked={filterUniqueOnly}
@@ -754,7 +736,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 checked={filterExternalOnly}
                 onChange={(_, d) => setFilterExternalOnly(!!d.checked)}
               />
-              {(filterText || filterTypes.length < ALL_OBJECT_TYPES.length || filterExternalOnly || filterUniqueOnly) && (
+              {(filterText || filterExternalOnly || filterUniqueOnly) && (
                 <Body1 style={{ color: tokens.colorNeutralForeground3, marginLeft: 'auto' }}>
                   Showing {filteredEntries?.length ?? 0} of {entries.length}
                 </Body1>

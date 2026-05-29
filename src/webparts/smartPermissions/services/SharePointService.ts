@@ -634,6 +634,30 @@ export class SharePointService {
     }
   }
 
+  // Checks a single tree node for external users without re-fetching HasUniqueRoleAssignments
+  // (already known from the tree). Returns false immediately for inherited nodes.
+  async scanNodeForExternalUsers(
+    siteUrl: string,
+    node: FolderFileNode,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (!node.hasUniquePermissions || signal?.aborted) return false;
+    const enc = odata(node.serverRelativeUrl);
+    const base = node.isFolder
+      ? `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${enc}')/ListItemAllFields`
+      : `${siteUrl}/_api/web/GetFileByServerRelativeUrl('${enc}')/ListItemAllFields`;
+    try {
+      const raData = await this.getJson(
+        `${base}/RoleAssignments?$expand=Member&$select=Member/LoginName`,
+      );
+      return valueArray(raData).some((ra: any) =>
+        (ra.Member?.LoginName ?? '').toLowerCase().includes('#ext#'),
+      );
+    } catch {
+      return false;
+    }
+  }
+
   async getParentPermissions(
     siteUrl: string,
     serverRelativeUrl: string,
@@ -788,7 +812,7 @@ export class SharePointService {
     }
   }
 
-  private async runConcurrent<T>(
+  public async runConcurrent<T>(
     tasks: (() => Promise<T | undefined>)[],
     concurrency = 5,
   ): Promise<(T | undefined)[]> {
@@ -826,7 +850,9 @@ export class SharePointService {
       );
       userTitle = userData.Title ?? userLoginName;
       const groups = valueArray(userData.Groups);
-      groupLogins = new Set(groups.map((g: any) => g.LoginName as string));
+      // Normalize to lowercase — role-assignment member logins can differ in case
+      // from user-groups logins depending on the SharePoint REST endpoint used.
+      groupLogins = new Set(groups.map((g: any) => (g.LoginName as string).toLowerCase()));
     } catch { /* proceed without groups */ }
 
     // ── Site roles ──
@@ -911,8 +937,17 @@ export class SharePointService {
         r.toLowerCase().includes('owner'),
     );
 
+    // Full Site Access banner — owners have Full Control everywhere when no
+    // library breaks inheritance. If some do, scan to verify actual access.
     if (isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
       return { fullSiteAccess: true, items: siteEntry ? [siteEntry] : [] };
+    }
+
+    // Member/Visitor with site-level access and no broken-inheritance libraries —
+    // all content is accessible via site inheritance; no scan needed.
+    const hasSiteAccess = siteRoles.length > 0;
+    if (hasSiteAccess && !isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
+      return { fullSiteAccess: false, items: siteEntry ? [siteEntry] : [] };
     }
 
     const items: PermissionEntry[] = siteEntry ? [siteEntry] : [];
@@ -1404,7 +1439,7 @@ export class SharePointService {
       const memberLogin: string = ra.Member?.LoginName ?? '';
       const match =
         memberLogin.toLowerCase() === userLogin.toLowerCase() ||
-        groupLogins.has(memberLogin);
+        groupLogins.has(memberLogin.toLowerCase());
       if (match) {
         for (const rb of rdbArray(ra.RoleDefinitionBindings)) {
           roles.add(rb.Name);

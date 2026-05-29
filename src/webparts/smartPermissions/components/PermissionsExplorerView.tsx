@@ -27,6 +27,7 @@ import {
   ArrowCircleDown16Regular,
   Link16Regular,
   PersonSearch16Regular,
+  PersonWarning16Regular,
   Filter16Regular,
 } from '@fluentui/react-icons';
 
@@ -127,6 +128,37 @@ const useStyles = makeStyles({
   },
 });
 
+// ── External user helpers ─────────────────────────────────────────────────────
+
+function isExternalUser(u: UserPermissionInfo): boolean {
+  return u.loginName.toLowerCase().indexOf('#ext#') !== -1;
+}
+
+// Extract the email from a SharePoint #EXT# login name.
+// Format: [claims-prefix|]localpart_domain.tld#EXT#@tenant.onmicrosoft.com
+// The last underscore before #EXT# is the @ in the original email address.
+function externalUserEmail(loginName: string): string {
+  const extIdx = loginName.toLowerCase().indexOf('#ext#');
+  if (extIdx === -1) return '';
+  let local = loginName.substring(0, extIdx);
+  const pipeIdx = local.lastIndexOf('|');
+  if (pipeIdx >= 0) local = local.substring(pipeIdx + 1);
+  const lastUnderscore = local.lastIndexOf('_');
+  if (lastUnderscore === -1) return local;
+  return `${local.substring(0, lastUnderscore)}@${local.substring(lastUnderscore + 1)}`;
+}
+
+function applyPermFilters(
+  users: UserPermissionInfo[],
+  excludeLimited: boolean,
+  extOnly: boolean,
+): UserPermissionInfo[] {
+  let result = users;
+  if (excludeLimited) result = result.filter((u) => u.roles.length > 0);
+  if (extOnly) result = result.filter(isExternalUser);
+  return result;
+}
+
 // ── Role badge color ──────────────────────────────────────────────────────────
 
 function roleBadgeColor(
@@ -180,11 +212,21 @@ const PermTable: React.FC<PermTableProps> = ({ users, styles, onCheckAccess }) =
             ) : (
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 {u.principalType === 'User' ? (
-                  <Person24Regular style={{ fontSize: '14px' }} />
+                  <Person24Regular style={{ fontSize: '14px', flexShrink: 0 }} />
                 ) : (
-                  <People24Regular style={{ fontSize: '14px' }} />
+                  <People24Regular style={{ fontSize: '14px', flexShrink: 0 }} />
                 )}
-                {u.displayName || u.loginName}
+                <span>
+                  <span>{u.displayName || u.loginName}</span>
+                  {isExternalUser(u) && (() => {
+                    const email = externalUserEmail(u.loginName);
+                    return email && email !== u.displayName ? (
+                      <div style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 }}>
+                        {email}
+                      </div>
+                    ) : null;
+                  })()}
+                </span>
               </span>
             )}
           </td>
@@ -239,6 +281,8 @@ interface TreeNodeProps {
   onSelect: (node: FolderFileNode) => void;
   onLoadChildren: (node: FolderFileNode) => void;
   showUniqueOnly: boolean;
+  filterExternalOnly: boolean;
+  externalAccessUrls: Set<string>;
 }
 
 const TreeNode: React.FC<TreeNodeProps> = ({
@@ -248,6 +292,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   onSelect,
   onLoadChildren,
   showUniqueOnly,
+  filterExternalOnly,
+  externalAccessUrls,
 }) => {
   const styles = useStyles();
   const [expanded, setExpanded] = React.useState(false);
@@ -292,8 +338,17 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           {node.name}
         </Text>
 
-        {node.hasUniquePermissionsBelow && (
-          <Tooltip content="Contains items with unique permissions" relationship="label">
+        {(node.hasUniquePermissionsBelow || node.hasExternalUsersBelow) && (
+          <Tooltip
+            content={
+              node.hasUniquePermissionsBelow && node.hasExternalUsersBelow
+                ? 'Contains items with unique permissions and external user access'
+                : node.hasExternalUsersBelow
+                ? 'Contains items with external user access'
+                : 'Contains items with unique permissions'
+            }
+            relationship="label"
+          >
             <ArrowCircleDown16Regular
               style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }}
             />
@@ -304,13 +359,23 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             Unique
           </Badge>
         )}
+        {node.hasUniquePermissions && (node.hasExternalUsers || externalAccessUrls.has(node.serverRelativeUrl)) && (
+          <Tooltip content="External user access detected" relationship="label">
+            <PersonWarning16Regular
+              style={{ flexShrink: 0, color: tokens.colorPaletteRedForeground1 }}
+            />
+          </Tooltip>
+        )}
         {node.isLoading && (
           <Spinner size="extra-tiny" style={{ flexShrink: 0 }} />
         )}
       </div>
 
       {expanded && node.children
-        .filter((c) => !showUniqueOnly || c.hasUniquePermissions || c.hasUniquePermissionsBelow)
+        .filter((c) =>
+          (!showUniqueOnly || c.hasUniquePermissions || c.hasUniquePermissionsBelow) &&
+          (!filterExternalOnly || c.hasExternalUsers || c.hasExternalUsersBelow)
+        )
         .map((child) => (
           <TreeNode
             key={child.serverRelativeUrl}
@@ -320,6 +385,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             onSelect={onSelect}
             onLoadChildren={onLoadChildren}
             showUniqueOnly={showUniqueOnly}
+            filterExternalOnly={filterExternalOnly}
+            externalAccessUrls={externalAccessUrls}
           />
         ))}
     </div>
@@ -353,6 +420,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const [selectedLibrary, setSelectedLibrary] = React.useState('');
   const [rootNodes, setRootNodes] = React.useState<FolderFileNode[]>([]);
   const [showUniqueOnly, setShowUniqueOnly] = React.useState(false);
+  const [filterExternalOnly, setFilterExternalOnly] = React.useState(false);
+  const [externalAccessUrls, setExternalAccessUrls] = React.useState<Set<string>>(new Set());
   const [treeStatus, setTreeStatus] = React.useState('');
   const [selectedNode, setSelectedNode] = React.useState<FolderFileNode | null>(null);
   const [nodePerms, setNodePerms] = React.useState<UserPermissionInfo[]>([]);
@@ -414,6 +483,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setTreeStatus('');
     setSelectedNode(null);
     setNodePerms([]);
+    setExternalAccessUrls(new Set());
     rawNodePermsRef.current = [];
     rawParentPermsRef.current = null;
     groupMemberCacheRef.current.clear();
@@ -428,6 +498,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       setRootNodes(nodes);
       if (nodes.length === 0) setTreeStatus('This library is empty.');
 
+      // Background scan for external users on root-level nodes.
+      scanExternalUsers(nodes);
+
       // Pre-fetch one level deep for each root folder to detect hasUniquePermissionsBelow
       // at load time rather than requiring the user to expand each folder first.
       // Results are stored in folderCacheRef so expanding a folder skips the API call.
@@ -435,11 +508,16 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       nodes.filter((n) => n.isFolder).forEach((folder) => {
         sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, signal)
           .then((children) => {
+            // Set parent now so propagation works correctly when the external-user scan fires.
+            children.forEach((c) => { c.parent = folder; });
             folderCacheRef.current.set(folder.serverRelativeUrl, children);
             if (children.some((c) => c.hasUniquePermissions)) {
               folder.hasUniquePermissionsBelow = true;
               setRootNodes((prev) => [...prev]);
             }
+            // Scan pre-fetched children so icons appear at library-load time,
+            // not only after the user expands the folder.
+            scanExternalUsers(children);
           })
           .catch(() => { /* ignore prefetch errors */ });
       });
@@ -477,6 +555,34 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       if (children.some((c) => c.hasUniquePermissions)) {
         propagateUniqueBelow(node);
       }
+
+      // If this folder has external user access, inherited children share that access.
+      if (node.hasExternalUsers) {
+        for (const child of children) {
+          if (!child.hasUniquePermissions) child.hasExternalUsers = true;
+        }
+      }
+
+      // Background scan for external users on newly loaded children.
+      scanExternalUsers(children);
+
+      // Pre-fetch one level deeper for each folder child so their icons are ready
+      // before the user expands them — same pattern used in loadLibrary for depth-0.
+      const prefetchSignal = abortRef.current?.signal;
+      children.filter((c) => c.isFolder && c.hasChildren).forEach((folder) => {
+        if (folderCacheRef.current.has(folder.serverRelativeUrl)) return;
+        sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, prefetchSignal)
+          .then((grandchildren) => {
+            grandchildren.forEach((gc) => { gc.parent = folder; });
+            folderCacheRef.current.set(folder.serverRelativeUrl, grandchildren);
+            if (grandchildren.some((gc) => gc.hasUniquePermissions)) {
+              propagateUniqueBelow(folder);
+              setRootNodes((prev) => [...prev]);
+            }
+            scanExternalUsers(grandchildren);
+          })
+          .catch(() => { /* ignore */ });
+      });
     } catch {
       node.children = [
         {
@@ -497,6 +603,42 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const propagateUniqueBelow = (node: FolderFileNode): void => {
     node.hasUniquePermissionsBelow = true;
     if (node.parent) propagateUniqueBelow(node.parent);
+  };
+
+  const propagateExternalBelow = (node: FolderFileNode): void => {
+    node.hasExternalUsersBelow = true;
+    if (node.parent) propagateExternalBelow(node.parent);
+  };
+
+  // Propagate external-user access DOWN through already-loaded descendants.
+  // Stops at unique-permission boundaries — those have their own scope and are scanned separately.
+  const propagateExternalDown = (node: FolderFileNode): void => {
+    for (const child of node.children) {
+      if (!child.hasUniquePermissions) {
+        child.hasExternalUsers = true;
+        propagateExternalDown(child);
+      }
+    }
+  };
+
+  // Background scan: checks only unique-permission nodes (inherited ones are skipped — no API
+  // call needed). Uses one direct RoleAssignments fetch per node instead of two calls.
+  const scanExternalUsers = (nodes: FolderFileNode[]): void => {
+    const uniqueNodes = nodes.filter((n) => n.hasUniquePermissions);
+    if (!uniqueNodes.length) return;
+    const tasks = uniqueNodes.map((node) => async (): Promise<undefined> => {
+      if (abortRef.current?.signal.aborted) return undefined;
+      const hasExt = await sp.scanNodeForExternalUsers(siteUrl, node, abortRef.current?.signal);
+      if (hasExt) {
+        node.hasExternalUsers = true;
+        if (node.parent) propagateExternalBelow(node.parent);
+        propagateExternalDown(node);  // mark already-loaded descendants that inherit
+        setExternalAccessUrls((prev) => { const next = new Set(Array.from(prev)); next.add(node.serverRelativeUrl); return next; });
+        setRootNodes((prev) => [...prev]);
+      }
+      return undefined;
+    });
+    sp.runConcurrent(tasks, sp.scanConcurrency).catch(() => { /* ignore — background scan */ });
   };
 
   // ── Expand groups helper ──────────────────────────────────────────────────
@@ -555,6 +697,13 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         abortRef.current?.signal,
       );
       rawNodePermsRef.current = users;
+      if (users.some(isExternalUser)) {
+        setExternalAccessUrls((prev) => {
+          const next = new Set(Array.from(prev));
+          next.add(node.serverRelativeUrl);
+          return next;
+        });
+      }
       setNodeHasUnique(hasUnique);
       setNodePerms(await withGroupExpansion(users));
       if (!hasUnique && keepParentPerms) {
@@ -697,17 +846,26 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
             </Field>
           </div>
 
-          {/* Unique-only toggle + icon legend */}
+          {/* Toggles + icon legend */}
           <div style={{ marginBottom: tokens.spacingVerticalM, display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalXS }}>
-            <ToggleButton
-              size="small"
-              checked={showUniqueOnly}
-              onClick={() => setShowUniqueOnly((prev) => !prev)}
-              icon={<Filter16Regular />}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              Unique permissions only
-            </ToggleButton>
+            <div style={{ display: 'flex', gap: tokens.spacingHorizontalS, flexWrap: 'wrap' }}>
+              <ToggleButton
+                size="small"
+                checked={showUniqueOnly}
+                onClick={() => setShowUniqueOnly((prev) => !prev)}
+                icon={<Filter16Regular />}
+              >
+                Unique permissions only
+              </ToggleButton>
+              <ToggleButton
+                size="small"
+                checked={filterExternalOnly}
+                onClick={() => setFilterExternalOnly((prev) => !prev)}
+                icon={<PersonWarning16Regular />}
+              >
+                External users only
+              </ToggleButton>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalL, flexWrap: 'wrap' }}>
               <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Legend:</Text>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -716,7 +874,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ArrowCircleDown16Regular style={{ color: tokens.colorNeutralForeground3 }} />
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Folder contains unique permissions</Text>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Folder contains items with unique permissions or external user access</Text>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <PersonWarning16Regular style={{ color: tokens.colorPaletteRedForeground1 }} />
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>External user access granted on this item</Text>
               </span>
             </div>
           </div>
@@ -730,7 +892,10 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                 </Body1>
               )}
               {rootNodes
-                .filter((node) => !showUniqueOnly || node.hasUniquePermissions || node.hasUniquePermissionsBelow)
+                .filter((node) =>
+                  (!showUniqueOnly || node.hasUniquePermissions || node.hasUniquePermissionsBelow) &&
+                  (!filterExternalOnly || node.hasExternalUsers || node.hasExternalUsersBelow)
+                )
                 .map((node) => (
                   <TreeNode
                     key={node.serverRelativeUrl}
@@ -740,6 +905,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     onSelect={handleSelectNode}
                     onLoadChildren={loadChildren}
                     showUniqueOnly={showUniqueOnly}
+                    filterExternalOnly={filterExternalOnly}
+                    externalAccessUrls={externalAccessUrls}
                   />
                 ))}
             </div>
@@ -806,11 +973,18 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
                   {/* Unique permissions table */}
                   {!nodeLoading && !nodeError && nodeHasUnique && (
-                    <PermTable
-                      users={excludeLimitedAccess ? nodePerms.filter((u) => u.roles.length > 0) : nodePerms}
-                      styles={styles}
-                      onCheckAccess={onNavigateToUserAccess}
-                    />
+                    applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly).length === 0 && filterExternalOnly
+                      ? (
+                        <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+                          No external users have direct access to this item.
+                        </Body1>
+                      ) : (
+                        <PermTable
+                          users={applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly)}
+                          styles={styles}
+                          onCheckAccess={onNavigateToUserAccess}
+                        />
+                      )
                   )}
 
                   {/* Parent permissions */}
@@ -842,7 +1016,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                             </Body1>
                           ) : (
                             <PermTable
-                            users={excludeLimitedAccess ? parentPerms.filter((u) => u.roles.length > 0) : parentPerms}
+                            users={applyPermFilters(parentPerms, excludeLimitedAccess, filterExternalOnly)}
                             styles={styles}
                             onCheckAccess={onNavigateToUserAccess}
                           />
