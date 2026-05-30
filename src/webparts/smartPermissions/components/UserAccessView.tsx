@@ -191,6 +191,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     return userAccessItems.filter((e) => e.uniquePermissions.some((p) => p.roles.length > 0));
   }, [userAccessItems, excludeLimitedAccess]);
 
+  const hasSiteEntry = userAccessItems.some((i) => i.objectType === ObjectType.Site);
+
   const TYPE_ORDER: Record<string, number> = {
     [ObjectType.Site]: 0,
     [ObjectType.Library]: 1,
@@ -644,6 +646,16 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 Export to CSV
               </Button>
             </div>
+          )}
+          {!userAccessBusy && hasSiteEntry && !isFullSiteAccess && (
+            <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
+              <MessageBarBody>
+                This user has site-level access. Only locations with{' '}
+                <strong>unique permission assignments</strong> appear below — all other
+                content is accessible through the site-level permission shown at the top
+                of the list.
+              </MessageBarBody>
+            </MessageBar>
           )}
           {!userAccessBusy && userAccessItems.length > 0 && (
             <table className={styles.accessTable} aria-label="User access results">
