@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.1.1**
+**Version 1.2.0**
 **Applies to:** SharePoint Online
 
 ---
@@ -194,18 +194,20 @@ For items that **inherit** permissions, check **Show parent permissions** to imm
 
 ### Finding Items of Interest Quickly
 
-Two visual cues in the tree help you navigate directly to security-relevant items without expanding every folder manually:
+Visual indicators in the tree help you navigate to security-relevant items without expanding every folder manually:
 
 - **Amber "Unique" badge** — the item itself has unique permissions
-- **Down-arrow (↓) icon** — the folder contains items with unique permissions, external user access, or both somewhere below it
+- **Circle arrow-down** — the folder contains items with unique permissions below
+- **Triangle arrow-down** — the folder contains items with external user access below
+- **Circle and triangle arrow-down together** — the folder contains items with both unique permissions and external user access below
 
-Hover over the down-arrow to see a tooltip describing exactly what is present below.
+Hover over any arrow icon to see a tooltip describing what is present below.
 
 ### External User Detection
 
 As soon as a library loads, the Explorer runs a **background scan** that checks every item with unique permissions for external accounts. No clicking is required — the warning icons appear automatically within a few seconds of the library loading, and continue to appear as you expand folders.
 
-A **red warning-person icon** on a tree node means the item has **unique permissions** that explicitly grant access to an external account. Folders that merely inherit external access from an ancestor show only the down-arrow (↓) — the warning icon is reserved for the location where access was actually granted, so you can act on it directly.
+A **red warning-person icon** on a tree node means the item has **unique permissions** that explicitly grant access to an external account. Folders that contain external-access items somewhere below them show a triangle arrow-down icon; folders with both external access and unique-permission items below show the circle and triangle icons together — the warning icon is reserved for the location where access was actually granted, so you can act on it directly.
 
 When you click an item and the permissions panel opens, external users show both their **display name** and their **decoded email address** (extracted from the SharePoint `#EXT#` login format) so you can identify them at a glance.
 
@@ -222,6 +224,22 @@ When active:
 
 Toggle it off to return to the full tree view.
 
+### Permission Limitations for Members
+
+The Permissions Explorer runs as the signed-in user and can only read what that user has access to. Reading **role assignments** (who has what permission on an item) requires the **Manage Permissions** right, which site owners and administrators have but regular members typically do not.
+
+If your account does not have Manage Permissions, a blue information banner appears when the library loads:
+
+> *"Some permission details are not visible — reading role assignments requires the Manage Permissions right (site owner or higher). External user indicators and permission tables may be incomplete for your account."*
+
+In this state:
+- The folder and file tree loads normally
+- Unique vs. inherited permission badges still appear where detectable
+- External user warning icons and permission tables are unavailable
+- No data is missing silently — the banner tells you exactly what is limited
+
+To see the full picture, use an account with Site Owner or Site Collection Administrator access.
+
 ### Tree Legend
 
 A legend below the toolbar explains the visual indicators:
@@ -229,7 +247,9 @@ A legend below the toolbar explains the visual indicators:
 | Indicator | Meaning |
 |-----------|---------|
 | Amber **Unique** badge | Item has unique permissions |
-| Down-arrow ↓ icon | Folder contains items with unique permissions or external user access below |
+| **Circle** arrow-down | Folder contains items with unique permissions below |
+| **Triangle** arrow-down | Folder contains items with external user access below |
+| **Circle and triangle** arrow-down together | Folder contains items with both unique permissions and external user access below |
 | Red warning-person icon | External user access is explicitly granted on this item (unique permissions) |
 
 ---
@@ -246,16 +266,26 @@ User Access answers the question: *"What can this specific person actually see?"
 
 1. Click **Check User Access** from the home screen.
 2. The web part loads the list of users on the site.
-3. Select a user from the **Select a user** dropdown. The scan begins automatically.
+3. Start typing in the **Select a user** search box to filter by name or email address, then select the user from the dropdown. The scan begins automatically once a user is selected.
 4. A progress bar, elapsed timer, and status message show the scan's progress.
 
 ![User Access scan in progress with progress bar, elapsed time, and cancel button](screenshots/06_user_access_scanning.png)
 
 5. Once complete, a table shows every location the user can access.
+6. A **New scan** button appears in the header — click it to clear the results and select a different user.
 
 ### Cancelling a Scan
 
 Because User Access scans every folder and file on the site, it can take several minutes on large sites. Click the **Cancel** button while the scan is running to stop it and see partial results.
+
+### Exporting Results
+
+Two export formats are available once a scan completes:
+
+- **Export to Excel** — a color-coded `.xlsx` workbook suitable for sharing with stakeholders or retaining for compliance records
+- **Export to CSV** — a plain comma-separated file compatible with any spreadsheet or data tool
+
+Both buttons appear in the top-right of the results area.
 
 ### Understanding the Results
 
@@ -268,7 +298,20 @@ The results table shows one row per accessible location:
 | **Path** | Server-relative URL |
 | **Permission Level** | The user's effective role at this location |
 
+Click any column header to sort the table by that column; click again to reverse the order. On very large sites the table paginates at 200 rows — click **Load more** to show additional results.
+
 Permission level badges use the same color coding as the Permissions Explorer (red = Full Control, amber = Edit, green = Read).
+
+When a user has site-level access, an information banner appears explaining that only locations with **unique permission assignments** are listed — all other content is accessible through the site-level permission shown at the top of the list.
+
+### Scan History
+
+Every completed scan is saved automatically to a local history log stored in your browser. Click the **History** button in the header to open the history panel, which shows a table of past scans with the date, user, site, and accessible location count. From the history panel you can:
+
+- **Export** any past scan to Excel without re-running it
+- **Delete** individual records from the log
+
+History is stored in the browser's IndexedDB and persists across sessions on the same device and browser.
 
 ### Full Site Access
 

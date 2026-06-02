@@ -4,6 +4,66 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.2.0] — 2026-06-02
+
+### Added
+
+- **User Access — site permission shown for M365 Group members**
+  Users who access a site through a Microsoft 365 Group (rather than through a classic
+  SharePoint group) now correctly see a site-level permission entry. The scan uses a
+  three-tier detection approach: SP group membership via SharePoint REST, M365 Group
+  membership via the site's `GroupId` and `AssociatedOwnerGroup`/`AssociatedMemberGroup`
+  properties, and Graph `transitiveMemberOf` as a final fallback. This resolves a long-
+  standing gap where M365-connected sites showed only folder and file permissions with no
+  site-level entry for members.
+
+- **User Access — highest permission shown when in multiple groups**
+  When a user is a member of both the Owners and Members M365 Group, the site permission
+  now reflects the most permissive role (Full Control) rather than the lower one (Edit).
+  Owner status is checked via `GET /groups/{id}/owners/{userId}` before falling back to
+  member-level roles.
+
+- **Permissions Explorer — permission-denied banner for member accounts**
+  Reading role assignments in SharePoint Online requires the Manage Permissions right,
+  which site owners have but regular members typically do not. The Explorer previously
+  showed nothing when role-assignment reads failed with HTTP 403 — the view looked
+  identical to an empty site. A blue informational banner now appears when this condition
+  is detected, explaining that external user indicators and permission tables may be
+  incomplete for the current account.
+
+- **User Access — "New scan" replaces "Scan again"**
+  The "Scan again" button previously re-ran the scan for the same user. It now clears the
+  results and returns to the user picker so a different user can be selected.
+
+### Fixed
+
+- **User Access — "Web-Only Limited Access" no longer shown as site permission**
+  SharePoint auto-assigns "Web-Only Limited Access" (and "Limited Access") to users when
+  they are granted item-level access without explicit site-level access. Both are now
+  treated as system-assigned pass-through roles and filtered from all results, alongside
+  any role definition whose name begins with `System.`.
+
+- **User Access — site permission missing for M365-backed SharePoint groups**
+  Sites using classic SharePoint groups ("Team Members", "Team Owners") whose members are
+  managed via an M365 Group now correctly detect membership. The detection uses
+  `sitegroups/getbyid(groupId)/users?$filter=LoginName eq '...'` rather than
+  `getbyloginname`, which returned HTTP 404 because `Member.LoginName` in role assignments
+  is the group display name, not its internal login name.
+
+- **Scan in-progress text simplified**
+  The lengthy "This scan may take several minutes depending on the size of the site."
+  message during a User Access scan has been replaced with "Scanning…".
+
+### Changed
+
+- **Permissions Explorer — three distinct folder indicator icons**
+  Folders now use three shapes to indicate what lies below: a **circle** arrow-down for
+  unique permissions, a **triangle** arrow-down for external user access, and both icons
+  side-by-side when a folder contains both. Previously a single icon covered all three
+  cases.
+
+---
+
 ## [1.1.1] — 2026-05-29
 
 ### Added

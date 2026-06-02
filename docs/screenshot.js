@@ -268,6 +268,8 @@ const icons = {
   chevronDown: `<svg width="12" height="12" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M7 10l5 5 5-5H7z"/></svg>`,
   chevronRight:`<svg width="12" height="12" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M10 17l5-5-5-5v10z"/></svg>`,
   arrowCircleDown:`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="${T.textSubtle}" stroke-width="2"/><path d="M12 8v8M8.5 13.5L12 17l3.5-3.5" stroke="${T.textSubtle}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  arrowTriangleDown:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="${T.textSubtle}" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6v4M6 8.5L8 10.5L10 8.5" stroke="${T.textSubtle}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  arrowCircleAndTriangleDown:`<svg width="28" height="14" viewBox="0 0 30 16" fill="none"><circle cx="7" cy="8" r="5.5" stroke="${T.textSubtle}" stroke-width="1.5"/><path d="M7 5v5M5.5 8.5L7 10L8.5 8.5" stroke="${T.textSubtle}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2L29 14H15L22 2Z" stroke="${T.textSubtle}" stroke-width="1.5" stroke-linejoin="round"/><path d="M22 6v5M20.5 9L22 10.5L23.5 9" stroke="${T.textSubtle}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check:       `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.brand}"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>`,
   person:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
   people:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`,
@@ -278,6 +280,8 @@ const icons = {
   spinner:     `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="${T.border}" stroke-width="3"/><path d="M12 3a9 9 0 0 1 9 9" stroke="${T.brand}" stroke-width="3" stroke-linecap="round"/></svg>`,
   link:        `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.brand}"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.71-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>`,
   globe:       `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>`,
+  personWarn:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-7 1.34-7 4v1h12v-1c0-2.66-4.33-4-5-4H9z" fill="${T.textSubtle}"/><path d="M19 14l-3.5 6h7L19 14zm-.5 2.5h1v2h-1v-2zm0 2.8h1v1h-1v-1z" fill="${T.red}"/></svg>`,
+  filterIcon:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>`,
   bookDb:      `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>`,
   folderIcon:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>`,
   folderOpen:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/></svg>`,
@@ -687,11 +691,42 @@ function explorerHTML() {
       <span style="font-size:12px;color:${T.brand}">Connected — 4 libraries found</span>
     </div>
 
-    <div class="form-row" style="margin-bottom:16px;margin-top:12px">
+    <div class="form-row" style="margin-bottom:12px;margin-top:12px">
       <span class="form-label">Library</span>
       <select style="border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:13px;max-width:320px;color:${T.text}">
         <option>Campaign Documents</option>
       </select>
+    </div>
+
+    <!-- Toggle filters + legend -->
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button style="display:inline-flex;align-items:center;gap:6px;background:white;border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:12px;cursor:pointer;color:${T.text}">
+          ${icons.filterIcon} Unique permissions only
+        </button>
+        <button style="display:inline-flex;align-items:center;gap:6px;background:white;border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:12px;cursor:pointer;color:${T.text}">
+          ${icons.personWarn} External users only
+        </button>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <span style="font-size:11px;color:${T.textSubtle}">Legend:</span>
+        <span style="display:flex;align-items:center;gap:4px">
+          <span class="badge badge-warning" style="font-size:10px">Unique</span>
+          <span style="font-size:11px;color:${T.textSubtle}">Item has unique permissions</span>
+        </span>
+        <span style="display:flex;align-items:center;gap:4px">
+          ${icons.arrowCircleDown}
+          <span style="font-size:11px;color:${T.textSubtle}">Contains unique permissions below</span>
+        </span>
+        <span style="display:flex;align-items:center;gap:4px">
+          ${icons.arrowTriangleDown}
+          <span style="font-size:11px;color:${T.textSubtle}">Contains external user access below</span>
+        </span>
+        <span style="display:flex;align-items:center;gap:4px">
+          ${icons.personWarn}
+          <span style="font-size:11px;color:${T.textSubtle}">External user access on this item</span>
+        </span>
+      </div>
     </div>
 
     <div class="two-col">
@@ -699,16 +734,19 @@ function explorerHTML() {
       <div class="tree-panel">
         <div class="tree-item">
           ${icons.chevronDown}${icons.folder}
-          <span>Campaign Documents</span>
+          <span style="flex:1">Campaign Documents</span>
+          <span title="Contains items with unique permissions and external user access">${icons.arrowCircleAndTriangleDown}</span>
         </div>
         <div class="tree-indent">
-          <div class="tree-item">
+          <div class="tree-item selected">
             ${icons.chevronDown}${icons.folder}
             <span style="flex:1">Q4 Launch</span>
+            <span title="Contains items with unique permissions and external user access">${icons.arrowCircleAndTriangleDown}</span>
             <span class="badge badge-warning" style="font-size:10px">Unique</span>
+            ${icons.personWarn}
           </div>
           <div class="tree-indent">
-            <div class="tree-item selected">
+            <div class="tree-item">
               ${icons.chevronRight}${icons.folder}
               <span style="flex:1">Assets</span>
               <span title="Contains items with unique permissions">${icons.arrowCircleDown}</span>
@@ -721,6 +759,7 @@ function explorerHTML() {
               ${icons.file}
               <span style="flex:1">Budget_Confidential.xlsx</span>
               <span class="badge badge-warning" style="font-size:10px">Unique</span>
+              ${icons.personWarn}
             </div>
           </div>
           <div class="tree-item">
@@ -738,8 +777,8 @@ function explorerHTML() {
       <div class="perm-panel">
         <!-- Item name + badge -->
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <span style="font-weight:600;font-size:14px">Assets</span>
-          <span class="badge badge-info">Inherited</span>
+          <span style="font-weight:600;font-size:14px">Q4 Launch</span>
+          <span class="badge badge-warning">Unique permissions</span>
         </div>
 
         <!-- Options bar — always at top -->
@@ -748,51 +787,46 @@ function explorerHTML() {
             <span class="checkbox-box"></span>
             <span>Expand group members</span>
           </div>
-          <div class="checkbox-row">
-            <span class="checkbox-box checked"></span>
-            <span>Show parent permissions</span>
-          </div>
         </div>
 
-        <!-- Inherited banner -->
-        <div class="inherited-banner">
-          ${icons.link}
-          <span>This item inherits permissions from its parent.</span>
-        </div>
-
-        <!-- Parent perms label -->
-        <p style="font-size:12px;color:${T.textSubtle};margin-bottom:8px">Inherited from: <strong>Q4 Launch</strong></p>
-
-        <!-- Parent permissions table -->
+        <!-- Unique permissions table -->
         <table>
           <thead>
-            <tr><th>User / Group</th><th>Type</th><th>Permission Level</th></tr>
+            <tr><th>User / Group</th><th>Type</th><th>Permission Level</th><th></th></tr>
           </thead>
           <tbody>
             <tr>
               <td style="display:flex;align-items:center;gap:6px">${icons.people}<span>Marketing Owners</span></td>
               <td><span style="font-size:12px;color:${T.textSubtle}">SP Group</span></td>
               <td><span class="badge badge-danger">Full Control</span></td>
+              <td></td>
             </tr>
             <tr>
               <td style="display:flex;align-items:center;gap:6px">${icons.people}<span>Marketing Members</span></td>
               <td><span style="font-size:12px;color:${T.textSubtle}">SP Group</span></td>
               <td><span class="badge badge-warning">Edit</span></td>
+              <td></td>
             </tr>
             <tr>
-              <td style="display:flex;align-items:center;gap:6px">${icons.person}<span>Carol White</span></td>
+              <td style="display:flex;align-items:center;gap:6px">${icons.person}
+                <span>
+                  <div>Alex Thompson</div>
+                  <div style="font-size:11px;color:${T.textSubtle}">alex@externalpartner.com</div>
+                </span>
+              </td>
               <td><span style="font-size:12px;color:${T.textSubtle}">User</span></td>
-              <td><span class="badge badge-warning">Edit</span></td>
+              <td><span class="badge badge-success">Read</span></td>
+              <td>
+                <button style="background:transparent;border:none;cursor:pointer;padding:2px 4px;border-radius:${T.radius};display:flex;align-items:center" title="Check access for Alex Thompson">
+                  ${icons.person}
+                </button>
+              </td>
             </tr>
             <tr>
               <td style="display:flex;align-items:center;gap:6px">${icons.people}<span>Marketing Visitors</span></td>
               <td><span style="font-size:12px;color:${T.textSubtle}">SP Group</span></td>
               <td><span class="badge badge-success">Read</span></td>
-            </tr>
-            <tr>
-              <td style="display:flex;align-items:center;gap:6px">${icons.people}<span>External Reviewers</span></td>
-              <td><span style="font-size:12px;color:${T.textSubtle}">SP Group</span></td>
-              <td><span class="badge badge-success">Read</span></td>
+              <td></td>
             </tr>
           </tbody>
         </table>
@@ -801,24 +835,35 @@ function explorerHTML() {
   </div>`);
 }
 
+// ─── combobox helper (Fluent UI Combobox appearance) ─────────────────────────
+function combobox(value, disabled = false) {
+  return `<div style="position:relative;display:inline-flex;align-items:center;max-width:400px;width:100%">
+    <input type="text" value="${value}" ${disabled ? 'disabled' : ''} placeholder="Search users…"
+      style="border:1px solid ${T.border};border-radius:${T.radius};padding:5px 32px 5px 10px;font-family:inherit;font-size:13px;width:100%;${disabled ? `opacity:0.7;background:${T.bg};color:${T.textSubtle}` : `color:${T.text}`}"/>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="${T.textSubtle}" style="position:absolute;right:8px;pointer-events:none;flex-shrink:0"><path d="M7 10l5 5 5-5H7z"/></svg>
+  </div>`;
+}
+
 // ─── SCREEN 6: User Access — Scanning ────────────────────────────────────────
 function userAccessRunningHTML() {
   return shell('User Access - Scanning', `
   ${banner()}
   <div class="content">
-    <div class="back-row">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
       <button class="btn-back" style="color:${T.textDisabled};border-color:${T.border}">${icons.back} Back</button>
+      <span class="title" style="margin:0;flex:1">User Access</span>
+      <button class="btn-secondary" style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        History
+      </button>
     </div>
-    <div class="title">User Access</div>
     <div style="margin-bottom:4px">
       <span style="font-size:12px;color:${T.brand}">Connected — 18 users found</span>
     </div>
 
     <div class="form-row" style="margin-top:16px;margin-bottom:16px">
       <span class="form-label">Select a user</span>
-      <select disabled style="border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:13px;max-width:360px;color:${T.text};opacity:0.7">
-        <option>Alice Chen</option>
-      </select>
+      ${combobox('Alice Chen', true)}
     </div>
 
     <!-- Scan area -->
@@ -836,7 +881,7 @@ function userAccessRunningHTML() {
       </div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <button class="btn-secondary" style="font-size:12px;padding:4px 12px">Cancel</button>
-        <span style="font-size:12px;color:${T.textSubtle}">This scan may take several minutes depending on the size of the site.</span>
+        <span style="font-size:12px;color:${T.textSubtle}">Scanning…</span>
       </div>
     </div>
   </div>`);
@@ -858,26 +903,50 @@ function userAccessCompleteHTML() {
   return shell('User Access - Complete', `
   ${banner()}
   <div class="content">
-    <div class="back-row">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
       <button class="btn-back">${icons.back} Back</button>
+      <span class="title" style="margin:0;flex:1">User Access</span>
+      <button class="btn-secondary" style="font-size:13px;padding:5px 14px">New scan</button>
+      <button class="btn-secondary" style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        History (3)
+      </button>
     </div>
-    <div class="title">User Access</div>
     <div style="margin-bottom:4px">
       <span style="font-size:12px;color:${T.brand}">Connected — 18 users found</span>
     </div>
 
     <div class="form-row" style="margin-top:16px;margin-bottom:16px">
       <span class="form-label">Select a user</span>
-      <select style="border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:13px;max-width:360px;color:${T.text}">
-        <option>Alice Chen</option>
-      </select>
+      ${combobox('Alice Chen')}
     </div>
 
-    <p style="font-size:13px;color:${T.textSubtle};margin-bottom:14px">6 accessible location(s) found.</p>
+    <!-- Info MessageBar: user has site-level access -->
+    <div class="msgbar" style="background:${T.blueBg};color:#004578;border:1px solid #c7e0f4;margin-bottom:12px;max-width:680px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#0078d4" style="flex-shrink:0;margin-top:1px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+      <span style="font-size:13px;line-height:1.5">This user has site-level access. Only locations with <strong>unique permission assignments</strong> appear below — all other content is accessible through the site-level permission shown at the top of the list.</span>
+    </div>
+
+    <p style="font-size:13px;color:${T.textSubtle};margin-bottom:10px">6 accessible location(s) found.</p>
+
+    <!-- Export buttons -->
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px">
+      <button class="btn-secondary" style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+        ${icons.docArrow} Export to Excel
+      </button>
+      <button class="btn-secondary" style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+        ${icons.docArrow} Export to CSV
+      </button>
+    </div>
 
     <table>
       <thead>
-        <tr><th>Type</th><th>Name</th><th>Path</th><th>Permission Level</th></tr>
+        <tr>
+          <th style="cursor:pointer">Type ▲</th>
+          <th style="cursor:pointer">Name</th>
+          <th style="cursor:pointer">Path</th>
+          <th style="cursor:pointer">Permission Level</th>
+        </tr>
       </thead>
       <tbody>
         ${rows.map(r => `<tr>
@@ -896,19 +965,22 @@ function userAccessFullHTML() {
   return shell('User Access - Full Site Access', `
   ${banner()}
   <div class="content">
-    <div class="back-row">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
       <button class="btn-back">${icons.back} Back</button>
+      <span class="title" style="margin:0;flex:1">User Access</span>
+      <button class="btn-secondary" style="font-size:13px;padding:5px 14px">New scan</button>
+      <button class="btn-secondary" style="display:inline-flex;align-items:center;gap:6px;font-size:13px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="${T.textSubtle}"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        History (2)
+      </button>
     </div>
-    <div class="title">User Access</div>
     <div style="margin-bottom:4px">
       <span style="font-size:12px;color:${T.brand}">Connected — 18 users found</span>
     </div>
 
     <div class="form-row" style="margin-top:16px;margin-bottom:16px">
       <span class="form-label">Select a user</span>
-      <select style="border:1px solid ${T.border};border-radius:${T.radius};padding:5px 10px;font-family:inherit;font-size:13px;max-width:360px;color:${T.text}">
-        <option>Bob Martinez</option>
-      </select>
+      ${combobox('Bob Martinez')}
     </div>
 
     <!-- Success MessageBar (matches the actual MessageBar intent="success" in UserAccessView) -->

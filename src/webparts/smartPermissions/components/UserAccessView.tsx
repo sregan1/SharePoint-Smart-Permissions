@@ -262,6 +262,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
 
   // ── Export ──
   const [isExporting, setIsExporting] = React.useState(false);
+  const [graphPermissionRequired, setGraphPermissionRequired] = React.useState(false);
 
   const handleExport = async (): Promise<void> => {
     const user = siteUsers.find((u) => u.loginName === selectedUser);
@@ -361,11 +362,12 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     setIsFullSiteAccess(false);
     setUserAccessItems([]);
     setUserAccessError('');
+    setGraphPermissionRequired(false);
     const user = siteUsers.find((u) => u.loginName === login);
     setUserAccessStatus(`Checking access for ${user?.displayName ?? login}…`);
 
     try {
-      const { fullSiteAccess, items } = await sp.getUserAccess(
+      const { fullSiteAccess, items, graphPermissionRequired: graphPerm } = await sp.getUserAccess(
         siteUrl.trim(),
         login,
         (msg) => setUserAccessStatus(msg),
@@ -374,6 +376,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       );
       setIsFullSiteAccess(fullSiteAccess);
       setUserAccessItems(items);
+      setGraphPermissionRequired(graphPerm);
       const statusMsg = fullSiteAccess
         ? 'Full site access detected.'
         : items.length > 0
@@ -438,14 +441,19 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         <Title3 style={{ flex: 1 }}>User Access</Title3>
         {selectedUser && !userAccessBusy && isConnected && (
           <Button
-            appearance="primary"
-            onClick={() =>
-              handleUserSelect(selectedUser).catch((e) =>
-                console.error('[SmartPermissions] scan again failed:', e),
-              )
-            }
+            appearance="secondary"
+            onClick={() => {
+              setSelectedUser('');
+              setUserFilter('');
+              setUserAccessItems([]);
+              setUserAccessStatus('');
+              setIsFullSiteAccess(false);
+              setUserAccessError('');
+              setGraphPermissionRequired(false);
+              setVisibleCount(PAGE_SIZE);
+            }}
           >
-            Scan again
+            New scan
           </Button>
         )}
         <Button
@@ -592,7 +600,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                   Cancel
                 </Button>
                 <Body1 style={{ color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 }}>
-                  This scan may take several minutes depending on the size of the site.
+                  Scanning…
                 </Body1>
               </div>
             </div>
@@ -609,6 +617,16 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               <MessageBarBody>
                 This user has <strong>Full Control</strong> or Owner-level access to the
                 entire site — all libraries and folders are accessible.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
+          {!userAccessBusy && graphPermissionRequired && (
+            <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalM }}>
+              <MessageBarBody>
+                Site-level permission could not be determined — this site likely uses Microsoft 365 Group access.
+                To show it, a SharePoint Administrator must approve the <strong>GroupMember.Read.All</strong> permission
+                in <strong>SharePoint Admin Center → Advanced → API access</strong>.
               </MessageBarBody>
             </MessageBar>
           )}

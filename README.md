@@ -17,8 +17,8 @@ A free, open source browser-based SharePoint Online permissions auditing tool de
 | Tool | Description |
 |------|-------------|
 | **Permissions Report** | Scans a site's libraries, folders, and files and exports a color-coded Excel workbook of every unique permission assignment. Supports full-tenant scans and optional group member expansion. |
-| **Permissions Explorer** | Interactively browse a document library tree and inspect live permissions on any folder or file. Shows inherited vs. unique permissions, supports expanding group members (SharePoint groups, Security groups, M365 groups). Automatically scans for external users in the background — red warning badges appear at load time on items where external access is explicitly granted; a down-arrow indicator marks folders that contain external-user items below. A tree filter narrows the view to only folders with external access, and external user email addresses are decoded and shown in the permissions panel. |
-| **User Access** | Look up any user and see every location they can access, with their exact permission level at each location. Detects full-site owner access immediately. System accounts are automatically excluded from the user dropdown. |
+| **Permissions Explorer** | Interactively browse a document library tree and inspect live permissions on any folder or file. Shows inherited vs. unique permissions, supports expanding group members (SharePoint groups, Security groups, M365 groups). Automatically scans for external users in the background — a red warning-person icon appears on items where external access is explicitly granted. Three arrow-down indicators mark folders by what's below: **circle** = unique permissions, **triangle** = external user access, **circle + triangle together** = both. Toggle filters narrow the tree to unique or external-only items, and external user email addresses are decoded and shown inline in the permissions panel. Requires **Manage Permissions** to read role assignments; a banner is shown when the signed-in account lacks this right. |
+| **User Access** | Look up any user and see every location they can access, with their exact permission level at each location. Searchable Combobox for fast user lookup. Detects full-site owner access immediately. Sortable results table with Export to Excel and Export to CSV. Scan history persists in IndexedDB so past results can be re-exported without re-scanning. System accounts are automatically excluded from the user list. |
 
 ---
 
@@ -170,11 +170,10 @@ To change it: put the page in Edit mode → click the web part pencil → select
 ```
 src/webparts/smartPermissions/
 ├── components/
-│   ├── App.tsx                        # Root component, banner, navigation, theme wiring
-│   ├── HomeView.tsx                   # Home screen — three feature cards
+│   ├── App.tsx                        # Root component, banner, home screen, navigation, theme wiring
 │   ├── PermissionsReportView.tsx      # Report configuration, progress, export
 │   ├── PermissionsExplorerView.tsx    # Interactive folder/file tree + permission panel
-│   ├── UserAccessView.tsx             # Per-user access scan
+│   ├── UserAccessView.tsx             # Per-user access scan, history, export
 │   └── SettingsView.tsx               # Full-page settings screen
 ├── services/
 │   ├── SharePointService.ts           # All REST + Graph API calls

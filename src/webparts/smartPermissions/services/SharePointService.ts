@@ -57,6 +57,21 @@ function extractAadGroupId(loginName: string): string | null {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last) ? last : null;
 }
 
+// Returns true when an API error indicates the current user lacks read permission on
+// role assignments (HTTP 403 Forbidden or 401 Unauthorized).
+function isPermissionDenied(err: any): boolean {
+  const msg = String(err?.message ?? '');
+  return msg.includes('HTTP 403') || msg.includes('HTTP 401');
+}
+
+// Returns true for system-assigned pass-through roles that carry no meaningful permission
+// of their own and should be hidden from all results ("Limited Access" and its web-scoped
+// variant are both auto-assigned by SharePoint and are never explicitly granted).
+function isSystemRole(name: string): boolean {
+  const l = name.toLowerCase();
+  return l === 'limited access' || l === 'web-only limited access' || l.startsWith('system.');
+}
+
 // Known system/infrastructure library URL suffixes (lowercased, site-relative).
 // Checked as a suffix so they match regardless of site path prefix.
 const SYSTEM_LIB_SUFFIXES = [
@@ -613,7 +628,7 @@ export class SharePointService {
     siteUrl: string,
     node: FolderFileNode,
     signal?: AbortSignal,
-  ): Promise<{ hasUnique: boolean; users: UserPermissionInfo[] }> {
+  ): Promise<{ hasUnique: boolean; users: UserPermissionInfo[]; permissionDenied?: boolean }> {
     const enc = odata(node.serverRelativeUrl);
     const base = node.isFolder
       ? `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${enc}')/ListItemAllFields`
@@ -629,18 +644,19 @@ export class SharePointService {
           `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
       );
       return { hasUnique: true, users: this.toPermissionInfoList(valueArray(raData)) };
-    } catch {
-      return { hasUnique: false, users: [] };
+    } catch (err) {
+      return { hasUnique: false, users: [], permissionDenied: isPermissionDenied(err) };
     }
   }
 
   // Checks a single tree node for external users without re-fetching HasUniqueRoleAssignments
   // (already known from the tree). Returns false immediately for inherited nodes.
+  // Returns 'denied' when the current user lacks ManagePermissions on this item.
   async scanNodeForExternalUsers(
     siteUrl: string,
     node: FolderFileNode,
     signal?: AbortSignal,
-  ): Promise<boolean> {
+  ): Promise<boolean | 'denied'> {
     if (!node.hasUniquePermissions || signal?.aborted) return false;
     const enc = odata(node.serverRelativeUrl);
     const base = node.isFolder
@@ -653,8 +669,8 @@ export class SharePointService {
       return valueArray(raData).some((ra: any) =>
         (ra.Member?.LoginName ?? '').toLowerCase().includes('#ext#'),
       );
-    } catch {
-      return false;
+    } catch (err) {
+      return isPermissionDenied(err) ? 'denied' : false;
     }
   }
 
@@ -837,23 +853,29 @@ export class SharePointService {
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
     includeHidden = false,
-  ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[] }> {
+  ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[]; graphPermissionRequired: boolean }> {
     onProgress('Loading user info…');
 
     let userTitle = userLoginName;
+    let userEmail = '';
     let groupLogins = new Set<string>();
 
     try {
       const userData = await this.getJson(
         `${siteUrl}/_api/web/siteusers/getbyloginname('${encodeURIComponent(odata(userLoginName))}')` +
-          `?$expand=Groups&$select=Title,LoginName,Groups/LoginName`,
+          `?$expand=Groups&$select=Title,LoginName,Email,Groups/LoginName`,
       );
       userTitle = userData.Title ?? userLoginName;
+      userEmail = userData.Email ?? '';
       const groups = valueArray(userData.Groups);
       // Normalize to lowercase — role-assignment member logins can differ in case
       // from user-groups logins depending on the SharePoint REST endpoint used.
       groupLogins = new Set(groups.map((g: any) => (g.LoginName as string).toLowerCase()));
-    } catch { /* proceed without groups */ }
+      console.debug('[SmartPermissions] getUserAccess: user=%s email=%s SP-groups=%o',
+        userLoginName, userEmail, Array.from(groupLogins));
+    } catch (err) {
+      console.debug('[SmartPermissions] getUserAccess: siteusers fetch failed', err);
+    }
 
     // ── Site roles ──
     onProgress('Loading site permissions…');
@@ -866,12 +888,38 @@ export class SharePointService {
           `?$select=Title,Url,ServerRelativeUrl,HasUniqueRoleAssignments` +
           `&$expand=RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings`,
       );
-      siteRoles = this.extractRoles(
-        valueArray(webData.RoleAssignments),
+      const allRa = valueArray(webData.RoleAssignments);
+      console.debug('[SmartPermissions] getUserAccess: site RoleAssignments=%o',
+        allRa.map((ra: any) => ({
+          login: ra.Member?.LoginName,
+          principalType: ra.Member?.PrincipalType,
+          roles: rdbArray(ra.RoleDefinitionBindings).map((r: any) => r.Name),
+        })));
+      siteRoles = this.extractRoles(allRa, userLoginName, groupLogins)
+        .filter((r) => !isSystemRole(r));
+      console.debug('[SmartPermissions] getUserAccess: siteRoles after extractRoles=%o', siteRoles);
+    } catch (err) {
+      console.debug('[SmartPermissions] getUserAccess: web RoleAssignments fetch failed', err);
+    }
+
+    // Fallback for M365 Group-connected sites: extractRoles only matches SP group logins.
+    // M365 Groups and AAD Security Groups appear directly in RoleAssignments but their
+    // members are not returned by the siteusers Groups expansion. Use Graph to check
+    // transitive membership in any such groups found in the site's role assignments.
+    let graphPermissionRequired = false;
+    if (siteRoles.length === 0 && webData) {
+      console.debug('[SmartPermissions] getUserAccess: extractRoles returned empty — trying AAD group fallback');
+      const aadResult = await this.getAadGroupSiteRoles(
+        siteUrl,
         userLoginName,
-        groupLogins,
-      ).filter((r) => r.toLowerCase() !== 'limited access');
-    } catch { /* no site roles */ }
+        userEmail,
+        valueArray(webData.RoleAssignments),
+      );
+      siteRoles = aadResult.roles;
+      graphPermissionRequired = aadResult.graphUnavailable;
+      console.debug('[SmartPermissions] getUserAccess: siteRoles after AAD fallback=%o graphPermissionRequired=%s',
+        siteRoles, graphPermissionRequired);
+    }
 
     // ── Libraries ──
     onProgress('Loading libraries…');
@@ -940,14 +988,14 @@ export class SharePointService {
     // Full Site Access banner — owners have Full Control everywhere when no
     // library breaks inheritance. If some do, scan to verify actual access.
     if (isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
-      return { fullSiteAccess: true, items: siteEntry ? [siteEntry] : [] };
+      return { fullSiteAccess: true, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false };
     }
 
     // Member/Visitor with site-level access and no broken-inheritance libraries —
     // all content is accessible via site inheritance; no scan needed.
     const hasSiteAccess = siteRoles.length > 0;
     if (hasSiteAccess && !isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
-      return { fullSiteAccess: false, items: siteEntry ? [siteEntry] : [] };
+      return { fullSiteAccess: false, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false };
     }
 
     const items: PermissionEntry[] = siteEntry ? [siteEntry] : [];
@@ -961,7 +1009,7 @@ export class SharePointService {
           valueArray(lib.RoleAssignments),
           userLoginName,
           groupLogins,
-        ).filter((r) => r.toLowerCase() !== 'limited access');
+        ).filter((r) => !isSystemRole(r));
 
         if (libRoles.length > 0) {
           items.push({
@@ -996,7 +1044,7 @@ export class SharePointService {
       );
     }), this.scanConcurrency);
 
-    return { fullSiteAccess: false, items };
+    return { fullSiteAccess: false, items, graphPermissionRequired };
   }
 
   private async walkFoldersForUser(
@@ -1063,7 +1111,7 @@ export class SharePointService {
             `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
         );
         const roles = this.extractRoles(valueArray(raData), userLogin, groupLogins).filter(
-          (r) => r.toLowerCase() !== 'limited access',
+          (r) => !isSystemRole(r),
         );
         if (roles.length > 0) {
           results.push({
@@ -1088,7 +1136,7 @@ export class SharePointService {
             `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
         );
         const roles = this.extractRoles(valueArray(raData), userLogin, groupLogins).filter(
-          (r) => r.toLowerCase() !== 'limited access',
+          (r) => !isSystemRole(r),
         );
         if (roles.length > 0) {
           results.push({
@@ -1125,6 +1173,257 @@ export class SharePointService {
         ),
       this.scanConcurrency,
     );
+  }
+
+  // For M365 Group-connected sites the SP groups (Team Members, Team Owners, etc.) only
+  // store static members. Actual M365 Group members are resolved dynamically by SharePoint
+  // and never appear in sitegroups/users. This method:
+  //   1. Gets the site's connected M365 Group GUID from _api/web?$select=GroupId
+  //   2. Checks whether the user is in that M365 Group via Graph transitiveMemberOf
+  //   3. Checks whether they are an Owner (→ AssociatedOwnerGroup roles) or a Member
+  //      (→ AssociatedMemberGroup roles) and returns the corresponding permission roles.
+  private async checkM365ConnectedSiteRoles(
+    siteUrl: string,
+    userLoginName: string,
+    userEmail: string,
+    actionableGroupRas: any[],
+  ): Promise<{ roles: string[]; graphUnavailable: boolean }> {
+    try {
+      // GroupId lives on the site collection (_api/site), not the web.
+      // AssociatedOwnerGroup/MemberGroup live on the web (_api/web).
+      const [siteProps, webProps] = await Promise.all([
+        this.getJson(`${siteUrl}/_api/site?$select=GroupId`),
+        this.getJson(
+          `${siteUrl}/_api/web?$expand=AssociatedOwnerGroup,AssociatedMemberGroup` +
+          `&$select=AssociatedOwnerGroup/Id,AssociatedMemberGroup/Id`,
+        ),
+      ]);
+      const m365GroupId: string = siteProps?.GroupId ?? '';
+      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: site GroupId=%s ownerGroupId=%s memberGroupId=%s',
+        m365GroupId || '(none)', webProps?.AssociatedOwnerGroup?.Id, webProps?.AssociatedMemberGroup?.Id);
+
+      if (!m365GroupId || m365GroupId === '00000000-0000-0000-0000-000000000000') {
+        console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: site not M365-connected');
+        return { roles: [], graphUnavailable: false };
+      }
+
+      const identifier = userEmail ||
+        (userLoginName.includes('|') ? userLoginName.split('|').pop() : null) ||
+        userLoginName;
+      if (!identifier) return { roles: [], graphUnavailable: true };
+
+      const client: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
+
+      // Fetch transitive group memberships and the user's AAD object ID in parallel.
+      // The AAD ID is needed for the ownership check below.
+      const [memberOfData, userProfileData] = await Promise.all([
+        client.api(`/users/${encodeURIComponent(identifier)}/transitiveMemberOf`).select('id').top(999).get(),
+        client.api(`/users/${encodeURIComponent(identifier)}`).select('id').get().catch(() => null),
+      ]);
+      const userGroupIds = new Set<string>(
+        (memberOfData?.value ?? []).map((g: any) => (g.id as string).toLowerCase()),
+      );
+      const userAadId: string = userProfileData?.id ?? '';
+      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: user in %d group(s), site M365 Group present=%s, aadId=%s',
+        userGroupIds.size, userGroupIds.has(m365GroupId.toLowerCase()), userAadId || '(unknown)');
+
+      if (!userGroupIds.has(m365GroupId.toLowerCase())) {
+        return { roles: [], graphUnavailable: false };
+      }
+
+      // User is in the M365 Group. Check if they're an Owner (→ AssociatedOwnerGroup →
+      // Full Control) or just a Member (→ AssociatedMemberGroup → Edit).
+      // Strategy: try GET /groups/{groupId}/owners/{userId} first (direct lookup, no filter
+      // needed). Fall back to a filtered list with ConsistencyLevel:eventual if ID unknown.
+      let isOwner = false;
+      try {
+        if (userAadId) {
+          // Direct lookup: 200 = owner, 404 = not owner (no filter, always supported)
+          await client.api(`/groups/${m365GroupId}/owners/${userAadId}`).select('id').get();
+          isOwner = true;
+        } else {
+          // Fallback: filter requires ConsistencyLevel:eventual
+          const ownersResp = await client
+            .api(`/groups/${m365GroupId}/owners`)
+            .header('ConsistencyLevel', 'eventual')
+            .count(true)
+            .filter(`userPrincipalName eq '${identifier}'`)
+            .select('id').top(1).get();
+          isOwner = (ownersResp?.value?.length ?? 0) > 0;
+        }
+      } catch { /* 404 = not an owner; other errors → treat as member */ }
+
+      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: isOwner=%s', isOwner);
+
+      const targetSpGroupId: number | undefined = isOwner
+        ? webProps?.AssociatedOwnerGroup?.Id as number | undefined
+        : webProps?.AssociatedMemberGroup?.Id as number | undefined;
+      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: mapped to SP group id=%s', targetSpGroupId);
+
+      const roles: string[] = [];
+      if (targetSpGroupId) {
+        const matchedRa = actionableGroupRas.find((ra: any) => ra.Member?.Id === targetSpGroupId);
+        if (matchedRa) {
+          rdbArray(matchedRa.RoleDefinitionBindings)
+            .map((r: any) => r.Name as string)
+            .filter((r) => !isSystemRole(r))
+            .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
+        }
+      }
+      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: resolved roles=%o', roles);
+      return { roles, graphUnavailable: false };
+    } catch (err) {
+      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: failed', err);
+      return { roles: [], graphUnavailable: true };
+    }
+  }
+
+  // Checks whether the user is a member of any AAD group (M365 Group or Security Group)
+  // that appears directly in the site's role assignments. These groups have claims login
+  // names starting with c:0o.c| or c:0t.c| and are never returned by the siteusers
+  // Groups expansion, so extractRoles misses them.
+  //
+  // Phase 1 — SharePoint REST: for each AAD group, ask SharePoint directly whether the
+  // user is a member via sitegroups/getbyloginname/users?$filter=LoginName eq '...'.
+  // This is a yes/no membership check that works without Graph when SharePoint can
+  // resolve the group (returns 200). A 404 or error means SharePoint can't resolve it
+  // that way, so those groups fall through to Phase 2.
+  //
+  // Phase 2 — Graph fallback: for groups REST couldn't resolve, use Graph
+  // /users/{id}/transitiveMemberOf. Requires GroupMember.Read.All to be approved.
+  // graphUnavailable is only true when REST failed AND Graph also failed.
+  private async getAadGroupSiteRoles(
+    siteUrl: string,
+    userLoginName: string,
+    userEmail: string,
+    roleAssignments: any[],
+  ): Promise<{ roles: string[]; graphUnavailable: boolean }> {
+    // Include all non-user principals: SharePoint groups (pt=8) AND AAD/M365 groups (pt=4).
+    // Direct user assignments (pt=1) are already handled by extractRoles.
+    // We extend beyond AAD-only because M365-connected sites often use classic SP groups
+    // ("IT Members") whose membership is backed by M365 Group but not lazily synced into
+    // the user's siteusers Groups expansion — so extractRoles misses them too.
+    const groupRas = roleAssignments.filter((ra: any) => {
+      const pt: number = ra.Member?.PrincipalType ?? 1;
+      return pt === 4 || pt === 8;
+    });
+    // Skip groups whose roles are all system roles (e.g. Limited Access System Group).
+    const actionableGroupRas = groupRas.filter((ra: any) =>
+      rdbArray(ra.RoleDefinitionBindings).some((r: any) => !isSystemRole(r.Name as string)),
+    );
+    console.debug('[SmartPermissions] getAadGroupSiteRoles: actionable groups=%o',
+      actionableGroupRas.map((ra: any) => ({
+        id: ra.Member?.Id,
+        login: ra.Member?.LoginName,
+        title: ra.Member?.Title,
+        principalType: ra.Member?.PrincipalType,
+        roles: rdbArray(ra.RoleDefinitionBindings).map((r: any) => r.Name),
+      })));
+    if (actionableGroupRas.length === 0) {
+      console.debug('[SmartPermissions] getAadGroupSiteRoles: no actionable groups — nothing to check');
+      return { roles: [], graphUnavailable: false };
+    }
+
+    // Helper: is this group an AAD/M365/Security group (vs a classic SP group)?
+    // AAD groups get a Graph fallback when REST can't confirm; SP groups do not.
+    const isAadGroup = (login: string): boolean => {
+      const l = login.toLowerCase();
+      return l.startsWith('c:0o.c|') || l.startsWith('c:0t.c|') || l.startsWith('c:0p.c|');
+    };
+
+    // ── Phase 1: SharePoint REST membership check ─────────────────────────
+    const roles: string[] = [];
+    const needsGraph: any[] = [];
+    const encUser = encodeURIComponent(`'${odata(userLoginName)}'`);
+
+    await Promise.all(actionableGroupRas.map(async (ra: any) => {
+      const groupLogin: string = ra.Member?.LoginName ?? '';
+      const groupId: number | undefined = ra.Member?.Id;
+      const pt: number = ra.Member?.PrincipalType ?? 0;
+      const label: string = ra.Member?.Title || groupLogin;
+
+      // SP groups (pt=8): look up by numeric ID — reliable because Member.LoginName in
+      // role assignments is the group's display name, NOT its internal login name, so
+      // getbyloginname('Team Members') returns 404. getbyid is unambiguous.
+      // AAD groups (pt=4): use getbyloginname with the claims-format login name.
+      const url = (pt === 8 && groupId)
+        ? `${siteUrl}/_api/web/sitegroups/getbyid(${groupId})/users?$filter=LoginName eq ${encUser}&$top=1&$select=LoginName`
+        : `${siteUrl}/_api/web/sitegroups/getbyloginname(${encodeURIComponent(`'${odata(groupLogin)}'`)})/users?$filter=LoginName eq ${encUser}&$top=1&$select=LoginName`;
+
+      try {
+        const data = await this.getJson(url);
+        const found = valueArray(data).length > 0;
+        console.debug('[SmartPermissions] getAadGroupSiteRoles: REST "%s" (id=%s pt=%s) → found=%s', label, groupId, pt, found);
+        if (found) {
+          rdbArray(ra.RoleDefinitionBindings)
+            .map((r: any) => r.Name as string)
+            .filter((r) => !isSystemRole(r))
+            .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
+        } else if (isAadGroup(groupLogin)) {
+          console.debug('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (AAD, ambiguous), queuing for Graph', label);
+          needsGraph.push(ra);
+        } else {
+          console.debug('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (SP group, not a member)', label);
+        }
+      } catch (err) {
+        console.debug('[SmartPermissions] getAadGroupSiteRoles: "%s" → REST error=%o', label, err);
+        if (isAadGroup(groupLogin)) {
+          needsGraph.push(ra);
+        }
+      }
+    }));
+
+    if (roles.length > 0) {
+      console.debug('[SmartPermissions] getAadGroupSiteRoles: resolved via REST=%o', roles);
+      return { roles, graphUnavailable: false };
+    }
+    if (needsGraph.length === 0) {
+      // No AAD groups need Graph, but SP group member lists only contain static entries.
+      // For M365 Group-connected sites, members are resolved dynamically — the user
+      // won't appear in sitegroups/users even though they have access. Check the site's
+      // connected M365 Group via Graph and map back to the SP group's roles.
+      console.debug('[SmartPermissions] getAadGroupSiteRoles: no direct AAD groups — checking M365-connected site');
+      return await this.checkM365ConnectedSiteRoles(siteUrl, userLoginName, userEmail, actionableGroupRas);
+    }
+
+    // ── Phase 2: Graph fallback for groups REST couldn't resolve ──────────
+    const identifier = userEmail ||
+      (userLoginName.includes('|') ? userLoginName.split('|').pop() : null) ||
+      userLoginName;
+    console.debug('[SmartPermissions] getAadGroupSiteRoles: %d group(s) need Graph, identifier=%s',
+      needsGraph.length, identifier);
+    if (!identifier) return { roles: [], graphUnavailable: true };
+
+    try {
+      const client: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
+      const memberOfData = await client
+        .api(`/users/${encodeURIComponent(identifier)}/transitiveMemberOf`)
+        .select('id')
+        .top(999)
+        .get();
+
+      const userGroupIds = new Set<string>(
+        (memberOfData?.value ?? []).map((g: any) => (g.id as string).toLowerCase()),
+      );
+      console.debug('[SmartPermissions] getAadGroupSiteRoles: user in %d AAD group(s) via Graph', userGroupIds.size);
+
+      for (const ra of needsGraph) {
+        const guid = ((ra.Member?.LoginName ?? '').split('|').pop() ?? '').toLowerCase();
+        const matched = guid && userGroupIds.has(guid);
+        console.debug('[SmartPermissions] getAadGroupSiteRoles: Graph guid=%s matched=%s', guid, matched);
+        if (matched) {
+          rdbArray(ra.RoleDefinitionBindings)
+            .map((r: any) => r.Name as string)
+            .filter((r) => !isSystemRole(r))
+            .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
+        }
+      }
+      console.debug('[SmartPermissions] getAadGroupSiteRoles: resolved via Graph=%o', roles);
+      return { roles, graphUnavailable: false };
+    } catch (err) {
+      console.debug('[SmartPermissions] getAadGroupSiteRoles: Graph failed', err);
+      return { roles: [], graphUnavailable: true };
+    }
   }
 
   // ── Sharing links ─────────────────────────────────────────────────────────
@@ -1244,7 +1543,7 @@ export class SharePointService {
       const memberId: number = ra.Member?.Id;
       const roles = rdbArray(ra.RoleDefinitionBindings)
         .map((r: any) => r.Name as string)
-        .filter((r) => r.toLowerCase() !== 'limited access');
+        .filter((r) => !isSystemRole(r));
       if (memberId && roles.length > 0) {
         rolesByGroupId.set(memberId, roles);
       }
@@ -1416,7 +1715,7 @@ export class SharePointService {
     for (const ra of roleAssignments) {
       const roles = rdbArray(ra.RoleDefinitionBindings)
         .map((r: any) => r.Name as string)
-        .filter((r) => r.toLowerCase() !== 'limited access');
+        .filter((r) => !isSystemRole(r));
       if (roles.length > 0) {
         result.push({
           loginName: ra.Member?.LoginName ?? '',

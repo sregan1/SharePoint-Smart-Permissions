@@ -128,6 +128,32 @@ const useStyles = makeStyles({
   },
 });
 
+// ── Custom indicator icons ────────────────────────────────────────────────────
+
+// Arrow inside a triangle — indicates external user access below
+function ArrowTriangleDown({ style }: { style?: React.CSSProperties }): React.ReactElement {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={style}>
+      <path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M8 6v4M6 8.5L8 10.5L10 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+// Circle and triangle icons side by side — indicates both unique permissions and external
+// user access below; self-explanatory from the two individual legend entries
+function ArrowCircleAndTriangleDown({ style }: { style?: React.CSSProperties }): React.ReactElement {
+  return (
+    <svg width="28" height="14" viewBox="0 0 30 16" fill="none" style={style}>
+      <circle cx="7" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M7 5v5M5.5 8.5L7 10L8.5 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M22 2L29 14H15L22 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M22 6v5M20.5 9L22 10.5L23.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+
 // ── External user helpers ─────────────────────────────────────────────────────
 
 function isExternalUser(u: UserPermissionInfo): boolean {
@@ -338,20 +364,19 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           {node.name}
         </Text>
 
-        {(node.hasUniquePermissionsBelow || node.hasExternalUsersBelow) && (
-          <Tooltip
-            content={
-              node.hasUniquePermissionsBelow && node.hasExternalUsersBelow
-                ? 'Contains items with unique permissions and external user access'
-                : node.hasExternalUsersBelow
-                ? 'Contains items with external user access'
-                : 'Contains items with unique permissions'
-            }
-            relationship="label"
-          >
-            <ArrowCircleDown16Regular
-              style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }}
-            />
+        {node.hasUniquePermissionsBelow && node.hasExternalUsersBelow && (
+          <Tooltip content="Contains items with unique permissions and external user access" relationship="label">
+            <ArrowCircleAndTriangleDown style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
+          </Tooltip>
+        )}
+        {node.hasUniquePermissionsBelow && !node.hasExternalUsersBelow && (
+          <Tooltip content="Contains items with unique permissions" relationship="label">
+            <ArrowCircleDown16Regular style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
+          </Tooltip>
+        )}
+        {node.hasExternalUsersBelow && !node.hasUniquePermissionsBelow && (
+          <Tooltip content="Contains items with external user access" relationship="label">
+            <ArrowTriangleDown style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
           </Tooltip>
         )}
         {node.hasUniquePermissions && (
@@ -422,6 +447,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const [showUniqueOnly, setShowUniqueOnly] = React.useState(false);
   const [filterExternalOnly, setFilterExternalOnly] = React.useState(false);
   const [externalAccessUrls, setExternalAccessUrls] = React.useState<Set<string>>(new Set());
+  const [permissionsDenied, setPermissionsDenied] = React.useState(false);
   const [treeStatus, setTreeStatus] = React.useState('');
   const [selectedNode, setSelectedNode] = React.useState<FolderFileNode | null>(null);
   const [nodePerms, setNodePerms] = React.useState<UserPermissionInfo[]>([]);
@@ -484,6 +510,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setSelectedNode(null);
     setNodePerms([]);
     setExternalAccessUrls(new Set());
+    setPermissionsDenied(false);
     rawNodePermsRef.current = [];
     rawParentPermsRef.current = null;
     groupMemberCacheRef.current.clear();
@@ -629,7 +656,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     const tasks = uniqueNodes.map((node) => async (): Promise<undefined> => {
       if (abortRef.current?.signal.aborted) return undefined;
       const hasExt = await sp.scanNodeForExternalUsers(siteUrl, node, abortRef.current?.signal);
-      if (hasExt) {
+      if (hasExt === 'denied') {
+        setPermissionsDenied(true);
+      } else if (hasExt) {
         node.hasExternalUsers = true;
         if (node.parent) propagateExternalBelow(node.parent);
         propagateExternalDown(node);  // mark already-loaded descendants that inherit
@@ -691,11 +720,12 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     rawParentPermsRef.current = null;
 
     try {
-      const { hasUnique, users } = await sp.getItemPermissions(
+      const { hasUnique, users, permissionDenied } = await sp.getItemPermissions(
         siteUrl.trim(),
         node,
         abortRef.current?.signal,
       );
+      if (permissionDenied) setPermissionsDenied(true);
       rawNodePermsRef.current = users;
       if (users.some(isExternalUser)) {
         setExternalAccessUrls((prev) => {
@@ -874,14 +904,28 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ArrowCircleDown16Regular style={{ color: tokens.colorNeutralForeground3 }} />
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Folder contains items with unique permissions or external user access</Text>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Contains unique permissions below</Text>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ArrowTriangleDown style={{ color: tokens.colorNeutralForeground3 }} />
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Contains external user access below</Text>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <PersonWarning16Regular style={{ color: tokens.colorPaletteRedForeground1 }} />
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>External user access granted on this item</Text>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>External user access on this item</Text>
               </span>
             </div>
           </div>
+
+          {permissionsDenied && (
+            <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
+              <MessageBarBody>
+                Some permission details are not visible — reading role assignments requires
+                the <strong>Manage Permissions</strong> right (site owner or higher).
+                External user indicators and permission tables may be incomplete for your account.
+              </MessageBarBody>
+            </MessageBar>
+          )}
 
           <div className={styles.twoCol}>
             {/* Tree panel */}
