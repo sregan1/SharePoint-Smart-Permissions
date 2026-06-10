@@ -11,10 +11,6 @@
       {
         "resource": "Microsoft Graph",
         "scope": "GroupMember.Read.All"
-      },
-      {
-        "resource": "Microsoft Graph",
-        "scope": "Sites.Read.All"
       }
     ],
     "developer": {

@@ -159,12 +159,11 @@ To change web part settings, put the page in **Edit** mode, click the web part p
 
 ## Graph API Permissions
 
-The package declares two optional `webApiPermissionRequests` entries. The core tools work without them, but the following features require approval:
+The package declares one optional `webApiPermissionRequests` entry. The core tools work without it, but the following feature requires approval:
 
 | Permission | Enables | Required? |
 |---|---|---|
 | `GroupMember.Read.All` | Expanding Security group and M365 group members in the Permissions Report and Explorer | Optional |
-| `Sites.Read.All` | SharePoint sharing links enumeration via the Graph drives/delta API | Optional |
 
 **To approve (SharePoint Admin Center):**
 
@@ -256,9 +255,6 @@ sharepoint/solution/
 - Runs entirely as the signed-in user — results reflect that user's view. An account with read access to only part of a site will produce an incomplete scan.
 - In-browser Excel generation via ExcelJS may slow down or fail on very large sites (tens of thousands of unique permission rows) due to browser memory limits.
 - Scan history (User Access) persists in **IndexedDB** in the browser. Clearing browser data removes all saved scan results.
-- The **Permission Groups** view exists in the codebase but is not accessible from the home screen in this version.
-- `Sites.Read.All` is declared in the package manifest for future use but no currently visible feature requires it.
-
 ---
 
 ## License
