@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.2.0**
+**Version 1.3.0**
 **Applies to:** SharePoint Online
 
 ---
@@ -56,15 +56,14 @@ SharePoint's default interface makes it difficult to understand the full picture
 
 ### Prerequisites
 
-- You must have at least **Read** access to the site you want to audit
-- To scan all libraries, you should have **Site Owner** or **Site Collection Administrator** access
+- You must be a **Site Owner** (or have the Manage Permissions right) on the site you want to audit. Reading role assignments — who has what access — requires this right. Anyone without Site Owner access (Members, Visitors, Limited Access users, and guests) will see the web part but the feature cards will be disabled.
 - To run a full tenant scan, you need read access across all site collections (typically a Global Admin or SharePoint Admin account)
 
 ### Accessing the Web Part
 
 The SharePoint Smart Permissions web part is added to a SharePoint page by a site administrator. Once added, simply navigate to the page where it has been placed.
 
-![The web part home screen showing the feature cards](screenshots/01_home.png)
+![The web part home screen showing the feature cards](docs/screenshots/01_home.png)
 
 When you first open the web part, you will see the **Home Screen** with the three main feature cards. The web part automatically connects to the current SharePoint site — no configuration is needed to get started.
 
@@ -72,18 +71,26 @@ When you first open the web part, you will see the **Home Screen** with the thre
 
 ## The Home Screen
 
-The home screen is your starting point. A blue brand banner runs across the top, followed by three feature cards — one for each tool — each with a brief description and a launch button.
+The home screen is your starting point. A blue brand banner runs across the top, followed by three feature cards displayed side by side — one for each tool — each with a brief description and a launch button.
 
-![Home screen showing the three feature cards with the brand banner at the top](screenshots/01_home.png)
+![Home screen showing the three feature cards with the brand banner at the top](docs/screenshots/01_home.png)
 
 **Feature cards:**
-- **Permissions Report** — for generating exportable audit reports
 - **Permissions Explorer** — for real-time interactive browsing
+- **Permissions Report** — for generating exportable audit reports
 - **User Access** — for per-user access lookups
 
 Click any button to enter that tool. Use the **Back** button at the top left of any tool screen to return to the home screen.
 
 The **gear icon** (⚙) in the top-right corner of the banner opens the global Settings panel on every screen, including the home screen.
+
+### Member Access
+
+If you open the web part without Site Owner access, a warning banner appears below the brand header and the three feature cards are grayed out and non-clickable. The banner reads:
+
+> **Site Owner access required —** These tools require Site Owner access. Contact a site owner if you have questions about permissions.
+
+This applies to anyone without the Manage Permissions right — Members, Visitors, Limited Access users, and guests. Only Site Owners and Site Collection Administrators can use the tools.
 
 ---
 
@@ -95,7 +102,7 @@ The Permissions Report scans a site's libraries, folders, and files and produces
 
 Once the scan is complete, you can export the results as a **color-coded Excel workbook** suitable for sharing with stakeholders or retaining for compliance records.
 
-![Permissions Report configuration screen with scan depth options](screenshots/02_report_config.png)
+![Permissions Report configuration screen with scan depth options](docs/screenshots/02_report_config.png)
 
 ### How to Use It
 
@@ -114,7 +121,7 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organization.
 6. Click **Run Report**.
 
-![Report scan in progress showing progress bar, elapsed timer, and item count](screenshots/03_report_running.png)
+![Report scan in progress showing progress bar, elapsed timer, and item count](docs/screenshots/03_report_running.png)
 
 6. While the scan runs you will see:
    - A **progress bar** advancing library-by-library
@@ -125,11 +132,11 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 
 7. When the scan finishes, a green result panel appears showing the total object count, the number with unique permissions, and an **Export to Excel** button.
 
-![Completed report with result summary and Export to Excel button](screenshots/04_report_complete.png)
+![Completed report with result summary and Export to Excel button](docs/screenshots/04_report_complete.png)
 
 8. Click **Export to Excel** to download the results as a color-coded workbook.
 
-![Excel workbook downloaded after clicking Export to Excel](screenshots/04b_report_export.png)
+![Excel workbook downloaded after clicking Export to Excel](docs/screenshots/04b_report_export.png)
 
 
 ### Understanding the Results
@@ -157,7 +164,7 @@ Click the **Cancel** button that appears next to the progress bar. The scan stop
 
 The Permissions Explorer lets you browse a document library interactively — folder by folder, file by file — and see the live permissions on any item instantly. It is ideal for investigating a specific area of a site rather than producing a full report.
 
-![Permissions Explorer with folder tree on the left and permissions panel on the right](screenshots/05_explorer.png)
+![Permissions Explorer with folder tree on the left and permissions panel on the right](docs/screenshots/05_explorer.png)
 
 ### How to Use It
 
@@ -178,7 +185,7 @@ When you select an item, the right panel shows:
 - For **inherited items**, a blue callout banner — with a chain-link icon — reads *"This item inherits permissions from its parent."*
 - For **unique items**, a permissions table listing every user and group with access
 
-![A folder with inherited permissions showing the blue banner and parent permissions table](screenshots/05_explorer.png)
+![A folder with inherited permissions showing the blue banner and parent permissions table](docs/screenshots/05_explorer.png)
 
 Color-coded permission badges: **red** for Full Control, **amber** for Edit/Contribute, **green** for Read/View.
 
@@ -260,7 +267,7 @@ A legend below the toolbar explains the visual indicators:
 
 User Access answers the question: *"What can this specific person actually see?"* Select any user on the site and the tool scans every library, folder, and file to find every location they have explicit access — showing their exact permission level at each one.
 
-![User Access screen showing user dropdown and completed access list](screenshots/07_user_access_complete.png)
+![User Access screen showing user dropdown and completed access list](docs/screenshots/07_user_access_complete.png)
 
 ### How to Use It
 
@@ -269,7 +276,7 @@ User Access answers the question: *"What can this specific person actually see?"
 3. Start typing in the **Select a user** search box to filter by name or email address, then select the user from the dropdown. The scan begins automatically once a user is selected.
 4. A progress bar, elapsed timer, and status message show the scan's progress.
 
-![User Access scan in progress with progress bar, elapsed time, and cancel button](screenshots/06_user_access_scanning.png)
+![User Access scan in progress with progress bar, elapsed time, and cancel button](docs/screenshots/06_user_access_scanning.png)
 
 5. Once complete, a table shows every location the user can access.
 6. A **New scan** button appears in the header — click it to clear the results and select a different user.
@@ -317,7 +324,7 @@ History is stored in the browser's IndexedDB and persists across sessions on the
 
 If a user has Full Control or Owner-level access at the site level, the tool detects this immediately and displays a **green confirmation message**: *"This user has Full Control or Owner-level access to the entire site — all libraries and folders are accessible."*
 
-![Full Site Access message shown for an owner-level user](screenshots/08_user_access_full_site.png)
+![Full Site Access message shown for an owner-level user](docs/screenshots/08_user_access_full_site.png)
 
 Individual item listing is not shown for owner-level accounts because they can access everything.
 
@@ -327,7 +334,7 @@ Individual item listing is not shown for owner-level accounts because they can a
 
 The **Settings** page is accessible from the gear icon (⚙) in the top-right corner of the banner on every screen, including the home screen. Clicking the gear opens a dedicated full-page settings view with a **Back** button to return to where you were.
 
-![Settings page showing available configuration options](screenshots/09_settings.png)
+![Settings page showing available configuration options](docs/screenshots/09_settings.png)
 
 ### Include System and Hidden Libraries
 
@@ -404,7 +411,7 @@ To audit a **different site**:
 
 The web part will reconnect to the new site. All tools will now operate against that site until you change it again or navigate back to the home screen and return.
 
-> **Important:** You must have at least Read access to the target site. If your account does not have permission, the connection will fail with an error message.
+> **Important:** You must have Site Owner access (or the Manage Permissions right) on the target site. If your account does not have sufficient permission, the tools will not be able to read role assignments.
 
 ---
 
@@ -437,7 +444,7 @@ Because the tool produces no audit trail of its own, access reviews performed wi
 ## Frequently Asked Questions
 
 **Q: Do I need any special permissions to use this tool?**
-A: You need at least Read access to the site you want to audit. Some features (like scanning all libraries) work best with Site Owner or Site Collection Administrator access.
+A: Yes — you must be a **Site Owner** or have the **Manage Permissions** right on the site. All three tools read SharePoint role assignments, which requires this permission level. Anyone without that right — Members, Visitors, Limited Access users, and guests — will see the web part but the feature cards will be disabled. To audit an entire tenant, you additionally need read access across all site collections (typically a Global Admin or SharePoint Admin account).
 
 ---
 
@@ -505,7 +512,7 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 ### "Connection failed" when opening a tool
 
-- Confirm you have at least Read access to the site.
+- Confirm you have Site Owner access (or the Manage Permissions right) on the site.
 - Check that the site URL is correct (no trailing slash, correct domain).
 - Ensure your Microsoft 365 session is still active (try refreshing the page).
 
@@ -554,17 +561,17 @@ The script is located at `scripts/Provision-SmartPermissions.ps1` in the solutio
 
 ### Configuration
 
-Open the script and set the `$adminUrl` variable at the top:
+Open the script and set the variables at the top:
 
 ```powershell
-$adminUrl = "https://contoso-admin.sharepoint.com"
+$adminUrl      = "https://contoso-admin.sharepoint.com"
+$targetSiteUrl = ""   # leave empty to run across all sites
 ```
-
-All other variables are pre-configured with the correct values for this solution and do not need to be changed.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `$adminUrl` | *(empty — must set)* | Your SharePoint admin center URL |
+| `$targetSiteUrl` | *(empty)* | Set to a single site URL to provision only that site. Leave empty to provision all sites in the tenant. |
 | `$componentId` | Pre-filled | The Smart Permissions web part ID |
 | `$pageName` | `Permissions` | File name of the created page (without `.aspx`) |
 | `$pageTitle` | `Permissions` | Display title shown at the top of the page |
@@ -572,23 +579,17 @@ All other variables are pre-configured with the correct values for this solution
 
 ### Running the Script
 
-1. Open a PowerShell terminal.
-2. Set `$adminUrl` in the script.
-3. Run the script:
+**To provision a single site:**
+1. Set `$adminUrl` and `$targetSiteUrl` in the script.
+2. Run the script:
    ```powershell
    .\scripts\Provision-SmartPermissions.ps1
    ```
-4. Sign in when prompted. You may be prompted to sign in once for the admin center and once per site — this is expected.
-5. The script logs each site as it processes it. Sites that fail (e.g. locked, no-script sites) are logged as warnings and skipped.
 
-### Testing on a Single Site First
-
-Before running tenant-wide, test against one site by temporarily replacing the `foreach` loop with a direct connection:
-
-```powershell
-Connect-PnPOnline -Url "https://contoso.sharepoint.com/sites/yourtest" -Interactive
-# ... then run just the page/web part creation block manually
-```
+**To provision all sites tenant-wide:**
+1. Set `$adminUrl` and leave `$targetSiteUrl` empty.
+2. Run the script. You will be prompted to sign in to the admin center, then once per site.
+3. Sites that fail (e.g. locked, no-script sites) are logged as warnings and skipped.
 
 ### What the Script Does
 
@@ -596,7 +597,10 @@ For each site collection:
 1. Connects to the site
 2. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
 3. Adds the Smart Permissions web part with default properties
-4. Publishes the page so it is immediately visible to site visitors
+4. Publishes the page
+5. Breaks permission inheritance on the page and grants Full Control to the site Owners group only — Members and Visitors cannot access the page
+6. Adds the page to the site's Quick Launch navigation (scoped to the Owners group on Microsoft 365 Group-connected sites)
+7. On M365-connected sites: enables audience targeting on the Site Pages library and sets the Owners group as the page audience
 
 ### Re-Running Safely
 

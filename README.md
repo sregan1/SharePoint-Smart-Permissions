@@ -2,10 +2,12 @@
 
 A free, open source browser-based SharePoint Online permissions auditing tool delivered as an SPFx web part. Gives site owners, administrators, and compliance teams a real-time view of who has access to what — with no PowerShell, no third-party software, and no elevated service accounts required.
 
+> **Requires Site Owner access.** All three tools read SharePoint role assignments, which requires the Manage Permissions right. Anyone without Site Owner access (Members, Visitors, Limited Access users, guests) will see the web part but the feature cards will be disabled with a clear explanation.
+
 <p>
   <a href="https://sharepointsmartsolutions.com/smart-permissions"><img src="https://img.shields.io/badge/Website-sharepointsmartsolutions.com-0078d4?style=for-the-badge&logo=microsoftsharepoint&logoColor=white" alt="Website"/></a>
   &nbsp;
-  <a href="https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/docs/UserGuide.md"><img src="https://img.shields.io/badge/User_Guide-View_Documentation-107c10?style=for-the-badge&logo=readthedocs&logoColor=white" alt="User Guide"/></a>
+  <a href="https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/USER-GUIDE.md"><img src="https://img.shields.io/badge/User_Guide-View_Documentation-107c10?style=for-the-badge&logo=readthedocs&logoColor=white" alt="User Guide"/></a>
 </p>
 
 ---
@@ -72,7 +74,7 @@ A free, open source browser-based SharePoint Online permissions auditing tool de
 
 ---
 
-## Prerequisites (if building) - EXE available for download
+## Prerequisites (if building from source)
 
 - Node.js 18.x
 - `gulp-cli` installed globally (`npm install -g gulp-cli`)
@@ -114,14 +116,16 @@ The package is written to `sharepoint/solution/smart-permissions.sppkg`. Upload 
 
 ## Graph API Permissions (optional)
 
-The package declares one optional `webApiPermissionRequests` entry:
+The package declares two optional `webApiPermissionRequests` entries:
 
 | Permission | Purpose | Required? |
 |------------|---------|-----------|
 | `GroupMember.Read.All` | Expand Security group and M365 group members in Permissions Report and Explorer | Optional |
+| `Sites.Read.All` | Required for Sharing Links enumeration via the Graph drives/delta API | Optional |
 
-This permission is **optional** — all tools work without it:
+Both permissions are **optional** — the core tools work without them:
 - Without `GroupMember.Read.All`: Security groups and M365 groups cannot be expanded to list individual members. SharePoint group expansion works without it.
+- Without `Sites.Read.All`: Sharing Links features are unavailable.
 
 To enable group member expansion, a SharePoint or Global Administrator must approve the permission request after the package is deployed.
 
@@ -170,10 +174,12 @@ To change it: put the page in Edit mode → click the web part pencil → select
 ```
 src/webparts/smartPermissions/
 ├── components/
-│   ├── App.tsx                        # Root component, banner, home screen, navigation, theme wiring
+│   ├── App.tsx                        # Root component, routing, permission check, theme wiring
+│   ├── HomeView.tsx                   # Home screen with feature cards and member access warning
 │   ├── PermissionsReportView.tsx      # Report configuration, progress, export
 │   ├── PermissionsExplorerView.tsx    # Interactive folder/file tree + permission panel
 │   ├── UserAccessView.tsx             # Per-user access scan, history, export
+│   ├── PermissionGroupsView.tsx       # SharePoint group browser (backend only, not on home screen)
 │   └── SettingsView.tsx               # Full-page settings screen
 ├── services/
 │   ├── SharePointService.ts           # All REST + Graph API calls
@@ -187,5 +193,5 @@ src/webparts/smartPermissions/
 
 ## Documentation
 
-- [User Guide](docs/UserGuide.md) — end-user documentation covering all tools, settings, and web part configuration
-- `docs/screenshots/` — auto-generated UI screenshots (regenerate with `node docs/screenshot.js`)
+- [User Guide](USER-GUIDE.md) — end-user documentation covering all tools, settings, and web part configuration
+- `docs/screenshots/` — auto-generated UI screenshots (regenerate with `node docs/generate-screenshots.js`)

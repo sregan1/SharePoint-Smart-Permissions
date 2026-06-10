@@ -18,10 +18,11 @@ import { ExcelExportService } from '../services/ExcelExportService';
 import { HomeView } from './HomeView';
 import { PermissionsReportView } from './PermissionsReportView';
 import { PermissionsExplorerView } from './PermissionsExplorerView';
+import { PermissionGroupsView } from './PermissionGroupsView';
 import { UserAccessView } from './UserAccessView';
 import { SettingsView } from './SettingsView';
 
-export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'settings';
+export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'groups' | 'settings';
 
 const LS_CONCURRENCY      = 'sp-smart-perms-concurrency';
 const LS_GROUP_CAP        = 'sp-smart-perms-groupCap';
@@ -175,6 +176,20 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
     sp.groupMemberCap = groupMemberCap;
   }, [groupMemberCap]);
 
+  const [canManagePermissions, setCanManagePermissions] = React.useState<boolean | null>(null);
+  const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
+
+  React.useEffect(() => {
+    setCanManagePermissions(null);
+    let cancelled = false;
+    sp.checkCanManagePermissions(siteUrl).then((can: boolean) => {
+      if (cancelled) return;
+      setCanManagePermissions(can);
+      if (!can) sp.getSiteOwners(siteUrl).then(owners => { if (!cancelled) setSiteOwners(owners); }).catch(() => { /* ignore */ });
+    }).catch(() => { if (!cancelled) setCanManagePermissions(true); });
+    return () => { cancelled = true; };
+  }, [siteUrl]);
+
   // Pre-fill login for the User Access view when launched from Explorer
   const [userAccessPrefill, setUserAccessPrefill] = React.useState<string | undefined>();
 
@@ -313,7 +328,12 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
       )}
 
       {view === 'home' && (
-        <HomeView onNavigate={setView} primaryColor={brandColors.primary} />
+        <HomeView
+          onNavigate={setView}
+          primaryColor={brandColors.primary}
+          canManagePermissions={canManagePermissions}
+          siteOwners={siteOwners}
+        />
       )}
       {view === 'report' && (
         <PermissionsReportView
@@ -347,6 +367,14 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           excludeLimitedAccess={excludeLimitedAccess}
           prefillLogin={userAccessPrefill}
           onPrefillUsed={() => setUserAccessPrefill(undefined)}
+          onBack={() => setView('home')}
+        />
+      )}
+      {view === 'groups' && (
+        <PermissionGroupsView
+          key={siteUrl}
+          sp={sp}
+          siteUrl={siteUrl}
           onBack={() => setView('home')}
         />
       )}

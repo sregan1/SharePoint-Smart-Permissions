@@ -3,6 +3,7 @@ import {
   Button,
   Field,
   Badge,
+  Link,
   Text,
   Title3,
   Body1,
@@ -448,6 +449,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const [filterExternalOnly, setFilterExternalOnly] = React.useState(false);
   const [externalAccessUrls, setExternalAccessUrls] = React.useState<Set<string>>(new Set());
   const [permissionsDenied, setPermissionsDenied] = React.useState(false);
+  const [myPermLevel, setMyPermLevel] = React.useState('');
+  const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
   const [treeStatus, setTreeStatus] = React.useState('');
   const [selectedNode, setSelectedNode] = React.useState<FolderFileNode | null>(null);
   const [nodePerms, setNodePerms] = React.useState<UserPermissionInfo[]>([]);
@@ -511,6 +514,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setNodePerms([]);
     setExternalAccessUrls(new Set());
     setPermissionsDenied(false);
+    setMyPermLevel('');
+    setSiteOwners([]);
     rawNodePermsRef.current = [];
     rawParentPermsRef.current = null;
     groupMemberCacheRef.current.clear();
@@ -524,6 +529,15 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       );
       setRootNodes(nodes);
       if (nodes.length === 0) setTreeStatus('This library is empty.');
+
+      // Proactively check whether role-assignment reads are permitted for this library.
+      sp.getItemPermissions(
+        siteUrl.trim(),
+        { name: lib.title, serverRelativeUrl: lib.serverRelativeUrl, isFolder: true, hasChildren: false, children: [] },
+        abortRef.current?.signal,
+      ).then((probe) => {
+        if (probe.permissionDenied) setPermissionsDenied(true);
+      }).catch(() => { /* ignore probe errors */ });
 
       // Background scan for external users on root-level nodes.
       scanExternalUsers(nodes);
@@ -713,6 +727,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setNodePerms([]);
     setNodeHasUnique(false);
     setNodeError('');
+    setMyPermLevel('');
     setParentPerms(null);
     setParentPermsName('');
     setParentPermsError('');
@@ -725,7 +740,12 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         node,
         abortRef.current?.signal,
       );
-      if (permissionDenied) setPermissionsDenied(true);
+      if (permissionDenied) {
+        setPermissionsDenied(true);
+        sp.getEffectivePermissions(siteUrl.trim(), node, abortRef.current?.signal)
+          .then(setMyPermLevel)
+          .catch(() => {});
+      }
       rawNodePermsRef.current = users;
       if (users.some(isExternalUser)) {
         setExternalAccessUrls((prev) => {
@@ -734,9 +754,10 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
           return next;
         });
       }
-      setNodeHasUnique(hasUnique);
+      const resolvedHasUnique = permissionDenied ? (node.hasUniquePermissions ?? false) : hasUnique;
+      setNodeHasUnique(resolvedHasUnique);
       setNodePerms(await withGroupExpansion(users));
-      if (!hasUnique && keepParentPerms) {
+      if (!resolvedHasUnique && keepParentPerms) {
         handleShowParentPerms(node).catch((e) => console.error('[SmartPermissions] handleShowParentPerms failed:', e));
       }
     } catch (err: any) {
@@ -771,6 +792,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         .catch((e: any) => setParentPermsError(e?.message ?? String(e)));
     }
   }, [expandGroups]);
+
+  React.useEffect(() => {
+    if (!permissionsDenied || !siteUrl) return;
+    sp.getSiteOwners(siteUrl.trim()).then(setSiteOwners).catch(() => {});
+  }, [permissionsDenied, siteUrl]);
 
   // ── Show parent permissions ──────────────────────────────────────────────
 
@@ -920,9 +946,20 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
           {permissionsDenied && (
             <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
-                Some permission details are not visible — reading role assignments requires
-                the <strong>Manage Permissions</strong> right (site owner or higher).
-                External user indicators and permission tables may be incomplete for your account.
+                <strong>Viewing with Member access</strong> — permission assignments are not visible.
+                Reading who has access requires the <strong>Manage Permissions</strong> right (Site
+                Owner or higher). You can still see which items have broken inheritance using the ↓
+                indicators. To see locations you can access, use the <strong>User Access</strong> tool.
+                {siteOwners.length > 0 && (
+                  <> Site Owners: {siteOwners.map((o, i) => (
+                    <React.Fragment key={o.email || o.title}>
+                      {i > 0 && ', '}
+                      {o.email
+                        ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
+                        : o.title}
+                    </React.Fragment>
+                  ))}.</>
+                )}
               </MessageBarBody>
             </MessageBar>
           )}
@@ -985,12 +1022,14 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
                   {/* Options — always at top */}
                   <div className={styles.optionsBar}>
-                    <Checkbox
-                      label="Expand group members"
-                      checked={expandGroups}
-                      onChange={(_, d) => setExpandGroups(!!d.checked)}
-                    />
-                    {!nodeLoading && !nodeError && !nodeHasUnique && (
+                    {!permissionsDenied && (
+                      <Checkbox
+                        label="Expand group members"
+                        checked={expandGroups}
+                        onChange={(_, d) => setExpandGroups(!!d.checked)}
+                      />
+                    )}
+                    {!permissionsDenied && !nodeLoading && !nodeError && !nodeHasUnique && (
                       <Checkbox
                         label="Show parent permissions"
                         checked={showParentPerms}
@@ -1009,26 +1048,51 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
                   {/* Inherited banner */}
                   {!nodeLoading && !nodeError && !nodeHasUnique && (
-                    <div className={styles.inheritedBanner}>
-                      <Link16Regular style={{ flexShrink: 0, color: tokens.colorBrandForeground1 }} />
-                      <Body1>This item inherits permissions from its parent.</Body1>
-                    </div>
+                    <>
+                      <div className={styles.inheritedBanner}>
+                        <Link16Regular style={{ flexShrink: 0, color: tokens.colorBrandForeground1 }} />
+                        <Body1>This item inherits permissions from its parent.</Body1>
+                      </div>
+                      {permissionsDenied && myPermLevel && (
+                        <MessageBar intent="success" style={{ marginTop: tokens.spacingVerticalS }}>
+                          <MessageBarBody>
+                            <strong>Your access:</strong> {myPermLevel}
+                          </MessageBarBody>
+                        </MessageBar>
+                      )}
+                    </>
                   )}
 
                   {/* Unique permissions table */}
                   {!nodeLoading && !nodeError && nodeHasUnique && (
-                    applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly).length === 0 && filterExternalOnly
+                    permissionsDenied && applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly).length === 0
                       ? (
-                        <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                          No external users have direct access to this item.
-                        </Body1>
-                      ) : (
-                        <PermTable
-                          users={applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly)}
-                          styles={styles}
-                          onCheckAccess={onNavigateToUserAccess}
-                        />
+                        <>
+                          {myPermLevel && (
+                            <MessageBar intent="success" style={{ marginBottom: tokens.spacingVerticalS }}>
+                              <MessageBarBody>
+                                <strong>Your access:</strong> {myPermLevel}
+                              </MessageBarBody>
+                            </MessageBar>
+                          )}
+                          <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+                            Permission assignments are not visible — the Manage Permissions right
+                            (Site Owner or higher) is required to read who has access to this item.
+                          </Body1>
+                        </>
                       )
+                      : applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly).length === 0 && filterExternalOnly
+                        ? (
+                          <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+                            No external users have direct access to this item.
+                          </Body1>
+                        ) : (
+                          <PermTable
+                            users={applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly)}
+                            styles={styles}
+                            onCheckAccess={onNavigateToUserAccess}
+                          />
+                        )
                   )}
 
                   {/* Parent permissions */}
@@ -1056,7 +1120,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                           </Text>
                           {parentPerms.length === 0 ? (
                             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                              No permissions found on parent.
+                              {permissionsDenied
+                                ? 'Parent permission assignments are not visible — requires the Manage Permissions right (Site Owner or higher).'
+                                : 'No permissions found on parent.'}
                             </Body1>
                           ) : (
                             <PermTable

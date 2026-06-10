@@ -3,6 +3,7 @@ import {
   Button,
   Field,
   Badge,
+  Link,
   Text,
   Title3,
   Body1,
@@ -174,6 +175,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const [userAccessItems, setUserAccessItems] = React.useState<PermissionEntry[]>([]);
   const [isFullSiteAccess, setIsFullSiteAccess] = React.useState(false);
   const [userAccessError, setUserAccessError] = React.useState('');
+  const [roleAssignmentsDenied, setRoleAssignmentsDenied] = React.useState(false);
+  const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
 
   // ── Pagination ──
   const PAGE_SIZE = 200;
@@ -181,6 +184,11 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
 
   // Reset pagination when results change
   React.useEffect(() => { setVisibleCount(PAGE_SIZE); }, [userAccessItems]);
+
+  React.useEffect(() => {
+    if (!roleAssignmentsDenied || !siteUrl) return;
+    sp.getSiteOwners(siteUrl.trim()).then(setSiteOwners).catch(() => {});
+  }, [roleAssignmentsDenied, siteUrl]);
 
   // ── Sort ──
   const [sortCol, setSortCol] = React.useState<'type' | 'name' | 'path' | 'permission'>('type');
@@ -363,11 +371,13 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     setUserAccessItems([]);
     setUserAccessError('');
     setGraphPermissionRequired(false);
+    setRoleAssignmentsDenied(false);
+    setSiteOwners([]);
     const user = siteUsers.find((u) => u.loginName === login);
     setUserAccessStatus(`Checking access for ${user?.displayName ?? login}…`);
 
     try {
-      const { fullSiteAccess, items, graphPermissionRequired: graphPerm } = await sp.getUserAccess(
+      const { fullSiteAccess, items, graphPermissionRequired: graphPerm, roleAssignmentsDenied: raDenied } = await sp.getUserAccess(
         siteUrl.trim(),
         login,
         (msg) => setUserAccessStatus(msg),
@@ -377,10 +387,13 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       setIsFullSiteAccess(fullSiteAccess);
       setUserAccessItems(items);
       setGraphPermissionRequired(graphPerm);
+      setRoleAssignmentsDenied(raDenied);
       const statusMsg = fullSiteAccess
         ? 'Full site access detected.'
         : items.length > 0
         ? `${items.length} accessible location(s) found.`
+        : raDenied
+        ? ''
         : 'No accessible locations found.';
       setUserAccessStatus(fullSiteAccess ? '' : statusMsg);
 
@@ -627,6 +640,41 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 Site-level permission could not be determined — this site likely uses Microsoft 365 Group access.
                 To show it, a SharePoint Administrator must approve the <strong>GroupMember.Read.All</strong> permission
                 in <strong>SharePoint Admin Center → Advanced → API access</strong>.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
+          {!userAccessBusy && roleAssignmentsDenied && (
+            <MessageBar
+              intent={userAccessItems.length > 0 ? 'info' : 'warning'}
+              style={{ marginBottom: tokens.spacingVerticalM }}
+            >
+              <MessageBarBody>
+                {userAccessItems.length > 0 ? (
+                  <>
+                    Showing <strong>site-level access only</strong>, based on default SharePoint group
+                    membership. Unique permissions on libraries, folders, and files could not be read
+                    and are not shown. For complete results, run this scan as a{' '}
+                    <strong>Site Owner</strong>.
+                  </>
+                ) : (
+                  <>
+                    This user{"'"}s access could not be determined. Reading permission assignments
+                    requires the <strong>Manage Permissions</strong> right (Site Owner or higher),
+                    and this user does not appear to be a member of the site{"'"}s default Owner,
+                    Member, or Visitor groups.
+                  </>
+                )}
+                {siteOwners.length > 0 && (
+                  <> Site Owners: {siteOwners.map((o, i) => (
+                    <React.Fragment key={o.email || o.title}>
+                      {i > 0 && ', '}
+                      {o.email
+                        ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
+                        : o.title}
+                    </React.Fragment>
+                  ))}.</>
+                )}
               </MessageBarBody>
             </MessageBar>
           )}

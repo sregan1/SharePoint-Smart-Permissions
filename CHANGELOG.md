@@ -4,6 +4,78 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.3.0] — 2026-06-09
+
+### Added
+
+- **Access detection on the home screen**
+  The web part now checks the signed-in user's effective permissions at startup
+  (and whenever the site URL changes). Anyone without the Manage Permissions right —
+  Members, Visitors, Limited Access users, and guests — sees a warning banner
+  explaining that Site Owner access is required and prompting them to contact a
+  site owner.
+
+- **Feature cards disabled for non-owners**
+  When the signed-in user lacks Site Owner access, the three home screen feature
+  cards are rendered at very low opacity with a grayscale filter, a `not-allowed`
+  cursor, and a "Requires Site Owner access" tooltip. Cards are non-clickable,
+  preventing navigation into tools that would show empty or error states.
+
+- **`checkCanManagePermissions()` in SharePointService**
+  New method that reads `/_api/web?$select=EffectiveBasePermissions` and checks the
+  ManagePermissions and ManageWeb bitmask flags to determine whether the signed-in
+  user has the right to read role assignments.
+
+- **Provisioning script — single-site mode**
+  `scripts/Provision-SmartPermissions.ps1` now supports a `$targetSiteUrl` variable.
+  Set it to provision a single site collection without enumerating the entire tenant.
+  Leave it empty for the existing tenant-wide behavior.
+
+- **Provisioning script — Owners-only page permissions**
+  After creating and publishing the Permissions page, the script now breaks
+  permission inheritance on the page list item and grants Full Control exclusively
+  to the site's Associated Owners group, preventing Members and Visitors from
+  accessing the page.
+
+- **Provisioning script — Quick Launch navigation**
+  The Permissions page is automatically added to the site's Quick Launch navigation.
+  On Microsoft 365 Group-connected sites the nav node is scoped to the Owners group
+  via `-AudienceIds` so only Owners see the link.
+
+- **Provisioning script — page audience targeting**
+  On M365-connected sites, audience targeting is enabled on the Site Pages library
+  and the Owners group is set as the page audience via `_ModernAudienceTargetUserField`.
+
+### Changed
+
+- **Home screen — three-column card layout**
+  The feature cards are now displayed in a single row of three columns (responsive:
+  two columns below 800 px, one column below 500 px). Previously two columns.
+
+- **Home screen — card order**
+  Cards are now ordered: Permissions Explorer, Permissions Report, User Access.
+
+- **Home screen — card image height normalized**
+  All card screenshots are cropped to a fixed 180 px height (`object-fit: cover`,
+  `object-position: top`) so cards align evenly regardless of the source image
+  aspect ratio.
+
+- **Home screen — Permission Groups card hidden**
+  The Permission Groups feature card has been removed from the home screen. The
+  underlying view and backend remain in the codebase.
+
+- **Site owners list removed from Member warning**
+  The warning banner no longer lists site owner names. System Account is also
+  filtered from the owners query in SharePointService.
+
+### Fixed
+
+- **System Account excluded from site owners list**
+  `getSiteOwners()` now filters out any user with the title "System Account" or
+  a `SHAREPOINT\system` login name.
+
+---
+
 ## [1.2.0] — 2026-06-02
 
 ### Added
@@ -252,12 +324,8 @@ All notable changes to this project are documented here.
   `docs/screenshot.js`: generates nine PNG screenshots using puppeteer-core and a
   local Chrome installation. Output goes to `docs/screenshots/` (git-ignored).
 
-- **Documentation — Word user guide**
-  `docs/generate-word.js`: generates `docs/UserGuide.docx` from the markdown source
-  with all screenshots embedded. Output is git-ignored; regenerate locally as needed.
-
 - **Documentation — end-user guide**
-  `docs/UserGuide.md`: full end-user documentation covering all three features,
+  `USER-GUIDE.md`: full end-user documentation covering all three features,
   global settings, and troubleshooting tips.
 
 ### Fixed
@@ -309,7 +377,7 @@ All notable changes to this project are documented here.
   - Version bumped to `1.0.0` in `package.json`
   - Removed placeholder `mpnId` from `config/package-solution.json`
   - Added generated documentation artifacts to `.gitignore`
-    (`docs/UserGuide.docx`, `docs/screenshots/`)
+    (`docs/screenshots/`)
   - README updated: project structure, generating-documentation section,
     MIT licence reference, Chrome path instructions for screenshot script
 

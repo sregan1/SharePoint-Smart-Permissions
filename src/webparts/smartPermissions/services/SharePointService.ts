@@ -50,11 +50,20 @@ function valueArray(data: any): any[] {
 }
 
 // Extract the Azure AD object GUID from a SharePoint claims login name.
-// M365 Groups:      c:0o.c|federateddirectoryclaimprovider|{GUID}
-// Security Groups:  c:0t.c|tenant|{GUID}  /  c:0p.c|s2s|{GUID}
+// M365 Groups:        c:0o.c|federateddirectoryclaimprovider|{GUID}
+// M365 Group owners:  c:0o.c|federateddirectoryclaimprovider|{GUID}_o
+// Security Groups:    c:0t.c|tenant|{GUID}  /  c:0p.c|s2s|{GUID}
+// The _o suffix indicates the owners slice of an M365 group — requires /groups/{id}/owners.
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function extractAadGroupId(loginName: string): string | null {
   const last = loginName.split('|').pop() ?? '';
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last) ? last : null;
+  return GUID_RE.test(last) ? last : null;
+}
+function extractAadGroupInfo(loginName: string): { id: string; isOwners: boolean } | null {
+  let last = loginName.split('|').pop() ?? '';
+  const isOwners = last.endsWith('_o');
+  if (isOwners) last = last.slice(0, -2);
+  return GUID_RE.test(last) ? { id: last, isOwners } : null;
 }
 
 // Returns true when an API error indicates the current user lacks read permission on
@@ -62,6 +71,19 @@ function extractAadGroupId(loginName: string): string | null {
 function isPermissionDenied(err: any): boolean {
   const msg = String(err?.message ?? '');
   return msg.includes('HTTP 403') || msg.includes('HTTP 401');
+}
+
+// Translate an EffectiveBasePermissions {High, Low} bitmask to the highest matching
+// SharePoint permission level name. SP REST returns High/Low as strings — callers
+// must parseInt before passing in.
+function spBitmaskToLevel(high: number, low: number): string {
+  void high; // High bits not needed for the levels we distinguish
+  const lo = low >>> 0; // treat as unsigned 32-bit
+  if (lo & 0x02000000 || lo & 0x40000000) return 'Full Control'; // ManagePermissions | ManageWeb
+  if (lo & 0x00000800) return 'Design';                           // ManageLists
+  if (lo & 0x00000004) return 'Edit';                             // EditListItems
+  if (lo & 0x00000001) return 'Read';                             // ViewListItems
+  return 'Limited access';
 }
 
 // Returns true for system-assigned pass-through roles that carry no meaningful permission
@@ -197,9 +219,9 @@ export class SharePointService {
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
-  ): Promise<{ entries: PermissionEntry[]; groupPermissionDenied: boolean }> {
+  ): Promise<{ entries: PermissionEntry[]; groupPermissionDenied: boolean; roleAssignmentsDenied: boolean }> {
     const entries: PermissionEntry[] = [];
-    const flags = { groupPermissionDenied: false };
+    const flags = { groupPermissionDenied: false, roleAssignmentsDenied: false };
     const emit0 = (message: string): void =>
       onProgress({ message, scanned: entries.length, libsDone: 0, libsTotal: 0 });
 
@@ -215,7 +237,7 @@ export class SharePointService {
       await this.scanSite(options.siteUrl, options, entries, onProgress, signal, onEntry, flags);
     }
 
-    return { entries, groupPermissionDenied: flags.groupPermissionDenied };
+    return { entries, groupPermissionDenied: flags.groupPermissionDenied, roleAssignmentsDenied: flags.roleAssignmentsDenied };
   }
 
   private async scanSite(
@@ -225,7 +247,7 @@ export class SharePointService {
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
-    flags?: { groupPermissionDenied: boolean },
+    flags?: { groupPermissionDenied: boolean; roleAssignmentsDenied: boolean },
   ): Promise<void> {
     const startIndex = entries.length;
     let libsDone = 0;
@@ -255,7 +277,8 @@ export class SharePointService {
       };
       entries.push(siteEntry);
       onEntry?.(siteEntry);
-    } catch {
+    } catch (err: any) {
+      if (isPermissionDenied(err) && flags) flags.roleAssignmentsDenied = true;
       // Fallback: no role assignments, just record the site.
       try {
         const webData = await this.getJson(
@@ -322,7 +345,9 @@ export class SharePointService {
                 `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
             );
             libPerms = this.toPermissionInfoList(valueArray(raData));
-          } catch { /* fall back to site perms */ }
+          } catch (err: any) {
+            if (isPermissionDenied(err) && flags) flags.roleAssignmentsDenied = true;
+          }
         }
 
         const libEntry: PermissionEntry = {
@@ -730,6 +755,72 @@ export class SharePointService {
     return null;
   }
 
+  async getEffectivePermissions(
+    siteUrl: string,
+    node: FolderFileNode,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const enc = odata(node.serverRelativeUrl);
+    const base = node.isFolder
+      ? `${siteUrl}/_api/web/GetFolderByServerRelativeUrl('${enc}')/ListItemAllFields`
+      : `${siteUrl}/_api/web/GetFileByServerRelativeUrl('${enc}')/ListItemAllFields`;
+    try {
+      const data = await this.getJson(`${base}?$select=EffectiveBasePermissions`);
+      if (signal?.aborted) return '';
+      return spBitmaskToLevel(
+        parseInt(data.EffectiveBasePermissions?.High ?? '0', 10),
+        parseInt(data.EffectiveBasePermissions?.Low ?? '0', 10),
+      );
+    } catch {
+      return '';
+    }
+  }
+
+  async getSiteGroups(
+    siteUrl: string,
+    signal?: AbortSignal,
+  ): Promise<{ id: number; title: string; loginName: string; description: string }[]> {
+    if (signal?.aborted) return [];
+    const data = await this.getJson(
+      `${siteUrl}/_api/web/sitegroups?$select=Id,Title,LoginName,Description&$orderby=Title`,
+    );
+    return valueArray(data).map((g: any) => ({
+      id: g.Id as number,
+      title: g.Title ?? '',
+      loginName: g.LoginName ?? '',
+      description: g.Description ?? '',
+    }));
+  }
+
+  async getSiteOwners(
+    siteUrl: string,
+    signal?: AbortSignal,
+  ): Promise<{ title: string; email: string }[]> {
+    try {
+      if (signal?.aborted) return [];
+      const data = await this.getJson(
+        `${siteUrl}/_api/web/AssociatedOwnerGroup/users?$select=Title,Email,IsHiddenInUI&$top=10`,
+      );
+      return valueArray(data)
+        .filter((u: any) => !u.IsHiddenInUI &&
+          u.Title !== 'System Account' &&
+          (u.LoginName ?? '').toLowerCase().indexOf('sharepoint\\system') === -1)
+        .map((u: any) => ({ title: u.Title ?? '', email: u.Email ?? '' }));
+    } catch {
+      return [];
+    }
+  }
+
+  async checkCanManagePermissions(siteUrl: string): Promise<boolean> {
+    try {
+      const data = await this.getJson(`${siteUrl}/_api/web?$select=EffectiveBasePermissions`);
+      const high: number = data?.EffectiveBasePermissions?.High ?? 0;
+      return !!(high & 0x02000000 || high & 0x40000000);
+    } catch {
+      return true; // fail open — don't block owners on API error
+    }
+  }
+
   async getGroupMembers(
     siteUrl: string,
     groupName: string,
@@ -742,22 +833,44 @@ export class SharePointService {
         const data = await this.getJson(
           `${siteUrl}/_api/web/sitegroups/getbyname('${odata(groupName)}')/users` +
             // Fetch one extra to detect truncation without a separate count call
-            `?$select=LoginName,Title,IsHiddenInUI&$top=${this.groupMemberCap + 1}`,
+            `?$select=LoginName,Title,IsHiddenInUI,PrincipalType&$top=${this.groupMemberCap + 1}`,
         );
-        const all = valueArray(data)
-          .filter((u: any) => !u.IsHiddenInUI)
-          .map(
-            (u: any): UserPermissionInfo => ({
-              loginName: u.LoginName,
-              displayName: u.Title,
+        const rawMembers: any[] = valueArray(data).filter((u: any) => !u.IsHiddenInUI);
+        const expanded: UserPermissionInfo[] = [];
+        for (const u of rawMembers) {
+          const pt: number = u.PrincipalType ?? 1;
+          if (pt !== 1) {
+            // Member is a nested group (M365 group or security group) — try to expand via Graph.
+            // M365-connected SP groups commonly contain the backing M365 group as their only member.
+            const nestedInfo = extractAadGroupInfo(u.LoginName ?? '');
+            if (nestedInfo) {
+              const nestedMembers = await this._getAadGroupMembers(nestedInfo.id, nestedInfo.isOwners ? 'owners' : 'members');
+              if (nestedMembers !== null) {
+                nestedMembers.forEach((m) => expanded.push({ ...m, isGroupMember: true }));
+                continue;
+              }
+            }
+            // Can't expand — show the nested group as a named entry rather than hiding it
+            expanded.push({
+              loginName: u.LoginName ?? '',
+              displayName: u.Title ?? '',
+              principalType: principalTypeLabel(pt),
+              roles: [],
+              isGroupMember: true,
+            });
+          } else {
+            expanded.push({
+              loginName: u.LoginName ?? '',
+              displayName: u.Title ?? '',
               principalType: 'User',
               roles: [],
               isGroupMember: true,
-            }),
-          )
-          .sort((a, b) => a.displayName.localeCompare(b.displayName));
-        if (all.length > this.groupMemberCap) {
-          const capped = all.slice(0, this.groupMemberCap);
+            });
+          }
+        }
+        expanded.sort((a, b) => a.displayName.localeCompare(b.displayName));
+        if (expanded.length > this.groupMemberCap) {
+          const capped = expanded.slice(0, this.groupMemberCap);
           capped.push({
             loginName: '',
             displayName: `(group has more than ${this.groupMemberCap} members — only first ${this.groupMemberCap} shown)`,
@@ -767,16 +880,16 @@ export class SharePointService {
           });
           return capped;
         }
-        return all;
+        return expanded;
       } catch {
         return [];
       }
     }
 
     if (principalType === 'SecurityGroup') {
-      const groupId = extractAadGroupId(loginName);
-      if (!groupId) return [];
-      const result = await this._getAadGroupMembers(groupId);
+      const groupInfo = extractAadGroupInfo(loginName);
+      if (!groupInfo) return [];
+      const result = await this._getAadGroupMembers(groupInfo.id, groupInfo.isOwners ? 'owners' : 'members');
       if (result === null) {
         const e: any = new Error(
           'Group member expansion requires the GroupMember.Read.All Graph permission. ' +
@@ -791,11 +904,11 @@ export class SharePointService {
     return [];
   }
 
-  private async _getAadGroupMembers(groupId: string): Promise<UserPermissionInfo[] | null> {
+  private async _getAadGroupMembers(groupId: string, endpoint: 'members' | 'owners' = 'members'): Promise<UserPermissionInfo[] | null> {
     try {
       const client: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
       const result = await client
-        .api(`/groups/${groupId}/members`)
+        .api(`/groups/${groupId}/${endpoint}`)
         .select('displayName,userPrincipalName,mail,id')
         .top(this.groupMemberCap + 1)
         .get();
@@ -853,7 +966,7 @@ export class SharePointService {
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
     includeHidden = false,
-  ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[]; graphPermissionRequired: boolean }> {
+  ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[]; graphPermissionRequired: boolean; roleAssignmentsDenied: boolean }> {
     onProgress('Loading user info…');
 
     let userTitle = userLoginName;
@@ -881,6 +994,7 @@ export class SharePointService {
     onProgress('Loading site permissions…');
     let siteRoles: string[] = [];
     let webData: any = null;
+    let roleAssignmentsDenied = false;
 
     try {
       webData = await this.getJson(
@@ -900,6 +1014,49 @@ export class SharePointService {
       console.debug('[SmartPermissions] getUserAccess: siteRoles after extractRoles=%o', siteRoles);
     } catch (err) {
       console.debug('[SmartPermissions] getUserAccess: web RoleAssignments fetch failed', err);
+      if (isPermissionDenied(err)) roleAssignmentsDenied = true;
+    }
+
+    // Member-access fallback: RoleAssignments are not readable, but the user's SP group
+    // memberships (fetched above without elevated rights) can be checked against the site's
+    // three default associated groups, which are always readable. This gives a site-level
+    // result without needing Manage Permissions.
+    if (roleAssignmentsDenied) {
+      onProgress('Checking site group membership…');
+      try {
+        const [web, ownerGrp, memberGrp, visitorGrp] = await Promise.all([
+          this.getJson(`${siteUrl}/_api/web?$select=Title,Url,ServerRelativeUrl`).catch(() => null),
+          this.getJson(`${siteUrl}/_api/web/AssociatedOwnerGroup?$select=LoginName,Title`).catch(() => null),
+          this.getJson(`${siteUrl}/_api/web/AssociatedMemberGroup?$select=LoginName,Title`).catch(() => null),
+          this.getJson(`${siteUrl}/_api/web/AssociatedVisitorGroup?$select=LoginName,Title`).catch(() => null),
+        ]);
+
+        const matchedRoles: string[] = [];
+        if (ownerGrp?.LoginName && groupLogins.has((ownerGrp.LoginName as string).toLowerCase())) {
+          matchedRoles.push('Full Control');
+        }
+        if (memberGrp?.LoginName && groupLogins.has((memberGrp.LoginName as string).toLowerCase())) {
+          matchedRoles.push('Edit');
+        }
+        if (visitorGrp?.LoginName && groupLogins.has((visitorGrp.LoginName as string).toLowerCase())) {
+          matchedRoles.push('Read');
+        }
+
+        if (matchedRoles.length > 0) {
+          const siteEntry: PermissionEntry = {
+            objectType: ObjectType.Site,
+            name: web?.Title ?? siteUrl,
+            serverRelativeUrl: web?.ServerRelativeUrl ?? '',
+            siteUrl,
+            hasUniquePermissions: true,
+            depth: 0,
+            uniquePermissions: [{ loginName: userLoginName, displayName: userTitle, principalType: 'User', roles: matchedRoles }],
+          };
+          return { fullSiteAccess: false, items: [siteEntry], graphPermissionRequired: false, roleAssignmentsDenied: true };
+        }
+      } catch { /* ignore fallback errors */ }
+
+      return { fullSiteAccess: false, items: [], graphPermissionRequired: false, roleAssignmentsDenied: true };
     }
 
     // Fallback for M365 Group-connected sites: extractRoles only matches SP group logins.
@@ -988,14 +1145,14 @@ export class SharePointService {
     // Full Site Access banner — owners have Full Control everywhere when no
     // library breaks inheritance. If some do, scan to verify actual access.
     if (isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
-      return { fullSiteAccess: true, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false };
+      return { fullSiteAccess: true, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false, roleAssignmentsDenied: false };
     }
 
     // Member/Visitor with site-level access and no broken-inheritance libraries —
     // all content is accessible via site inheritance; no scan needed.
     const hasSiteAccess = siteRoles.length > 0;
     if (hasSiteAccess && !isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
-      return { fullSiteAccess: false, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false };
+      return { fullSiteAccess: false, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false, roleAssignmentsDenied: false };
     }
 
     const items: PermissionEntry[] = siteEntry ? [siteEntry] : [];
@@ -1044,7 +1201,7 @@ export class SharePointService {
       );
     }), this.scanConcurrency);
 
-    return { fullSiteAccess: false, items, graphPermissionRequired };
+    return { fullSiteAccess: false, items, graphPermissionRequired, roleAssignmentsDenied };
   }
 
   private async walkFoldersForUser(

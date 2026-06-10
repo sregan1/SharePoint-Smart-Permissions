@@ -2,9 +2,9 @@ import * as React from 'react';
 import {
   Button,
   Card,
-  CardHeader,
   Text,
   Body1,
+  Tooltip,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
@@ -13,9 +13,14 @@ import {
   DataBarVertical24Regular,
   FolderSearch24Regular,
   PersonSearch24Regular,
-  Checkmark16Filled,
+  PeopleTeam24Regular,
+  LockClosed16Regular,
 } from '@fluentui/react-icons';
 import { AppView } from './App';
+import screenshotReport from '../assets/screenshot_report.png';
+import screenshotExplorer from '../assets/screenshot_explorer.png';
+import screenshotUserAccess from '../assets/screenshot_user_access.png';
+import screenshotGroups from '../assets/screenshot_groups.png';
 
 const useStyles = makeStyles({
   banner: {
@@ -40,7 +45,7 @@ const useStyles = makeStyles({
     gridTemplateColumns: 'repeat(3, 1fr)',
     gap: tokens.spacingHorizontalL,
     '@media (max-width: 800px)': {
-      gridTemplateColumns: '1fr 1fr',
+      gridTemplateColumns: 'repeat(2, 1fr)',
     },
     '@media (max-width: 500px)': {
       gridTemplateColumns: '1fr',
@@ -48,14 +53,28 @@ const useStyles = makeStyles({
   },
   card: {
     cursor: 'pointer',
-    padding: tokens.spacingVerticalL,
-    minHeight: '180px',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between',
+    overflow: 'hidden',
+    padding: '0',
     ':hover': {
       boxShadow: tokens.shadow16,
     },
+  },
+  cardImage: {
+    width: '100%',
+    height: '180px',
+    objectFit: 'cover',
+    objectPosition: 'top',
+    display: 'block',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  cardBody: {
+    display: 'flex',
+    flexDirection: 'column',
+    flexGrow: 1,
+    padding: tokens.spacingVerticalM,
+    gap: tokens.spacingVerticalS,
   },
   cardTitleRow: {
     display: 'flex',
@@ -63,42 +82,66 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
   },
   cardTitle: {
-    fontSize: tokens.fontSizeBase500,
+    fontSize: tokens.fontSizeBase400,
     fontWeight: tokens.fontWeightSemibold,
-    marginBottom: tokens.spacingVerticalS,
   },
   cardDesc: {
     flexGrow: 1,
-    marginBottom: tokens.spacingVerticalM,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: tokens.spacingVerticalXS,
-  },
-  featureItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: tokens.spacingHorizontalXS,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
   },
   navButton: {
     width: '100%',
-    minHeight: '52px',
-    whiteSpace: 'normal',
-    height: 'auto',
+    minHeight: '36px',
+  },
+  cardDisabled: {
+    opacity: '0.15',
+    pointerEvents: 'none',
   },
 });
-
 
 export interface HomeViewProps {
   onNavigate: (view: AppView) => void;
   primaryColor: string;
+  canManagePermissions: boolean | null;
+  siteOwners: { title: string; email: string }[];
 }
 
-export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor }) => {
+export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, canManagePermissions, siteOwners }) => {
   const styles = useStyles();
+
+  const cards = [
+    {
+      view: 'explorer' as AppView,
+      icon: <FolderSearch24Regular style={{ flexShrink: 0 }} />,
+      title: 'Permissions Explorer',
+      screenshot: screenshotExplorer,
+      alt: 'Permissions Explorer with folder tree and permissions panel',
+      desc: 'Browse any folder or file and instantly see who has access — with live, real-time permission lookups.',
+      buttonLabel: 'Open Permissions Explorer',
+    },
+    {
+      view: 'report' as AppView,
+      icon: <DataBarVertical24Regular style={{ flexShrink: 0 }} />,
+      title: 'Permissions Report',
+      screenshot: screenshotReport,
+      alt: 'Permissions Report configuration screen',
+      desc: 'Generate a color-coded Excel report of every unique permission assignment across your site.',
+      buttonLabel: 'Run Permissions Report',
+    },
+    {
+      view: 'userAccess' as AppView,
+      icon: <PersonSearch24Regular style={{ flexShrink: 0 }} />,
+      title: 'User Access',
+      screenshot: screenshotUserAccess,
+      alt: 'User Access screen showing accessible locations for a selected user',
+      desc: 'Look up any user to see every location they can access on a site, with their exact permission level.',
+      buttonLabel: 'Check User Access',
+    },
+  ];
 
   return (
     <div>
-      {/* Full-width banner — matches the header on all other views */}
       <div className={styles.banner} style={{ background: primaryColor }}>
         <ShieldLock24Regular style={{ color: 'white', fontSize: '20px', flexShrink: 0 }} />
         <Text style={{ color: 'white', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' }}>
@@ -107,123 +150,75 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor }) 
       </div>
 
       <div className={styles.root}>
+        {canManagePermissions === false && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: tokens.spacingHorizontalS,
+            padding: tokens.spacingVerticalM,
+            marginBottom: tokens.spacingVerticalL,
+            background: tokens.colorPaletteYellowBackground1,
+            border: `1px solid ${tokens.colorPaletteYellowBorder1}`,
+            borderRadius: tokens.borderRadiusMedium,
+            color: tokens.colorNeutralForeground1,
+            fontSize: tokens.fontSizeBase300,
+            lineHeight: tokens.lineHeightBase300,
+          }}>
+            <span style={{ flexShrink: 0, fontSize: '16px' }}>⚠️</span>
+            <span>
+              <strong>Site Owner access required — </strong>
+              These tools require Site Owner access. Contact a site owner if you have questions about permissions.
+            </span>
+          </div>
+        )}
+
         <div className={styles.subtitle}>
           <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-            Audit and understand SharePoint permissions in real time, directly from your browser — no PowerShell or admin tools required.
+            Audit and understand SharePoint permissions — no PowerShell required.
           </Body1>
         </div>
 
         <div className={styles.grid}>
-          <Card
-            className={styles.card}
-            onClick={() => onNavigate('report')}
-            role="button"
-            tabIndex={0}
-            aria-label="Run Permissions Report"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('report'); } }}
-          >
-            <CardHeader
-              header={
-                <div className={styles.cardTitleRow}>
-                  <DataBarVertical24Regular style={{ flexShrink: 0 }} />
-                  <Text className={styles.cardTitle}>Permissions Report</Text>
+          {cards.map(({ view, icon, title, screenshot, alt, desc, buttonLabel }) => {
+            const disabled = canManagePermissions === false;
+            const card = (
+              <Card
+                key={view}
+                className={`${styles.card}${disabled ? ` ${styles.cardDisabled}` : ''}`}
+                style={disabled ? { filter: 'grayscale(1)' } : undefined}
+                onClick={disabled ? undefined : () => onNavigate(view)}
+                role="button"
+                tabIndex={disabled ? -1 : 0}
+                aria-disabled={disabled}
+                aria-label={buttonLabel}
+                onKeyDown={disabled ? undefined : (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(view); } }}
+              >
+                <img src={screenshot} alt={alt} className={styles.cardImage} />
+                <div className={styles.cardBody}>
+                  <div className={styles.cardTitleRow}>
+                    {icon}
+                    <Text className={styles.cardTitle}>{title}</Text>
+                  </div>
+                  <Body1 className={styles.cardDesc}>{desc}</Body1>
+                  <Button
+                    appearance="primary"
+                    className={styles.navButton}
+                    tabIndex={-1}
+                    disabled={disabled}
+                    icon={disabled ? <LockClosed16Regular /> : undefined}
+                    iconPosition="after"
+                  >
+                    {buttonLabel}
+                  </Button>
                 </div>
-              }
-            />
-            <div className={styles.cardDesc}>
-              <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalS }}>
-                Generate a comprehensive Excel report showing every unique permission assignment across your site.
-              </Body1>
-              {[
-                'Site, Library, Folder, or Item level',
-                'Configurable folder depth',
-                'Color-coded Excel export',
-                'Scan all sites or a single site',
-              ].map((f) => (
-                <div key={f} className={styles.featureItem}>
-                  <Checkmark16Filled style={{ color: tokens.colorBrandForeground1, flexShrink: 0, marginTop: '2px' }} />
-                  <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 }}>{f}</Body1>
-                </div>
-              ))}
-            </div>
-            <Button appearance="primary" className={styles.navButton} tabIndex={-1}>
-              Run Permissions Report
-            </Button>
-          </Card>
-
-          <Card
-            className={styles.card}
-            onClick={() => onNavigate('explorer')}
-            role="button"
-            tabIndex={0}
-            aria-label="Open Permissions Explorer"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('explorer'); } }}
-          >
-            <CardHeader
-              header={
-                <div className={styles.cardTitleRow}>
-                  <FolderSearch24Regular style={{ flexShrink: 0 }} />
-                  <Text className={styles.cardTitle}>Permissions Explorer</Text>
-                </div>
-              }
-            />
-            <div className={styles.cardDesc}>
-              <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalS }}>
-                Browse permissions interactively in real time. Select any folder or file to instantly see who has access.
-              </Body1>
-              {[
-                'Interactive folder/file tree',
-                'Instant permission lookup',
-                'Unique vs. inherited permissions',
-                'Expand SharePoint group members',
-              ].map((f) => (
-                <div key={f} className={styles.featureItem}>
-                  <Checkmark16Filled style={{ color: tokens.colorBrandForeground1, flexShrink: 0, marginTop: '2px' }} />
-                  <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 }}>{f}</Body1>
-                </div>
-              ))}
-            </div>
-            <Button appearance="primary" className={styles.navButton} tabIndex={-1}>
-              Open Permissions Explorer
-            </Button>
-          </Card>
-
-          <Card
-            className={styles.card}
-            onClick={() => onNavigate('userAccess')}
-            role="button"
-            tabIndex={0}
-            aria-label="Check User Access"
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('userAccess'); } }}
-          >
-            <CardHeader
-              header={
-                <div className={styles.cardTitleRow}>
-                  <PersonSearch24Regular style={{ flexShrink: 0 }} />
-                  <Text className={styles.cardTitle}>User Access</Text>
-                </div>
-              }
-            />
-            <div className={styles.cardDesc}>
-              <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, marginBottom: tokens.spacingVerticalS }}>
-                Look up a specific user to see every location they can access on a site. Quickly identify over-privileged accounts.
-              </Body1>
-              {[
-                'Per-user access analysis',
-                'Full Site Access detection',
-                'Shows path and permission level',
-                'Search users by name',
-              ].map((f) => (
-                <div key={f} className={styles.featureItem}>
-                  <Checkmark16Filled style={{ color: tokens.colorBrandForeground1, flexShrink: 0, marginTop: '2px' }} />
-                  <Body1 style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 }}>{f}</Body1>
-                </div>
-              ))}
-            </div>
-            <Button appearance="primary" className={styles.navButton} tabIndex={-1}>
-              Check User Access
-            </Button>
-          </Card>
+              </Card>
+            );
+            return disabled ? (
+              <Tooltip key={view} content="Requires Site Owner access" relationship="description">
+                <div style={{ cursor: 'not-allowed' }}>{card}</div>
+              </Tooltip>
+            ) : card;
+          })}
         </div>
 
         <div

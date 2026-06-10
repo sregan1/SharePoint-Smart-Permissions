@@ -5,6 +5,7 @@ import {
   Input,
   Label,
   Field,
+  Link,
   RadioGroup,
   Radio,
   SpinButton,
@@ -141,6 +142,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   const [error, setError] = React.useState('');
   const [entries, setEntries] = React.useState<PermissionEntry[] | null>(null);
   const [groupPermissionDenied, setGroupPermissionDenied] = React.useState(false);
+  const [roleAssignmentsDenied, setRoleAssignmentsDenied] = React.useState(false);
+  const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
   const [isExporting, setIsExporting] = React.useState(false);
   const [liveCount, setLiveCount] = React.useState(0);
   const liveCountRef = React.useRef(0);
@@ -244,7 +247,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   // Clear stale results when any option that affects output changes
   React.useEffect(() => {
     setEntries(null);
+    setRoleAssignmentsDenied(false);
+    setSiteOwners([]);
   }, [allSites, scope, folderDepth, expandGroups]);
+
+  React.useEffect(() => {
+    if (!roleAssignmentsDenied || !siteUrl) return;
+    sp.getSiteOwners(siteUrl.trim()).then(setSiteOwners).catch(() => {});
+  }, [roleAssignmentsDenied, siteUrl]);
 
   const formatElapsed = (secs: number): string => {
     const m = Math.floor(secs / 60);
@@ -267,6 +277,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     setIsBusy(true);
     setError('');
     setEntries(null);
+    setRoleAssignmentsDenied(false);
+    setSiteOwners([]);
     setFilterText('');
     setFilterExternalOnly(false);
     setFilterUniqueOnly(false);
@@ -289,7 +301,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         libraryUrls: allSelected ? undefined : Array.from(selectedLibraryUrls),
       };
 
-      const { entries: scannedEntries, groupPermissionDenied: permDenied } = await sp.scanPermissions(
+      const { entries: scannedEntries, groupPermissionDenied: permDenied, roleAssignmentsDenied: raDenied } = await sp.scanPermissions(
         options,
         (progress) => setScanProgress(progress),
         abortRef.current.signal,
@@ -303,6 +315,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
       setEntries(scannedEntries);
       setGroupPermissionDenied(permDenied);
+      setRoleAssignmentsDenied(raDenied);
       const uniqueCount = scannedEntries.filter((e) => e.hasUniquePermissions).length;
       setScanProgress((prev) => ({
         ...prev,
@@ -704,6 +717,26 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 {entries.filter((e) => !e.hasUniquePermissions).length} inherited
               </Badge>
             </div>
+
+            {roleAssignmentsDenied && (
+              <MessageBar intent="warning">
+                <MessageBarBody>
+                  This scan ran with Member access — permission assignments could not be read.
+                  Only items with unique permissions are shown; who has access to each item
+                  is not visible. Run the scan as a <strong>Site Owner</strong> to see full permission details.
+                  {siteOwners.length > 0 && (
+                    <> Site Owners: {siteOwners.map((o, i) => (
+                      <React.Fragment key={o.email || o.title}>
+                        {i > 0 && ', '}
+                        {o.email
+                          ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
+                          : o.title}
+                      </React.Fragment>
+                    ))}.</>
+                  )}
+                </MessageBarBody>
+              </MessageBar>
+            )}
 
             {groupPermissionDenied && (
               <MessageBar intent="warning">
