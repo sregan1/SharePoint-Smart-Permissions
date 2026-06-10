@@ -1,6 +1,7 @@
 'use strict';
 // Generates custom card-header images for the HomeView.
 // Output: src/webparts/smartPermissions/assets/screenshot_*.png
+// Also generates docs/screenshots/01_home.png for the README.
 // Run: node docs/generate-screenshots.js
 
 const puppeteer = require('puppeteer-core');
@@ -13,6 +14,9 @@ const CHROME = fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\ch
 
 const OUT = path.join(__dirname, '..', 'src', 'webparts', 'smartPermissions', 'assets');
 if (!fs.existsSync(OUT)) fs.mkdirSync(OUT, { recursive: true });
+
+const DOCS_OUT = path.join(__dirname, 'screenshots');
+if (!fs.existsSync(DOCS_OUT)) fs.mkdirSync(DOCS_OUT, { recursive: true });
 
 const font = `'Segoe UI', Arial, sans-serif`;
 
@@ -87,35 +91,6 @@ function reportPage() {
     { type: 'File',    name: 'PR_Oct_Launch.docx',          path: '/sites/Marketing/Campaign Documents/Press Releases/PR_Oc...', unique: 'No',  level: '',             users: ''                               },
     { type: 'File',    name: 'Annual_Report_2025.pdf',      path: '/sites/Marketing/Marketing Assets/Annual_Report_2025.pdf',     unique: 'Yes', level: 'Read',         users: 'All Company'                    },
   ];
-
-  const levelCell = (level) => {
-    if (!level) return `<td style="padding:4px 8px;border-right:1px solid #D4D4D4;"></td>`;
-    const map = {
-      'Full Control': { bg: '#FDE7E9', color: '#A4262C' },
-      'Edit':         { bg: '#FFF4CE', color: '#7D4A00' },
-      'Read':         { bg: '#DFF6DD', color: '#107C10' },
-    };
-    const s = map[level];
-    return `<td style="padding:4px 8px;border-right:1px solid #D4D4D4;background:${s.bg};">
-      <span style="font-size:11px;font-weight:600;color:${s.color};font-family:${font};">${level}</span>
-    </td>`;
-  };
-
-  const dataRows = rows.map((r, i) => {
-    const bg = r.unique === 'Yes' ? '#EBF3FB' : (i % 2 === 0 ? '#FFFFFF' : '#F9F9F9');
-    return `<tr style="background:${bg};">
-      <td style="padding:4px 8px;border-right:1px solid #D4D4D4;font-size:11px;color:#323130;font-family:${font};">${r.type}</td>
-      <td style="padding:4px 8px;border-right:1px solid #D4D4D4;font-size:11px;color:#323130;font-family:${font};font-weight:${r.unique === 'Yes' ? '600' : '400'};">${r.name}</td>
-      <td style="padding:4px 8px;border-right:1px solid #D4D4D4;font-size:10px;color:#605E5C;font-family:${font};max-width:200px;overflow:hidden;white-space:nowrap;">${r.path}</td>
-      <td style="padding:4px 8px;border-right:1px solid #D4D4D4;text-align:center;">
-        ${r.unique === 'Yes'
-          ? `<span style="font-size:11px;font-weight:700;color:#107C10;font-family:${font};">✓ Yes</span>`
-          : `<span style="font-size:11px;color:#A19F9D;font-family:${font};">No</span>`}
-      </td>
-      ${levelCell(r.level)}
-      <td style="padding:4px 8px;font-size:10px;color:#323130;font-family:${font};">${r.users}</td>
-    </tr>`;
-  }).join('');
 
   const cols = ['Type', 'Name', 'Path', 'Has Unique Permissions', 'Permission Level', 'Users / Groups'];
   const colWidths = ['70px', '155px', '195px', '110px', '105px', 'auto'];
@@ -575,6 +550,104 @@ function groupsPage() {
 </body></html>`;
 }
 
+// ── Image 5: Home screen ──────────────────────────────────────────────────────
+function homePage() {
+  const blue = '#0078D4';
+
+  // Embed each card page as a scaled iframe using a data URI.
+  function cardThumb(htmlFn, srcW, srcH) {
+    // Card column width ≈ (1000 - 56 padding - 32 gaps) / 3 ≈ 304px
+    const colW = 304;
+    const scale = colW / srcW;
+    const scaledH = Math.ceil(180 / scale);
+    const encoded = encodeURIComponent(htmlFn());
+    return `<div style="width:100%;height:180px;overflow:hidden;border-bottom:1px solid #EDEBE9;flex-shrink:0;background:#F8F8F8;">
+      <iframe src="data:text/html;charset=utf-8,${encoded}"
+        style="width:${srcW}px;height:${srcH}px;border:none;
+          transform:scale(${scale.toFixed(4)});transform-origin:top left;pointer-events:none;"
+        scrolling="no"></iframe>
+    </div>`;
+  }
+
+  const cards = [
+    {
+      title: 'Permissions Explorer',
+      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="${blue}" style="flex-shrink:0;"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-2 10H6v-2h12v2zm0-4H6v-2h12v2z"/></svg>`,
+      desc: 'Browse any folder or file and instantly see who has access — with live, real-time permission lookups.',
+      buttonLabel: 'Open Permissions Explorer',
+      thumb: cardThumb(explorerPage, 800, 530),
+    },
+    {
+      title: 'Permissions Report',
+      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="${blue}" style="flex-shrink:0;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>`,
+      desc: 'Generate a color-coded Excel report of every unique permission assignment across your site.',
+      buttonLabel: 'Run Permissions Report',
+      thumb: cardThumb(reportPage, 800, 560),
+    },
+    {
+      title: 'User Access',
+      icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="${blue}" style="flex-shrink:0;"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
+      desc: 'Look up any user to see every location they can access on a site, with their exact permission level.',
+      buttonLabel: 'Check User Access',
+      thumb: cardThumb(userAccessPage, 800, 500),
+    },
+  ];
+
+  const cardHtml = cards.map(c => `
+    <div style="display:flex;flex-direction:column;overflow:hidden;border-radius:4px;
+      border:1px solid #EDEBE9;box-shadow:0 1px 4px rgba(0,0,0,0.08);background:#fff;">
+      ${c.thumb}
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${c.icon}
+          <span style="font-size:15px;font-weight:600;color:#323130;font-family:${font};">${c.title}</span>
+        </div>
+        <div style="font-size:12px;color:#605E5C;font-family:${font};flex:1;line-height:1.5;">${c.desc}</div>
+        <button style="width:100%;padding:7px 12px;background:${blue};color:#fff;border:none;
+          border-radius:4px;font-size:13px;font-family:${font};font-weight:600;cursor:pointer;">
+          ${c.buttonLabel}
+        </button>
+      </div>
+    </div>`).join('');
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>* { margin:0; padding:0; box-sizing:border-box; }</style>
+</head><body style="background:#fff;width:1000px;font-family:${font};color:#323130;">
+
+  <!-- Blue banner -->
+  <div style="background:${blue};display:flex;align-items:center;padding:0 16px;height:44px;gap:10px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+    </svg>
+    <span style="color:#fff;font-size:15px;font-weight:600;font-family:${font};">SharePoint Smart Permissions</span>
+  </div>
+
+  <!-- Main content -->
+  <div style="padding:24px 28px;">
+
+    <!-- Subtitle -->
+    <div style="font-size:13px;color:#8A8886;margin-bottom:24px;font-family:${font};">
+      Audit and understand SharePoint permissions — no PowerShell required.
+    </div>
+
+    <!-- 3-column card grid -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
+      ${cardHtml}
+    </div>
+
+    <!-- Note at bottom -->
+    <div style="padding:14px 16px;background:#F3F2F1;border-radius:4px;">
+      <span style="font-size:12.5px;color:#605E5C;font-family:${font};line-height:1.5;">
+        <strong>Note:</strong> This web part runs as the currently signed-in user. It can only see sites and
+        items that user has permission to view. For a full tenant scan, use an account with appropriate
+        read access across all sites.
+      </span>
+    </div>
+  </div>
+
+</body></html>`;
+}
+
 // ── Runner ────────────────────────────────────────────────────────────────────
 async function main() {
   const browser = await puppeteer.launch({
@@ -583,14 +656,15 @@ async function main() {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=none'],
   });
 
-  const shots = [
+  // Card header images (used by HomeView as card thumbnails)
+  const assetShots = [
     ['screenshot_report.png',      reportPage,      { width: 800, height: 560 }],
     ['screenshot_explorer.png',    explorerPage,    { width: 800, height: 530 }],
     ['screenshot_user_access.png', userAccessPage,  { width: 800, height: 500 }],
     ['screenshot_groups.png',      groupsPage,      { width: 800, height: 500 }],
   ];
 
-  for (const [filename, htmlFn, vp] of shots) {
+  for (const [filename, htmlFn, vp] of assetShots) {
     const pg = await browser.newPage();
     await pg.setViewport(vp);
     await pg.setContent(htmlFn(), { waitUntil: 'load' });
@@ -599,8 +673,23 @@ async function main() {
     console.log('✓', filename);
   }
 
+  // README / docs screenshots
+  const docsShots = [
+    ['01_home.png', homePage, { width: 1000, height: 620 }],
+  ];
+
+  for (const [filename, htmlFn, vp] of docsShots) {
+    const pg = await browser.newPage();
+    await pg.setViewport(vp);
+    await pg.setContent(htmlFn(), { waitUntil: 'networkidle0' });
+    await pg.screenshot({ path: path.join(DOCS_OUT, filename), clip: { x: 0, y: 0, width: vp.width, height: vp.height } });
+    await pg.close();
+    console.log('✓', filename);
+  }
+
   await browser.close();
-  console.log(`\nImages written to ${OUT}`);
+  console.log(`\nAsset images → ${OUT}`);
+  console.log(`Docs screenshots → ${DOCS_OUT}`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

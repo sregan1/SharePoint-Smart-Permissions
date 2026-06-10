@@ -1,171 +1,191 @@
-# SharePoint Smart Permissions
+# SharePoint Smart Permissions — Permissions Auditing Web Part
 
-A free, open source browser-based SharePoint Online permissions auditing tool delivered as an SPFx web part. Gives site owners, administrators, and compliance teams a real-time view of who has access to what — with no PowerShell, no third-party software, and no elevated service accounts required.
+[![Website](https://img.shields.io/badge/Website-sharepointsmartsolutions.com-blue)](https://sharepointsmartsolutions.com/smart-permissions) [![User Guide](https://img.shields.io/badge/User%20Guide-Read%20Now-green)](USER-GUIDE.md) [![Download](https://img.shields.io/badge/Download-Latest%20Release-CA5010?logo=github&logoColor=white)](../../releases/latest) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Requires Site Owner access.** All three tools read SharePoint role assignments, which requires the Manage Permissions right. Anyone without Site Owner access (Members, Visitors, Limited Access users, guests) will see the web part but the feature cards will be disabled with a clear explanation.
+A free, open-source SPFx web part that gives SharePoint site owners a real-time, browser-based view of who has access to what — no PowerShell, no third-party software, and no elevated service accounts required.
 
-<p>
-  <a href="https://sharepointsmartsolutions.com/smart-permissions"><img src="https://img.shields.io/badge/Website-sharepointsmartsolutions.com-0078d4?style=for-the-badge&logo=microsoftsharepoint&logoColor=white" alt="Website"/></a>
-  &nbsp;
-  <a href="https://github.com/sregan1/SharePoint-Smart-Permissions/blob/main/USER-GUIDE.md"><img src="https://img.shields.io/badge/User_Guide-View_Documentation-107c10?style=for-the-badge&logo=readthedocs&logoColor=white" alt="User Guide"/></a>
-</p>
+![SPFx](https://img.shields.io/badge/SPFx-1.21.1-0078D4?logo=microsoft&logoColor=white) ![React](https://img.shields.io/badge/React-17.0.1-61DAFB?logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?logo=typescript&logoColor=white) ![Fluent UI](https://img.shields.io/badge/Fluent%20UI-v9-0078D4?logo=microsoft&logoColor=white) ![ExcelJS](https://img.shields.io/badge/ExcelJS-4.4-107C10)
+
+![Home screen showing three feature cards: Permissions Explorer, Permissions Report, and User Access](docs/screenshots/01_home.png)
 
 ---
 
 ## Features
 
-### Main Tools
+> **Requires Site Owner access.** All three tools read SharePoint role assignments, which requires the Manage Permissions right. Anyone without Site Owner access (Members, Visitors, Limited Access users, guests) will see the web part but the feature cards will be disabled with a clear explanation.
 
-| Tool | Description |
-|------|-------------|
-| **Permissions Report** | Scans a site's libraries, folders, and files and exports a color-coded Excel workbook of every unique permission assignment. Supports full-tenant scans and optional group member expansion. |
-| **Permissions Explorer** | Interactively browse a document library tree and inspect live permissions on any folder or file. Shows inherited vs. unique permissions, supports expanding group members (SharePoint groups, Security groups, M365 groups). Automatically scans for external users in the background — a red warning-person icon appears on items where external access is explicitly granted. Three arrow-down indicators mark folders by what's below: **circle** = unique permissions, **triangle** = external user access, **circle + triangle together** = both. Toggle filters narrow the tree to unique or external-only items, and external user email addresses are decoded and shown inline in the permissions panel. Requires **Manage Permissions** to read role assignments; a banner is shown when the signed-in account lacks this right. |
-| **User Access** | Look up any user and see every location they can access, with their exact permission level at each location. Searchable Combobox for fast user lookup. Detects full-site owner access immediately. Sortable results table with Export to Excel and Export to CSV. Scan history persists in IndexedDB so past results can be re-exported without re-scanning. System accounts are automatically excluded from the user list. |
+### Permissions Explorer
+
+Interactively browse a document library tree and inspect live permissions on any folder or file.
+
+| Feature | Description |
+|---|---|
+| **Live permission lookup** | Click any folder or file to see its full role assignment list in real time |
+| **Inherited vs. unique** | Clearly labels whether permissions are inherited or uniquely assigned |
+| **Group member expansion** | Expand SharePoint groups, Security groups, and M365 groups to see individual members |
+| **Automatic external user detection** | Background scan flags items where external (#EXT#) accounts have explicit access — no clicking required |
+| **Three folder indicators** | Circle arrow = unique permissions below; triangle arrow = external access below; both together = both |
+| **External user email decoding** | Decoded email shown beneath the display name in the permissions panel |
+| **Tree filters** | Toggle to show only unique-permission items or only items with external user access |
+
+![Permissions Explorer with a folder selected and the permissions panel showing group members](docs/screenshots/05_explorer.png)
+
+---
+
+### Permissions Report
+
+Scan a site's libraries, folders, and files and export a color-coded Excel workbook of every unique permission assignment.
+
+| Feature | Description |
+|---|---|
+| **Configurable scan depth** | Choose Site only, Libraries, or full depth (folders and files) |
+| **Folder depth limit** | Cap recursion at 1–5 levels to control scan time on large sites |
+| **Group member expansion** | Expand all group types into individual user rows in the export |
+| **External user filter** | Scope the scan and export to external accounts only |
+| **Excel export** | In-browser `.xlsx` workbook with color-coded permission levels and an Access Via column |
+| **CSV export** | Plain-text alternative for scripted processing |
+| **Progress bar and timer** | Library-by-library progress with an elapsed timer and live item count |
+
+![Permissions Report configuration screen](docs/screenshots/02_report_config.png)
+
+![Permissions Report Excel export preview showing color-coded rows](docs/screenshots/04b_report_export.png)
+
+---
+
+### User Access
+
+Look up any user and see every location they can access on a site, with their exact permission level at each location.
+
+| Feature | Description |
+|---|---|
+| **Searchable user picker** | Combobox with live filtering across all site users |
+| **Site-level detection** | Immediately identifies when a user has full-site access via M365 Group or SP group membership |
+| **M365 Group support** | Detects membership via SharePoint REST, site GroupId, and Graph `transitiveMemberOf` |
+| **Sortable results table** | Click any column header to sort |
+| **Export to Excel / CSV** | Download the results for any user |
+| **Scan history** | Past scans persist in IndexedDB — re-export without re-scanning |
+
+![User Access results showing accessible locations for a selected user](docs/screenshots/07_user_access_complete.png)
 
 ---
 
 ## Screenshots
 
-<table>
-<tr>
-  <td align="center"><strong>Home</strong></td>
-  <td align="center"><strong>Permissions Report — Configuration</strong></td>
-</tr>
-<tr>
-  <td><img src="docs/screenshots/01_home.png" width="460" alt="Home screen"/></td>
-  <td><img src="docs/screenshots/02_report_config.png" width="460" alt="Permissions Report configuration"/></td>
-</tr>
-<tr>
-  <td align="center"><strong>Permissions Report — Export to Excel</strong></td>
-  <td align="center"><strong>Permissions Explorer</strong></td>
-</tr>
-<tr>
-  <td><img src="docs/screenshots/04b_report_export.png" width="460" alt="Permissions Report complete with Export to Excel"/></td>
-  <td><img src="docs/screenshots/05_explorer.png" width="460" alt="Permissions Explorer"/></td>
-</tr>
-<tr>
-  <td align="center"><strong>User Access</strong></td>
-  <td align="center"><strong>Settings</strong></td>
-</tr>
-<tr>
-  <td><img src="docs/screenshots/07_user_access_complete.png" width="460" alt="User Access results"/></td>
-  <td><img src="docs/screenshots/09_settings.png" width="460" alt="Settings"/></td>
-</tr>
-</table>
+| | |
+|---|---|
+| **Home** | **Permissions Report — Configuration** |
+| ![Home screen](docs/screenshots/01_home.png) | ![Permissions Report configuration](docs/screenshots/02_report_config.png) |
+| **Permissions Report — Excel Export** | **Permissions Explorer** |
+| ![Permissions Report Excel export](docs/screenshots/04b_report_export.png) | ![Permissions Explorer](docs/screenshots/05_explorer.png) |
+| **User Access — Results** | **Settings** |
+| ![User Access results](docs/screenshots/07_user_access_complete.png) | ![Settings](docs/screenshots/09_settings.png) |
 
 ---
 
-## Security & Privacy
+## Installation (No Build Required)
 
-- Runs entirely in the user's browser as the signed-in identity — no elevated permissions
-- Read-only: never creates, modifies, or deletes any SharePoint content
-- No external services: all data stays within the Microsoft 365 tenant
-- No data storage: results exist only in the browser session
-
----
-
-## Technology
-
-- **SPFx 1.21.1** · React 17 · TypeScript
-- **Fluent UI v9** (`@fluentui/react-components`) — theme tokens driven by the SharePoint site theme
-- **SharePoint REST API** — all permission data is read via standard SPO REST endpoints
-- **Microsoft Graph API** — used for group member expansion (`GroupMember.Read.All`, optional)
-- **ExcelJS** — in-browser Excel workbook generation
+1. Go to the [Releases](../../releases/latest) page and download `smart-permissions.sppkg`.
+2. Open the **SharePoint Admin Center** → **More features** → **Apps** → **App Catalog**.
+3. Upload `smart-permissions.sppkg` to the **Apps for SharePoint** library.
+4. When prompted, click **Deploy**. The *"Make this solution available to all sites"* checkbox controls where the web part can be placed — tick it for a tenant-wide deployment.
+5. Navigate to the SharePoint page where you want to add the web part, click **Edit**, and add **Smart Permissions** from the web part picker.
+6. *(Optional)* Approve the Graph API permissions in **SharePoint Admin Center → Advanced → API access** to enable group member expansion (see [Graph API Permissions](#graph-api-permissions) below).
 
 ---
 
-## Prerequisites (if building from source)
+## Prerequisites (for Development Only)
 
-- Node.js 18.x
-- `gulp-cli` installed globally (`npm install -g gulp-cli`)
-- A SharePoint Online tenant for testing
+| Requirement | Detail |
+|---|---|
+| **Node.js** | 18.x (`>=18.17.1 <19.0.0`) |
+| **gulp-cli** | Install globally: `npm install -g gulp-cli` |
+| **SharePoint** | Online (Microsoft 365) |
+| **SPFx** | 1.21.1 |
+| **Permissions to deploy** | Site collection administrator or above |
 
 ---
 
-## Getting Started
+## Development Setup
 
 ```bash
 # Install dependencies
 npm install
 
-# Start the local workbench
+# Edit config/serve.json and set initialPage to your hosted workbench URL:
+# "initialPage": "https://<tenant>.sharepoint.com/_layouts/15/workbench.aspx"
+
+# Start the local dev server (opens hosted workbench)
 gulp serve
 ```
 
-The local workbench opens at `https://localhost:4321/temp/workbench.html`. For full SharePoint REST API access, use the hosted workbench at `https://<tenant>.sharepoint.com/_layouts/15/workbench.aspx`.
+The local workbench at `https://localhost:4321/temp/workbench.html` does not have SharePoint REST API access. Use the **hosted workbench** URL above for full functionality.
 
 ---
 
-## Download or Build & Package
-
-If you don't want to build from source, you can download the pre-built `smart-permissions.sppkg` directly from the [Releases](https://github.com/sregan1/SharePoint-Smart-Permissions/releases) page and skip straight to uploading it to your App Catalog.
-
-To build yourself:
+## Build & Deploy
 
 ```bash
-# Production bundle
+# Production bundle (minified, ship mode)
 gulp bundle --ship
 
 # Create the .sppkg deployment package
 gulp package-solution --ship
+
+# Or run both in one step:
+npm run ship
 ```
 
-The package is written to `sharepoint/solution/smart-permissions.sppkg`. Upload it to the SharePoint App Catalog. Optionally, approve the Graph permission request in the SharePoint Admin Center to enable group member expansion (see below).
+The package is written to `sharepoint/solution/smart-permissions.sppkg`.
+
+**Deploy to SharePoint:**
+
+1. Upload `smart-permissions.sppkg` to the tenant or site App Catalog.
+2. Click **Deploy** when prompted.
+3. Add the web part to a page and optionally approve Graph permissions (see below).
 
 ---
 
-## Graph API Permissions (optional)
+## Configuration
 
-The package declares two optional `webApiPermissionRequests` entries:
+To change web part settings, put the page in **Edit** mode, click the web part pencil icon, and use the property pane.
 
-| Permission | Purpose | Required? |
-|------------|---------|-----------|
-| `GroupMember.Read.All` | Expand Security group and M365 group members in Permissions Report and Explorer | Optional |
-| `Sites.Read.All` | Required for Sharing Links enumeration via the Graph drives/delta API | Optional |
+**General**
 
-Both permissions are **optional** — the core tools work without them:
-- Without `GroupMember.Read.All`: Security groups and M365 groups cannot be expanded to list individual members. SharePoint group expansion works without it.
-- Without `Sites.Read.All`: Sharing Links features are unavailable.
+| Setting | Default | Description |
+|---|---|---|
+| **Default view on open** | Home | The screen shown when the web part first loads. Options: Home, Permissions Report, Permissions Explorer, User Access |
 
-To enable group member expansion, a SharePoint or Global Administrator must approve the permission request after the package is deployed.
+---
 
-**Step 1 — Deploy the package**
+## Graph API Permissions
 
-Upload the `.sppkg` to the Tenant App Catalog and click **Deploy** when prompted. The *"Make this solution available to all sites"* checkbox controls where the web part can be placed but has no effect on permission approval.
+The package declares two optional `webApiPermissionRequests` entries. The core tools work without them, but the following features require approval:
 
-**Step 2 — Check whether the permission is already approved**
+| Permission | Enables | Required? |
+|---|---|---|
+| `GroupMember.Read.All` | Expanding Security group and M365 group members in the Permissions Report and Explorer | Optional |
+| `Sites.Read.All` | SharePoint sharing links enumeration via the Graph drives/delta API | Optional |
 
-Go to **SharePoint Admin Center → Advanced → API access** (or open `https://<your-tenant>-admin.sharepoint.com/_layouts/15/online/ManageApiPermissions.aspx` directly).
+**To approve (SharePoint Admin Center):**
 
-> **What approved SPFx permissions look like:** Once approved, `GroupMember.Read.All` appears in the list under **Microsoft Graph** with a blank app name (`—`) and no date — it does *not* show "Smart Permissions" as the app. This is normal. If you see the entry with "Yes" in the consent column, the permission is active and no further action is needed.
+1. Go to **SharePoint Admin Center → Advanced → API access** (or navigate directly to `https://<tenant>-admin.sharepoint.com/_layouts/15/online/ManageApiPermissions.aspx`).
+2. Find the pending request for Smart Permissions and click **Approve**.
 
-If there is a **pending request** for Smart Permissions, approve it. If you see nothing pending and the permission described above is already in the list, the web part is fully enabled.
+> **What approved SPFx permissions look like:** Once approved, `GroupMember.Read.All` appears in the list under **Microsoft Graph** with a blank app name (`—`) and no date. This is normal for SPFx permissions. If you see the entry with consent granted, the permission is active.
 
-**Option B — PnP PowerShell**
-
-If the Admin Center shows no pending requests and you need to grant the permissions from scratch, use [PnP PowerShell](https://pnp.github.io/powershell/):
+**To approve via PnP PowerShell:**
 
 ```powershell
-Connect-PnPOnline -Url "https://<your-tenant>-admin.sharepoint.com" -Interactive
+Connect-PnPOnline -Url "https://<tenant>-admin.sharepoint.com" -Interactive
 
-# List pending requests and note their IDs
+# List pending requests
 Get-PnPTenantServicePrincipalPermissionRequests
 
-# Approve each request by its ID
-Approve-PnPTenantServicePrincipalPermissionRequest -RequestId "<guid-from-above>"
+# Approve by ID
+Approve-PnPTenantServicePrincipalPermissionRequest -RequestId "<guid>"
 ```
 
----
-
-## Web Part Properties
-
-The web part exposes one property pane setting:
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| **Default view on open** | Home | Sets which screen opens when the web part first loads. Options: Home, Permissions Report, Permissions Explorer, User Access. |
-
-To change it: put the page in Edit mode → click the web part pencil → select from the **Default view on open** dropdown → republish the page.
+**Without `GroupMember.Read.All`:** SharePoint group members expand normally. Security groups and M365 groups show a warning banner instead of member lists.
 
 ---
 
@@ -174,24 +194,73 @@ To change it: put the page in Edit mode → click the web part pencil → select
 ```
 src/webparts/smartPermissions/
 ├── components/
-│   ├── App.tsx                        # Root component, routing, permission check, theme wiring
-│   ├── HomeView.tsx                   # Home screen with feature cards and member access warning
-│   ├── PermissionsReportView.tsx      # Report configuration, progress, export
-│   ├── PermissionsExplorerView.tsx    # Interactive folder/file tree + permission panel
+│   ├── App.tsx                        # Root component — routing, permission check, theme wiring
+│   ├── HomeView.tsx                   # Home screen with feature cards and non-owner warning
+│   ├── PermissionsReportView.tsx      # Report configuration, scan progress, export
+│   ├── PermissionsExplorerView.tsx    # Interactive folder/file tree and permission panel
 │   ├── UserAccessView.tsx             # Per-user access scan, history, export
-│   ├── PermissionGroupsView.tsx       # SharePoint group browser (backend only, not on home screen)
+│   ├── PermissionGroupsView.tsx       # SharePoint group browser (backend only; not on home screen)
 │   └── SettingsView.tsx               # Full-page settings screen
 ├── services/
-│   ├── SharePointService.ts           # All REST + Graph API calls
+│   ├── SharePointService.ts           # All REST and Graph API calls
 │   └── ExcelExportService.ts          # ExcelJS workbook generation
 ├── models/
 │   └── models.ts                      # Shared TypeScript interfaces
 └── SmartPermissionsWebPart.ts         # SPFx entry point, property pane, theme wiring
+
+config/
+├── package-solution.json              # Solution ID, version, Graph permission requests
+└── serve.json                         # Local dev server config — set initialPage here
+
+docs/
+├── generate-screenshots.js            # Puppeteer script to regenerate all screenshots
+└── screenshots/                       # Auto-generated UI screenshots (git-ignored)
+
+scripts/
+└── Provision-SmartPermissions.ps1     # PnP PowerShell provisioning script
+
+sharepoint/solution/
+└── smart-permissions.sppkg            # Pre-built deployment package
 ```
 
 ---
 
-## Documentation
+## Key Dependencies
 
-- [User Guide](USER-GUIDE.md) — end-user documentation covering all tools, settings, and web part configuration
-- `docs/screenshots/` — auto-generated UI screenshots (regenerate with `node docs/generate-screenshots.js`)
+| Package | Purpose |
+|---|---|
+| `@microsoft/sp-webpart-base` | SPFx web part base class and framework integration |
+| `@fluentui/react-components` | Fluent UI v9 — components and theme tokens |
+| `react` / `react-dom` | UI rendering (v17) |
+| `exceljs` | In-browser Excel workbook generation for report exports |
+
+---
+
+## Troubleshooting
+
+**"Feature cards are grayed out and I see a warning banner"** — The signed-in account does not have the Manage Permissions right. Site Owner access or higher is required to read role assignments. Ask a site owner to either grant you Owner access or run the tool on your behalf.
+
+**"Security groups / M365 groups show a warning instead of expanding"** — The `GroupMember.Read.All` Graph permission has not been approved. A SharePoint or Global Administrator must approve it in **SharePoint Admin Center → Advanced → API access**. SharePoint group expansion works without this permission.
+
+**"gulp serve opens but the web part shows no data"** — The local workbench (`localhost:4321`) cannot authenticate to SharePoint REST. Switch to the hosted workbench: edit `config/serve.json` and set `initialPage` to `https://<tenant>.sharepoint.com/_layouts/15/workbench.aspx`.
+
+**"npm install fails" or build errors about Node version** — This project requires Node 18.x exactly (`>=18.17.1 <19.0.0`). Run `node --version` to confirm. Use `nvm` or `nvm-windows` to switch versions.
+
+**"The scan takes a very long time"** — User Access and Permissions Report scan time scales with the number of unique permission assignments on the site. Use the scan depth and folder depth settings in the Permissions Report to limit scope, or run the scan against a specific library.
+
+---
+
+## Limitations
+
+- All three tools require the **Manage Permissions** right (Site Owner access). Members, Visitors, Limited Access users, and guests cannot use any feature.
+- Runs entirely as the signed-in user — results reflect that user's view. An account with read access to only part of a site will produce an incomplete scan.
+- In-browser Excel generation via ExcelJS may slow down or fail on very large sites (tens of thousands of unique permission rows) due to browser memory limits.
+- Scan history (User Access) persists in **IndexedDB** in the browser. Clearing browser data removes all saved scan results.
+- The **Permission Groups** view exists in the codebase but is not accessible from the home screen in this version.
+- `Sites.Read.All` is declared in the package manifest for future use but no currently visible feature requires it.
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Sean Regan
