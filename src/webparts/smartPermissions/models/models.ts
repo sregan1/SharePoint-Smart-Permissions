@@ -1,6 +1,7 @@
 export enum ObjectType {
   Site = 'Site',
   Library = 'Library',
+  List = 'List',
   Folder = 'Folder',
   File = 'File',
 }
@@ -29,6 +30,8 @@ export interface PermissionEntry {
   hasUniquePermissions: boolean;
   depth: number;
   uniquePermissions: UserPermissionInfo[];
+  /** True when the list/library is marked NoCrawl (hidden from search). */
+  noCrawl?: boolean;
 }
 
 export interface FolderFileNode {
@@ -48,6 +51,8 @@ export interface FolderFileNode {
 export interface LibraryInfo {
   title: string;
   serverRelativeUrl: string;
+  /** True when the library is marked NoCrawl (hidden from search). */
+  noCrawl?: boolean;
 }
 
 export interface SiteCollectionInfo {
@@ -64,6 +69,8 @@ export interface SiteUserInfo {
 export interface ReportOptions {
   siteUrl: string;
   allSites: boolean;
+  /** Recurse into subsites (subwebs) of each scanned site. */
+  includeSubsites: boolean;
   scope: ReportScope;
   folderDepth: number;
   includeHidden: boolean;
@@ -85,6 +92,8 @@ export interface StoredReport {
   siteUrl: string;
   options: {
     allSites: boolean;
+    /** Optional for backward compatibility with reports stored before v1.4. */
+    includeSubsites?: boolean;
     scope: ReportScope;
     folderDepth: number;
     expandGroups: boolean;
@@ -96,42 +105,6 @@ export interface StoredReport {
     durationSeconds: number;
   };
   entries: PermissionEntry[];
-}
-
-export interface SharingLinkEntry {
-  name: string;
-  webUrl: string;
-  libraryName: string;
-  linkScope: 'anonymous' | 'organization' | 'users' | string;
-  linkType: 'view' | 'edit' | 'review' | string;
-  linkUrl: string;
-  sharedWith: string;   // comma-separated display names (only for 'users' scope)
-  expiresAt?: string;   // ISO date string or undefined
-}
-
-export interface PermissionGroup {
-  id: number;
-  title: string;
-  loginName: string;
-  description: string;
-  roles: string[];      // roles on the site
-  memberCount: number;
-  members: SiteUserInfo[];
-}
-
-export interface ExternalUserEntry {
-  loginName: string;
-  displayName: string;
-  email: string;
-  isSiteAdmin: boolean;
-  groups: string[];
-}
-
-export interface BrokenInheritanceEntry {
-  objectType: 'Library' | 'Folder' | 'File';
-  name: string;
-  serverRelativeUrl: string;
-  depth: number;
 }
 
 export interface StoredUserAccessReport {

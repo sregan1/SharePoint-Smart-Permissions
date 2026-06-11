@@ -149,7 +149,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               style={{ width: '80px' }}
             />
             <Tooltip
-              content="How many SharePoint API requests run in parallel during scans. Higher values are faster but more likely to trigger throttling (HTTP 429). 3–5 is recommended."
+              content="How many SharePoint API requests run in parallel during Permissions Report scans, User Access scans, and Explorer background checks. Higher values are faster but more likely to trigger throttling (HTTP 429). 3–5 is recommended."
               relationship="description"
               withArrow
             >

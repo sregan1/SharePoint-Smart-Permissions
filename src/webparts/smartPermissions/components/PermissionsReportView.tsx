@@ -5,7 +5,6 @@ import {
   Input,
   Label,
   Field,
-  Link,
   RadioGroup,
   Radio,
   SpinButton,
@@ -29,12 +28,37 @@ import {
   FolderOpen24Regular,
   History24Regular,
   Delete24Regular,
+  ChevronRight16Regular,
+  ChevronDown16Regular,
 } from '@fluentui/react-icons';
 
 import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportHistoryService } from '../services/ReportHistoryService';
 import { ReportOptions, ReportScope, PermissionEntry, ObjectType, ScanProgress, StoredReport, LibraryInfo } from '../models/models';
+import { requestNotificationPermission, showNotification } from '../utils/notifications';
+import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
+import { PermTable } from './shared/PermTable';
+import { diffReports, ReportDiff } from '../utils/reportDiff';
+
+// Badge color per object type (matches the User Access view's mapping).
+function typeBadgeColor(t: ObjectType): 'brand' | 'informative' | 'success' | 'warning' | undefined {
+  switch (t) {
+    case ObjectType.Site:    return 'brand';
+    case ObjectType.Library: return 'informative';
+    case ObjectType.List:    return 'success';
+    case ObjectType.Folder:  return 'warning';
+    default:                 return undefined;
+  }
+}
+
+const TYPE_ORDER: Record<string, number> = {
+  [ObjectType.Site]: 0,
+  [ObjectType.Library]: 1,
+  [ObjectType.List]: 2,
+  [ObjectType.Folder]: 3,
+  [ObjectType.File]: 4,
+};
 
 
 const useStyles = makeStyles({
@@ -131,6 +155,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
   // ── Form state ──
   const [allSites, setAllSites] = React.useState(false);
+  const [includeSubsites, setIncludeSubsites] = React.useState(false);
   const [scope, setScope] = React.useState<string>('Site');
   const [folderDepth, setFolderDepth] = React.useState(2);
   const [expandGroups, setExpandGroups] = React.useState(true);
@@ -141,6 +166,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   const [elapsed, setElapsed] = React.useState(0);
   const [error, setError] = React.useState('');
   const [entries, setEntries] = React.useState<PermissionEntry[] | null>(null);
+  const [cancelled, setCancelled] = React.useState(false);
   const [groupPermissionDenied, setGroupPermissionDenied] = React.useState(false);
   const [roleAssignmentsDenied, setRoleAssignmentsDenied] = React.useState(false);
   const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
@@ -167,6 +193,50 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       return false;
     });
   }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
+
+  // ── Results table state ──
+  const RESULTS_PAGE_SIZE = 200;
+  const [resultsVisible, setResultsVisible] = React.useState(RESULTS_PAGE_SIZE);
+  // 'scan' keeps the natural scan order (site → library → folders, DFS).
+  const [resultSortCol, setResultSortCol] = React.useState<'scan' | 'type' | 'name' | 'path' | 'source'>('scan');
+  const [resultSortAsc, setResultSortAsc] = React.useState(true);
+  const [expandedKeys, setExpandedKeys] = React.useState<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    setResultsVisible(RESULTS_PAGE_SIZE);
+    setExpandedKeys(new Set());
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly]);
+
+  const sortedResults = React.useMemo(() => {
+    if (!filteredEntries) return [];
+    if (resultSortCol === 'scan') return filteredEntries;
+    return [...filteredEntries].sort((a, b) => {
+      let diff = 0;
+      if (resultSortCol === 'type') diff = (TYPE_ORDER[a.objectType] ?? 5) - (TYPE_ORDER[b.objectType] ?? 5);
+      else if (resultSortCol === 'name') diff = a.name.localeCompare(b.name);
+      else if (resultSortCol === 'path') diff = a.serverRelativeUrl.localeCompare(b.serverRelativeUrl);
+      else diff = Number(b.hasUniquePermissions) - Number(a.hasUniquePermissions);
+      if (diff !== 0) return resultSortAsc ? diff : -diff;
+      return a.serverRelativeUrl.localeCompare(b.serverRelativeUrl);
+    });
+  }, [filteredEntries, resultSortCol, resultSortAsc]);
+
+  const handleResultSort = (col: 'type' | 'name' | 'path' | 'source'): void => {
+    if (resultSortCol === col) { setResultSortAsc((v) => !v); } else { setResultSortCol(col); setResultSortAsc(true); }
+  };
+
+  const resultSortInd = (col: string): string =>
+    resultSortCol !== col ? '' : resultSortAsc ? ' ▲' : ' ▼';
+
+  const entryKey = (e: PermissionEntry): string => `${e.objectType}|${e.siteUrl}|${e.serverRelativeUrl}`;
+
+  const toggleExpanded = (key: string): void => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) { next.delete(key); } else { next.add(key); }
+      return next;
+    });
+  };
 
   // ── Library picker state ──
   const [availableLibraries, setAvailableLibraries] = React.useState<LibraryInfo[]>([]);
@@ -220,6 +290,40 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     if (historySortCol === col) { setHistorySortAsc((v) => !v); } else { setHistorySortCol(col); setHistorySortAsc(true); }
   };
 
+  // ── Compare state ──
+  const [compareSelection, setCompareSelection] = React.useState<Set<string>>(new Set());
+  const [compareResult, setCompareResult] = React.useState<{ older: StoredReport; newer: StoredReport; diff: ReportDiff } | null>(null);
+
+  const toggleCompareSelection = (id: string): void => {
+    setCompareSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < 2) {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleCompare = (): void => {
+    const selected = historyItems.filter((r) => compareSelection.has(r.id));
+    if (selected.length !== 2) return;
+    // Older report first — ids are Date.now() strings, but compare timestamps
+    // to be safe.
+    const [older, newer] = selected[0].timestamp <= selected[1].timestamp
+      ? [selected[0], selected[1]]
+      : [selected[1], selected[0]];
+    setCompareResult({ older, newer, diff: diffReports(older, newer) });
+  };
+
+  const compareMismatch = compareResult !== null && (
+    compareResult.older.siteUrl !== compareResult.newer.siteUrl ||
+    compareResult.older.options.scope !== compareResult.newer.options.scope ||
+    !!compareResult.older.options.allSites !== !!compareResult.newer.options.allSites ||
+    !!compareResult.older.options.includeSubsites !== !!compareResult.newer.options.includeSubsites
+  );
+
   const sortIndicator = (col: typeof historySortCol): string =>
     historySortCol !== col ? '' : historySortAsc ? ' ▲' : ' ▼';
 
@@ -234,14 +338,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     return () => clearInterval(id);
   }, [isBusy]);
 
-  // Load history on mount; request notification permission
+  // Load history on mount
   React.useEffect(() => {
     historyService.current.getAll()
       .then(setHistoryItems)
       .catch(() => { /* IndexedDB unavailable — history simply won't show */ });
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => { /* ignore */ });
-    }
   }, []);
 
   // Clear stale results when any option that affects output changes
@@ -249,7 +350,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     setEntries(null);
     setRoleAssignmentsDenied(false);
     setSiteOwners([]);
-  }, [allSites, scope, folderDepth, expandGroups]);
+  }, [allSites, includeSubsites, scope, folderDepth, expandGroups]);
 
   React.useEffect(() => {
     if (!roleAssignmentsDenied || !siteUrl) return;
@@ -271,12 +372,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   }, [siteUrl]);
 
   const handleRun = async (): Promise<void> => {
+    requestNotificationPermission();
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     scanStartRef.current = Date.now();
     setIsBusy(true);
     setError('');
     setEntries(null);
+    setCancelled(false);
     setRoleAssignmentsDenied(false);
     setSiteOwners([]);
     setFilterText('');
@@ -294,6 +397,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       const options: ReportOptions = {
         siteUrl: siteUrl.trim(),
         allSites,
+        includeSubsites,
         scope: scope as ReportScope,
         folderDepth,
         includeHidden,
@@ -308,34 +412,34 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         () => { liveCountRef.current += 1; },
       );
 
-      if (abortRef.current.signal.aborted) {
-        setScanProgress((prev) => ({ ...prev, message: 'Cancelled.' }));
-        return;
-      }
-
+      // On cancel, keep whatever was collected so it can be reviewed/exported.
+      const wasCancelled = abortRef.current.signal.aborted;
+      setCancelled(wasCancelled);
       setEntries(scannedEntries);
       setGroupPermissionDenied(permDenied);
       setRoleAssignmentsDenied(raDenied);
       const uniqueCount = scannedEntries.filter((e) => e.hasUniquePermissions).length;
       setScanProgress((prev) => ({
         ...prev,
-        message:
-          `Scan complete — ${scannedEntries.length} object(s) found, ` +
-          `${uniqueCount} with unique permissions.`,
+        message: wasCancelled
+          ? `Scan cancelled — ${scannedEntries.length} object(s) collected before cancelling.`
+          : `Scan complete — ${scannedEntries.length} object(s) found, ` +
+            `${uniqueCount} with unique permissions.`,
       }));
 
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Smart Permissions — Scan complete', {
-          body: `${scannedEntries.length} objects, ${uniqueCount} with unique permissions.`,
-        });
-      }
+      if (wasCancelled) return;
+
+      showNotification(
+        'Smart Permissions — Scan complete',
+        `${scannedEntries.length} objects, ${uniqueCount} with unique permissions.`,
+      );
 
       // Save to history (errors are swallowed — never block the user from seeing results)
       const storedReport: StoredReport = {
         id: Date.now().toString(),
         timestamp: new Date().toISOString(),
         siteUrl: siteUrl.trim(),
-        options: { allSites, scope: scope as ReportScope, folderDepth, expandGroups },
+        options: { allSites, includeSubsites, scope: scope as ReportScope, folderDepth, expandGroups },
         summary: {
           totalObjects: scannedEntries.length,
           uniqueCount,
@@ -447,12 +551,179 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         </Button>
       </div>
 
+      {/* ── Compare (diff) panel ── */}
+      {showHistory && compareResult && (
+        <div>
+          <div className={styles.row} style={{ marginBottom: tokens.spacingVerticalM }}>
+            <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setCompareResult(null)}>
+              Back to history
+            </Button>
+            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+              Comparing {new Date(compareResult.older.timestamp).toLocaleString()} →{' '}
+              {new Date(compareResult.newer.timestamp).toLocaleString()}
+            </Body1>
+          </div>
+
+          {compareMismatch && (
+            <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalM }}>
+              <MessageBarBody>
+                These reports were taken with different sites or scan options — differences below
+                may reflect the changed scan settings rather than actual permission changes.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+
+          {compareResult.diff.isEmpty ? (
+            <MessageBar intent="success">
+              <MessageBarBody>No permission differences found between these two reports.</MessageBarBody>
+            </MessageBar>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalL }}>
+              {compareResult.diff.permissionChanges.length > 0 && (
+                <div>
+                  <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
+                    Permission changes ({compareResult.diff.permissionChanges.length} object{compareResult.diff.permissionChanges.length !== 1 ? 's' : ''})
+                  </Text>
+                  {compareResult.diff.permissionChanges.map((obj) => (
+                    <div key={`${obj.objectType}|${obj.serverRelativeUrl}`} style={{ marginBottom: tokens.spacingVerticalM }}>
+                      <div className={styles.row}>
+                        <Badge appearance="filled" color={typeBadgeColor(obj.objectType as ObjectType)} size="small">{obj.objectType}</Badge>
+                        <Text weight="semibold">{obj.name}</Text>
+                        <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
+                          {obj.serverRelativeUrl}
+                        </Text>
+                      </div>
+                      <table className={styles.historyTable}>
+                        <thead>
+                          <tr>
+                            <th className={styles.historyTh}>Change</th>
+                            <th className={styles.historyTh}>User / Group</th>
+                            <th className={styles.historyTh}>Before</th>
+                            <th className={styles.historyTh}>After</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {obj.added.map((c, i) => (
+                            <tr key={`a${i}`}>
+                              <td className={styles.historyTd}><Badge appearance="filled" color="success" size="small">Added</Badge></td>
+                              <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
+                              <td className={styles.historyTd}>—</td>
+                              <td className={styles.historyTd}>{c.newRoles}</td>
+                            </tr>
+                          ))}
+                          {obj.removed.map((c, i) => (
+                            <tr key={`r${i}`}>
+                              <td className={styles.historyTd}><Badge appearance="filled" color="danger" size="small">Removed</Badge></td>
+                              <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
+                              <td className={styles.historyTd}>{c.oldRoles}</td>
+                              <td className={styles.historyTd}>—</td>
+                            </tr>
+                          ))}
+                          {obj.changed.map((c, i) => (
+                            <tr key={`c${i}`}>
+                              <td className={styles.historyTd}><Badge appearance="filled" color="warning" size="small">Changed</Badge></td>
+                              <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
+                              <td className={styles.historyTd}>{c.oldRoles}</td>
+                              <td className={styles.historyTd}>{c.newRoles}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {compareResult.diff.inheritanceChanged.length > 0 && (
+                <div>
+                  <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
+                    Inheritance changed ({compareResult.diff.inheritanceChanged.length})
+                  </Text>
+                  <table className={styles.historyTable}>
+                    <thead>
+                      <tr>
+                        <th className={styles.historyTh}>Type</th>
+                        <th className={styles.historyTh}>Name</th>
+                        <th className={styles.historyTh}>Path</th>
+                        <th className={styles.historyTh}>Now</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compareResult.diff.inheritanceChanged.map(({ entry, nowUnique }) => (
+                        <tr key={`${entry.objectType}|${entry.serverRelativeUrl}`}>
+                          <td className={styles.historyTd}>
+                            <Badge appearance="filled" color={typeBadgeColor(entry.objectType)} size="small">{entry.objectType}</Badge>
+                          </td>
+                          <td className={styles.historyTd}>{entry.name}</td>
+                          <td className={styles.historyTd}>
+                            <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
+                              {entry.serverRelativeUrl}
+                            </Text>
+                          </td>
+                          <td className={styles.historyTd}>
+                            {nowUnique
+                              ? <Badge appearance="filled" color="warning" size="small">Unique (inheritance broken)</Badge>
+                              : <Badge appearance="outline" size="small">Inherited (restored)</Badge>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {(['addedObjects', 'removedObjects'] as const).map((bucket) => (
+                compareResult.diff[bucket].length > 0 && (
+                  <div key={bucket}>
+                    <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
+                      {bucket === 'addedObjects' ? 'New objects' : 'Removed objects'} ({compareResult.diff[bucket].length})
+                    </Text>
+                    <table className={styles.historyTable}>
+                      <thead>
+                        <tr>
+                          <th className={styles.historyTh}>Type</th>
+                          <th className={styles.historyTh}>Name</th>
+                          <th className={styles.historyTh}>Path</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {compareResult.diff[bucket].map((entry) => (
+                          <tr key={`${entry.objectType}|${entry.serverRelativeUrl}`}>
+                            <td className={styles.historyTd}>
+                              <Badge appearance="filled" color={typeBadgeColor(entry.objectType)} size="small">{entry.objectType}</Badge>
+                            </td>
+                            <td className={styles.historyTd}>{entry.name}</td>
+                            <td className={styles.historyTd}>
+                              <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
+                                {entry.serverRelativeUrl}
+                              </Text>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── History panel ── */}
-      {showHistory && (
+      {showHistory && !compareResult && (
         <div>
           <div className={styles.row} style={{ marginBottom: tokens.spacingVerticalM }}>
             <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setShowHistory(false)}>
               Back to scan
+            </Button>
+            <Button
+              appearance="primary"
+              onClick={handleCompare}
+              disabled={compareSelection.size !== 2}
+              style={{ marginLeft: 'auto' }}
+            >
+              Compare selected{compareSelection.size > 0 ? ` (${compareSelection.size}/2)` : ''}
             </Button>
           </div>
 
@@ -462,6 +733,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             <table className={styles.historyTable}>
               <thead>
                 <tr>
+                  <th className={styles.historyTh} style={{ width: '32px' }} aria-label="Select for compare" />
                   {(
                     [
                       { col: 'timestamp', label: 'Date / Time' },
@@ -486,6 +758,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               <tbody>
                 {sortedHistoryItems.map((item) => (
                   <tr key={item.id}>
+                    <td className={styles.historyTd}>
+                      <Checkbox
+                        checked={compareSelection.has(item.id)}
+                        onChange={() => toggleCompareSelection(item.id)}
+                        disabled={!compareSelection.has(item.id) && compareSelection.size >= 2}
+                        aria-label={`Select report from ${new Date(item.timestamp).toLocaleString()} for compare`}
+                      />
+                    </td>
                     <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
                       {new Date(item.timestamp).toLocaleString()}
                     </td>
@@ -496,6 +776,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                     </td>
                     <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
                       {item.options.allSites ? 'All sites · ' : ''}{scopeLabel(item.options.scope)}
+                      {item.options.includeSubsites ? ' + subsites' : ''}
                     </td>
                     <td className={styles.historyTd}>{item.summary.totalObjects}</td>
                     <td className={styles.historyTd}>{item.summary.uniqueCount}</td>
@@ -535,6 +816,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           checked={allSites}
           onChange={(_, d) => setAllSites(!!d.checked)}
           disabled={!isRootSite || isBusy}
+        />
+
+        <Checkbox
+          label="Include subsites (scans every subsite below this site)"
+          checked={includeSubsites}
+          onChange={(_, d) => setIncludeSubsites(!!d.checked)}
+          disabled={isBusy}
         />
 
         <Divider />
@@ -708,7 +996,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         {entries && !isBusy && (
           <div className={styles.resultArea}>
             <div className={styles.row}>
-              <Text weight="semibold">Scan complete</Text>
+              <Text weight="semibold">{cancelled ? 'Scan cancelled — partial results' : 'Scan complete'}</Text>
               <Badge appearance="filled" color="success">{entries.length} objects</Badge>
               <Badge appearance="filled" color="warning">
                 {entries.filter((e) => e.hasUniquePermissions).length} unique
@@ -724,16 +1012,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                   This scan ran with Member access — permission assignments could not be read.
                   Only items with unique permissions are shown; who has access to each item
                   is not visible. Run the scan as a <strong>Site Owner</strong> to see full permission details.
-                  {siteOwners.length > 0 && (
-                    <> Site Owners: {siteOwners.map((o, i) => (
-                      <React.Fragment key={o.email || o.title}>
-                        {i > 0 && ', '}
-                        {o.email
-                          ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
-                          : o.title}
-                      </React.Fragment>
-                    ))}.</>
-                  )}
+                  <SiteOwnersLinks owners={siteOwners} />
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -775,6 +1054,109 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 </Body1>
               )}
             </div>
+
+            {/* ── Results table ── */}
+            {sortedResults.length > 0 && (
+              <>
+                <table className={styles.historyTable} aria-label="Scan results">
+                  <thead>
+                    <tr>
+                      <th className={styles.historyTh} style={{ width: '28px' }} />
+                      {(
+                        [
+                          { col: 'type', label: 'Type' },
+                          { col: 'name', label: 'Name' },
+                          { col: 'path', label: 'Path' },
+                          { col: 'source', label: 'Permissions' },
+                        ] as { col: 'type' | 'name' | 'path' | 'source'; label: string }[]
+                      ).map(({ col, label }) => (
+                        <th
+                          key={col}
+                          className={styles.historyTh}
+                          onClick={() => handleResultSort(col)}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          {label}{resultSortInd(col)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedResults.slice(0, resultsVisible).map((entry) => {
+                      const key = entryKey(entry);
+                      const isExpanded = expandedKeys.has(key);
+                      const expandable = entry.uniquePermissions.length > 0;
+                      return (
+                        <React.Fragment key={key}>
+                          <tr
+                            onClick={expandable ? () => toggleExpanded(key) : undefined}
+                            style={expandable ? { cursor: 'pointer' } : undefined}
+                          >
+                            <td className={styles.historyTd}>
+                              {expandable && (
+                                <Button
+                                  appearance="transparent"
+                                  size="small"
+                                  icon={isExpanded ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
+                                  aria-expanded={isExpanded}
+                                  aria-label={isExpanded ? 'Collapse permissions' : 'Expand permissions'}
+                                  onClick={(e) => { e.stopPropagation(); toggleExpanded(key); }}
+                                />
+                              )}
+                            </td>
+                            <td className={styles.historyTd}>
+                              <Badge appearance="filled" color={typeBadgeColor(entry.objectType)} size="small">
+                                {entry.objectType}
+                              </Badge>
+                            </td>
+                            <td className={styles.historyTd} style={{ paddingLeft: `${8 + entry.depth * 12}px` }}>
+                              {entry.name}
+                              {entry.noCrawl && (
+                                <Badge appearance="outline" size="small" style={{ marginLeft: '6px' }}>
+                                  Hidden from search
+                                </Badge>
+                              )}
+                            </td>
+                            <td className={styles.historyTd}>
+                              <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
+                                {entry.serverRelativeUrl}
+                              </Text>
+                            </td>
+                            <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
+                              {entry.hasUniquePermissions ? (
+                                <Badge appearance="filled" color="warning" size="small">Unique</Badge>
+                              ) : (
+                                <Badge appearance="outline" size="small">Inherited</Badge>
+                              )}
+                              {expandable && (
+                                <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, marginLeft: '6px' }}>
+                                  {entry.uniquePermissions.length} assignment{entry.uniquePermissions.length !== 1 ? 's' : ''}
+                                </Text>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td className={styles.historyTd} />
+                              <td className={styles.historyTd} colSpan={4} style={{ background: tokens.colorNeutralBackground2 }}>
+                                <PermTable users={entry.uniquePermissions} />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {resultsVisible < sortedResults.length && (
+                  <div style={{ textAlign: 'center' }}>
+                    <Button appearance="secondary" onClick={() => setResultsVisible((c) => c + RESULTS_PAGE_SIZE)}>
+                      Load more ({(sortedResults.length - resultsVisible).toLocaleString()} remaining)
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
 
             <div className={styles.row}>
               <Button

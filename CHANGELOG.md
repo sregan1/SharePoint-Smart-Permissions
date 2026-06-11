@@ -4,6 +4,130 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.4.0] — Unreleased
+
+### Added
+
+- **Lists and Site Pages included in scans**
+  The Permissions Report and User Access scans now cover all visible lists —
+  generic lists, Site Pages, calendars, task lists, etc. — not just document
+  libraries. Generic lists are reported at list level with a new **List** type
+  badge; document-library-like templates (document libraries, picture
+  libraries, Site Pages) are still walked for folders and files.
+
+- **Subsite scanning**
+  A new "Include subsites" checkbox on the Permissions Report recursively scans
+  every subsite below the selected site (and below each site collection in
+  all-sites mode). Report history shows "+ subsites" in the Scope column.
+
+- **Results table in the Permissions Report**
+  Scan results can now be browsed directly in the browser: a paginated,
+  sortable table with type badges, unique/inherited status, and expandable rows
+  showing each object's permission assignments. Previously results were only
+  visible after exporting.
+
+- **Report compare (diff)**
+  Select two saved reports in the History panel and click **Compare selected**
+  to see what changed between scans: permission assignments added, removed, or
+  role-changed per object; inheritance broken or restored; and objects that
+  appeared or disappeared. A warning is shown when the two reports used
+  different sites or scan options.
+
+- **Tenant-wide people search in User Access**
+  The user picker now searches the whole tenant (via the standard SharePoint
+  people-picker API — no extra Graph permissions) once you type 3+ characters.
+  Users who have access through an AAD group but have never visited the site
+  appear under a "Not in this site" group.
+
+- **NoCrawl libraries surfaced instead of hidden**
+  Libraries marked NoCrawl (hidden from search) were previously treated as
+  system libraries and excluded by default. They are now included and flagged
+  with a "Hidden from search" badge in results, a suffix in the Explorer
+  library dropdown, and a marker in Excel/CSV exports — content deliberately
+  hidden from search is exactly what an audit should surface.
+
+- **Explorer keyboard accessibility**
+  The folder tree is now fully keyboard-navigable (arrow keys, Home/End,
+  Enter/Space) with proper `tree`/`treeitem` ARIA roles, expanded/selected
+  states, and a roving tabindex for screen readers.
+
+### Changed
+
+- **Permissions Report scan parallelized**
+  Lists are now scanned concurrently (bounded by the Settings → Concurrent API
+  requests value) instead of one at a time, while preserving the
+  parent-before-child ordering of results within each library.
+
+- **Cancelled scans keep partial results**
+  Cancelling a Permissions Report scan now shows everything collected so far —
+  with filtering and export available — instead of discarding it.
+
+- **Smaller initial bundle**
+  The Excel export library (exceljs, ~950 KB) now loads on demand as a
+  separate chunk the first time an .xlsx export is run, instead of being part
+  of the main bundle downloaded on every page load.
+
+- **Notification permission requested on first scan**
+  Browser notification permission is now requested when a scan starts rather
+  than when a view opens.
+
+- **SharePointService split into focused modules**
+  The 1,800-line service is now a thin facade over `services/sp/` modules
+  (core API client, site discovery, report scan, explorer, groups, user
+  access). The public API is unchanged.
+
+### Fixed
+
+- **"Scan all site collections" returned no sites**
+  The tenant-wide site discovery parsed a response shape the SharePoint search
+  API never returns under SPFx's default OData mode (and the search API
+  rejects the default OData v4 header outright). Discovery now overrides to
+  OData v3, handles both response shapes, and surfaces errors instead of
+  silently scanning nothing.
+
+- **Items named with `&`, `#`, or `%` broke scans**
+  Folder, file, list, and group API calls now use the
+  `*ByServerRelativePath(decodedUrl=...)` endpoints with URI encoding. Items
+  in paths containing these characters were previously skipped silently.
+
+- **Results beyond one page were silently dropped**
+  All collection fetches (folders, files, lists, site users) now follow
+  server-side paging links instead of stopping at the first `$top` page.
+
+- **Owner detection checked the wrong permission bits**
+  `checkCanManagePermissions` tested the ManagePermissions/ManageWeb masks
+  against the High word of the permission bitmask; they live in the Low word.
+  Full Control users were unaffected, but custom roles granting Manage
+  Permissions were incorrectly locked out of the home-screen tools.
+
+- **Throttling risk from unbounded concurrency**
+  Recursive folder walks previously started a new concurrency pool per
+  recursion level, multiplying in-flight requests (up to N^depth). A single
+  shared work queue now caps total concurrency at the configured value.
+
+- **Notification crash could mask successful scans**
+  On platforms where the `Notification` constructor throws (e.g. Android
+  Chrome), a completed scan displayed an error and skipped saving to history.
+  Notifications are now best-effort.
+
+- **User Access launched from Explorer showed the login instead of the name**
+  The display name is now passed through when cross-navigating, so the status
+  line and saved history show the user's name.
+
+### Removed
+
+- **Permission Groups view**
+  The unreachable Permission Groups view (hidden from the home screen since
+  v1.3.0) and its supporting service code have been removed, along with other
+  dead code (`getSharingLinks`, `getExternalUsers`, `scanBrokenInheritance`
+  and their models).
+
+- **Debug logging**
+  Removed the module-evaluation console marker and the global
+  `unhandledrejection` listener left over from debugging.
+
+---
+
 ## [1.3.0] — 2026-06-09
 
 ### Added

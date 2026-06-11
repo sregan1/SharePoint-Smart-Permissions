@@ -1,10 +1,23 @@
-import ExcelJS from 'exceljs';
+// exceljs is the largest dependency in the bundle and is only needed when the
+// user actually exports to .xlsx — load it on demand as a separate webpack
+// chunk. Only types are imported statically (erased at compile time).
+import type * as ExcelJS from 'exceljs';
 import { PermissionEntry, ObjectType, UserPermissionInfo } from '../models/models';
+
+let excelModulePromise: Promise<typeof ExcelJS> | undefined;
+function loadExcelJS(): Promise<typeof ExcelJS> {
+  if (!excelModulePromise) {
+    excelModulePromise = import(/* webpackChunkName: 'exceljs' */ 'exceljs')
+      .then((m: any) => (m.default ?? m) as typeof ExcelJS);
+  }
+  return excelModulePromise;
+}
 
 // Colors matching ExcelExportService.cs
 const COLOR = {
   siteFill: 'FF0078D4',
   libraryFill: 'FF00BCF2',
+  listFill: 'FF038387',
   folderFill: 'FFFFB900',
   fileFill: 'FF8A8886',
   headerFill: 'FF0078D4',
@@ -57,10 +70,16 @@ function typeFillArgb(t: ObjectType): string {
   switch (t) {
     case ObjectType.Site:    return COLOR.siteFill;
     case ObjectType.Library: return COLOR.libraryFill;
+    case ObjectType.List:    return COLOR.listFill;
     case ObjectType.Folder:  return COLOR.folderFill;
     case ObjectType.File:    return COLOR.fileFill;
     default:                 return COLOR.fileFill;
   }
+}
+
+// Display name with the NoCrawl marker appended, used by all exports.
+function entryDisplayName(entry: PermissionEntry): string {
+  return entry.noCrawl ? `${entry.name} (hidden from search)` : entry.name;
 }
 
 export class ExcelExportService {
@@ -69,7 +88,8 @@ export class ExcelExportService {
     siteUrl: string,
     userDisplayName: string,
   ): Promise<void> {
-    const wb = new ExcelJS.Workbook();
+    const Excel = await loadExcelJS();
+    const wb = new Excel.Workbook();
     const ws = wb.addWorksheet('User Access');
 
     // Title
@@ -117,7 +137,7 @@ export class ExcelExportService {
       typeCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
       const nameCell = row.getCell(2);
-      nameCell.value = entry.name;
+      nameCell.value = entryDisplayName(entry);
       nameCell.alignment = { indent: entry.depth, vertical: 'middle' };
 
       row.getCell(3).value = entry.serverRelativeUrl;
@@ -184,13 +204,13 @@ export class ExcelExportService {
     ];
     for (const entry of entries) {
       if (entry.uniquePermissions.length === 0) {
-        rows.push([entry.objectType, entry.serverRelativeUrl, entry.name, entry.hasUniquePermissions ? 'Unique' : 'Inherited', '', '', '', '', siteUrl]);
+        rows.push([entry.objectType, entry.serverRelativeUrl, entryDisplayName(entry), entry.hasUniquePermissions ? 'Unique' : 'Inherited', '', '', '', '', siteUrl]);
       } else {
         for (const user of entry.uniquePermissions) {
           rows.push([
             entry.objectType,
             entry.serverRelativeUrl,
-            entry.name,
+            entryDisplayName(entry),
             entry.hasUniquePermissions ? 'Unique' : 'Inherited',
             user.displayName,
             user.sourceGroup ?? 'Direct',
@@ -211,7 +231,7 @@ export class ExcelExportService {
     for (const entry of entries) {
       rows.push([
         entry.objectType,
-        entry.name,
+        entryDisplayName(entry),
         entry.serverRelativeUrl,
         (entry.uniquePermissions[0]?.roles ?? []).join('; '),
       ]);
@@ -220,7 +240,8 @@ export class ExcelExportService {
   }
 
   async export(entries: PermissionEntry[], siteUrl: string): Promise<void> {
-    const wb = new ExcelJS.Workbook();
+    const Excel = await loadExcelJS();
+    const wb = new Excel.Workbook();
     this.addSummarySheet(wb, entries, siteUrl);
     this.addDetailsSheet(wb, entries);
 
@@ -319,7 +340,6 @@ export class ExcelExportService {
         continue;
       }
 
-      const startRow = rowIndex;
       for (const user of users) {
         this.writeRow(ws, rowIndex, entry, user);
         rowIndex++;
@@ -333,7 +353,6 @@ export class ExcelExportService {
           bottom: { style: 'thin' },
         };
       }
-      void startRow; // suppress unused-variable warning
     }
 
     // Column widths
@@ -380,7 +399,7 @@ export class ExcelExportService {
 
     // Col 3: Name
     const nameCell = row.getCell(3);
-    nameCell.value = entry.name;
+    nameCell.value = entryDisplayName(entry);
     nameCell.font = {
       bold: entry.objectType === ObjectType.Site,
     };

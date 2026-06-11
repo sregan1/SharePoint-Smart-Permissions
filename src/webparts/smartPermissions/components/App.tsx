@@ -18,11 +18,10 @@ import { ExcelExportService } from '../services/ExcelExportService';
 import { HomeView } from './HomeView';
 import { PermissionsReportView } from './PermissionsReportView';
 import { PermissionsExplorerView } from './PermissionsExplorerView';
-import { PermissionGroupsView } from './PermissionGroupsView';
 import { UserAccessView } from './UserAccessView';
 import { SettingsView } from './SettingsView';
 
-export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'groups' | 'settings';
+export type AppView = 'home' | 'report' | 'explorer' | 'userAccess' | 'settings';
 
 const LS_CONCURRENCY      = 'sp-smart-perms-concurrency';
 const LS_GROUP_CAP        = 'sp-smart-perms-groupCap';
@@ -367,14 +366,6 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           excludeLimitedAccess={excludeLimitedAccess}
           prefillLogin={userAccessPrefill}
           onPrefillUsed={() => setUserAccessPrefill(undefined)}
-          onBack={() => setView('home')}
-        />
-      )}
-      {view === 'groups' && (
-        <PermissionGroupsView
-          key={siteUrl}
-          sp={sp}
-          siteUrl={siteUrl}
           onBack={() => setView('home')}
         />
       )}

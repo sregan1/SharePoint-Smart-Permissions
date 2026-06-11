@@ -9,10 +9,6 @@ import { App, AppView, IBrandColors } from './components/App';
 import { SharePointService } from './services/SharePointService';
 import { ExcelExportService } from './services/ExcelExportService';
 
-// This line runs the instant the module is evaluated — if you see it in the
-// browser console, the new bundle is definitely loading.
-console.error('[SmartPermissions] *** MODULE EVALUATED ***', new Date().toISOString());
-
 export interface ISmartPermissionsWebPartProps {
   defaultView: AppView;
 }
@@ -30,21 +26,7 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
   };
 
   protected onInit(): Promise<void> {
-    // Log every unhandled rejection so the real error appears in the browser
-    // console even when SPFx swallows it and shows "[object Object]".
-    window.addEventListener('unhandledrejection', (ev: PromiseRejectionEvent) => {
-      const r = ev.reason;
-      console.error(
-        '[SmartPermissions] unhandledrejection — open this to see the real error:',
-        r,
-        'JSON:', (() => { try { return JSON.stringify(r, null, 2); } catch { return '(circular)'; } })(),
-        'message:', r?.message,
-        'stack:', r?.stack,
-        'string:', String(r),
-      );
-    });
-
-    // Initialise services first so this._sp is defined before any render() call.
+    // Initialize services first so this._sp is defined before any render() call.
     try {
       this._sp = new SharePointService(this.context);
       this._excel = new ExcelExportService();
@@ -75,15 +57,7 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       themeProvider.themeChangedEvent.add(this, (args) => applyTheme(args.theme));
     } catch { /* theme unavailable — keep default blue */ }
 
-    return super.onInit().catch((err: any) => {
-      const detail =
-        `type=${typeof err} | ` +
-        `string=${String(err)} | ` +
-        `message=${err?.message} | ` +
-        `json=${(() => { try { return JSON.stringify(err, null, 2); } catch { return '(circular)'; } })()}`;
-      console.error('[SmartPermissions] super.onInit() rejected:', detail, err);
-      throw new Error(`[SmartPermissions] onInit failed — ${detail}`);
-    });
+    return super.onInit();
   }
 
   public render(): void {

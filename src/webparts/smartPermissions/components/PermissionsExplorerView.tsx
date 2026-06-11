@@ -3,7 +3,6 @@ import {
   Button,
   Field,
   Badge,
-  Link,
   Text,
   Title3,
   Body1,
@@ -21,13 +20,10 @@ import {
   ArrowLeft24Regular,
   Folder24Regular,
   Document24Regular,
-  Person24Regular,
-  People24Regular,
   ChevronRight16Regular,
   ChevronDown16Regular,
   ArrowCircleDown16Regular,
   Link16Regular,
-  PersonSearch16Regular,
   PersonWarning16Regular,
   Filter16Regular,
 } from '@fluentui/react-icons';
@@ -38,6 +34,9 @@ import {
   FolderFileNode,
   UserPermissionInfo,
 } from '../models/models';
+import { PermTable } from './shared/PermTable';
+import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
+import { isExternalUser } from './shared/externalUsers';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -89,28 +88,6 @@ const useStyles = makeStyles({
   treeNodeSelected: {
     background: tokens.colorNeutralBackground1Selected,
   },
-  permTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: tokens.fontSizeBase200,
-  },
-  permTh: {
-    textAlign: 'left',
-    padding: '6px 8px',
-    borderBottom: `2px solid ${tokens.colorNeutralStroke1}`,
-    fontWeight: tokens.fontWeightSemibold,
-    color: tokens.colorNeutralForeground2,
-    whiteSpace: 'nowrap',
-    position: 'sticky',
-    top: 0,
-    background: tokens.colorNeutralBackground1,
-    zIndex: 1,
-  },
-  permTd: {
-    padding: '5px 8px',
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
-    verticalAlign: 'top',
-  },
   optionsBar: {
     display: 'flex',
     flexDirection: 'column',
@@ -155,26 +132,6 @@ function ArrowCircleAndTriangleDown({ style }: { style?: React.CSSProperties }):
 }
 
 
-// ── External user helpers ─────────────────────────────────────────────────────
-
-function isExternalUser(u: UserPermissionInfo): boolean {
-  return u.loginName.toLowerCase().indexOf('#ext#') !== -1;
-}
-
-// Extract the email from a SharePoint #EXT# login name.
-// Format: [claims-prefix|]localpart_domain.tld#EXT#@tenant.onmicrosoft.com
-// The last underscore before #EXT# is the @ in the original email address.
-function externalUserEmail(loginName: string): string {
-  const extIdx = loginName.toLowerCase().indexOf('#ext#');
-  if (extIdx === -1) return '';
-  let local = loginName.substring(0, extIdx);
-  const pipeIdx = local.lastIndexOf('|');
-  if (pipeIdx >= 0) local = local.substring(pipeIdx + 1);
-  const lastUnderscore = local.lastIndexOf('_');
-  if (lastUnderscore === -1) return local;
-  return `${local.substring(0, lastUnderscore)}@${local.substring(lastUnderscore + 1)}`;
-}
-
 function applyPermFilters(
   users: UserPermissionInfo[],
   excludeLimited: boolean,
@@ -186,164 +143,53 @@ function applyPermFilters(
   return result;
 }
 
-// ── Role badge color ──────────────────────────────────────────────────────────
-
-function roleBadgeColor(
-  roles: string[],
-): 'brand' | 'danger' | 'warning' | 'success' | 'informative' {
-  if (roles.some((r) => r.toLowerCase().includes('full control'))) return 'danger';
-  if (
-    roles.some(
-      (r) =>
-        r.toLowerCase().includes('edit') ||
-        r.toLowerCase().includes('contribute') ||
-        r.toLowerCase().includes('design'),
-    )
-  )
-    return 'warning';
-  if (
-    roles.some(
-      (r) => r.toLowerCase().includes('read') || r.toLowerCase().includes('view'),
-    )
-  )
-    return 'success';
-  return 'informative';
-}
-
-// ── Permission table ──────────────────────────────────────────────────────────
-
-interface PermTableProps {
-  users: UserPermissionInfo[];
-  styles: ReturnType<typeof useStyles>;
-  onCheckAccess?: (loginName: string) => void;
-}
-
-const PermTable: React.FC<PermTableProps> = ({ users, styles, onCheckAccess }) => (
-  <table className={styles.permTable} aria-label="Permission assignments">
-    <thead>
-      <tr>
-        <th className={styles.permTh}>User / Group</th>
-        <th className={styles.permTh}>Type</th>
-        <th className={styles.permTh}>Permission Level</th>
-        {onCheckAccess && <th className={styles.permTh} />}
-      </tr>
-    </thead>
-    <tbody>
-      {users.map((u, i) => (
-        <tr key={i}>
-          <td className={styles.permTd}>
-            {u.isGroupMember ? (
-              <span style={{ paddingLeft: '16px', color: tokens.colorNeutralForeground3 }}>
-                ↳ {u.displayName}
-              </span>
-            ) : (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {u.principalType === 'User' ? (
-                  <Person24Regular style={{ fontSize: '14px', flexShrink: 0 }} />
-                ) : (
-                  <People24Regular style={{ fontSize: '14px', flexShrink: 0 }} />
-                )}
-                <span>
-                  <span>{u.displayName || u.loginName}</span>
-                  {isExternalUser(u) && (() => {
-                    const email = externalUserEmail(u.loginName);
-                    return email && email !== u.displayName ? (
-                      <div style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 }}>
-                        {email}
-                      </div>
-                    ) : null;
-                  })()}
-                </span>
-              </span>
-            )}
-          </td>
-          <td className={styles.permTd}>
-            <Text style={{ fontSize: tokens.fontSizeBase200 }}>
-              {u.principalType === 'SecurityGroup'
-                ? 'Security Group'
-                : u.principalType === 'SharePointGroup'
-                ? 'SP Group'
-                : 'User'}
-            </Text>
-          </td>
-          <td className={styles.permTd}>
-            {u.roles.map((r, ri) => (
-              <Badge
-                key={ri}
-                appearance="filled"
-                color={roleBadgeColor([r])}
-                size="small"
-                style={{ marginRight: '4px', marginBottom: '2px' }}
-              >
-                {r}
-              </Badge>
-            ))}
-          </td>
-          {onCheckAccess && (
-            <td className={styles.permTd}>
-              {u.principalType === 'User' && u.loginName && !u.isGroupMember && (
-                <Button
-                  appearance="subtle"
-                  size="small"
-                  icon={<PersonSearch16Regular />}
-                  onClick={() => onCheckAccess(u.loginName)}
-                  title={`Check access for ${u.displayName || u.loginName}`}
-                  aria-label={`Check access for ${u.displayName || u.loginName}`}
-                />
-              )}
-            </td>
-          )}
-        </tr>
-      ))}
-    </tbody>
-  </table>
-);
-
 // ── Folder tree node ──────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
   node: FolderFileNode;
   depth: number;
   selectedUrl: string;
-  onSelect: (node: FolderFileNode) => void;
-  onLoadChildren: (node: FolderFileNode) => void;
+  focusedUrl: string;
+  expandedUrls: Set<string>;
+  onRowClick: (node: FolderFileNode) => void;
+  registerRef: (url: string, el: HTMLDivElement | null) => void;
   showUniqueOnly: boolean;
   filterExternalOnly: boolean;
   externalAccessUrls: Set<string>;
 }
 
+// Expansion state lives in the parent (expandedUrls) so the view can compute
+// the flat list of visible nodes for keyboard navigation; keyboard events are
+// handled on the role="tree" container via a roving tabindex.
 const TreeNode: React.FC<TreeNodeProps> = ({
   node,
   depth,
   selectedUrl,
-  onSelect,
-  onLoadChildren,
+  focusedUrl,
+  expandedUrls,
+  onRowClick,
+  registerRef,
   showUniqueOnly,
   filterExternalOnly,
   externalAccessUrls,
 }) => {
   const styles = useStyles();
-  const [expanded, setExpanded] = React.useState(false);
+  const expanded = expandedUrls.has(node.serverRelativeUrl);
 
   const isSelected = node.serverRelativeUrl === selectedUrl;
 
-  const handleToggle = (e: React.MouseEvent): void => {
-    e.stopPropagation();
-    if (node.isFolder && node.hasChildren) {
-      if (!expanded && node.children.length === 0) {
-        onLoadChildren(node);
-      }
-      setExpanded(!expanded);
-    }
-    onSelect(node);
-  };
-
   return (
-    <div>
+    <div role="none">
       <div
+        role="treeitem"
+        aria-expanded={node.isFolder && node.hasChildren ? expanded : undefined}
+        aria-selected={isSelected}
+        aria-level={depth + 1}
+        tabIndex={node.serverRelativeUrl === focusedUrl ? 0 : -1}
+        ref={(el) => registerRef(node.serverRelativeUrl, el)}
         className={`${styles.treeNode} ${isSelected ? styles.treeNodeSelected : ''}`}
         style={{ paddingLeft: `${depth * 16 + 4}px` }}
-        onClick={handleToggle}
+        onClick={(e) => { e.stopPropagation(); onRowClick(node); }}
       >
         {node.isFolder && node.hasChildren ? (
           expanded ? (
@@ -397,24 +243,30 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         )}
       </div>
 
-      {expanded && node.children
-        .filter((c) =>
-          (!showUniqueOnly || c.hasUniquePermissions || c.hasUniquePermissionsBelow) &&
-          (!filterExternalOnly || c.hasExternalUsers || c.hasExternalUsersBelow)
-        )
-        .map((child) => (
-          <TreeNode
-            key={child.serverRelativeUrl}
-            node={child}
-            depth={depth + 1}
-            selectedUrl={selectedUrl}
-            onSelect={onSelect}
-            onLoadChildren={onLoadChildren}
-            showUniqueOnly={showUniqueOnly}
-            filterExternalOnly={filterExternalOnly}
-            externalAccessUrls={externalAccessUrls}
-          />
-        ))}
+      {expanded && node.children.length > 0 && (
+        <div role="group">
+          {node.children
+            .filter((c) =>
+              (!showUniqueOnly || c.hasUniquePermissions || c.hasUniquePermissionsBelow) &&
+              (!filterExternalOnly || c.hasExternalUsers || c.hasExternalUsersBelow)
+            )
+            .map((child) => (
+              <TreeNode
+                key={child.serverRelativeUrl}
+                node={child}
+                depth={depth + 1}
+                selectedUrl={selectedUrl}
+                focusedUrl={focusedUrl}
+                expandedUrls={expandedUrls}
+                onRowClick={onRowClick}
+                registerRef={registerRef}
+                showUniqueOnly={showUniqueOnly}
+                filterExternalOnly={filterExternalOnly}
+                externalAccessUrls={externalAccessUrls}
+              />
+            ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -445,6 +297,10 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // ── Browse tab ──
   const [selectedLibrary, setSelectedLibrary] = React.useState('');
   const [rootNodes, setRootNodes] = React.useState<FolderFileNode[]>([]);
+  // Tree expansion + keyboard focus (roving tabindex) state
+  const [expandedUrls, setExpandedUrls] = React.useState<Set<string>>(new Set());
+  const [focusedUrl, setFocusedUrl] = React.useState('');
+  const nodeRefs = React.useRef<Map<string, HTMLDivElement>>(new Map());
   const [showUniqueOnly, setShowUniqueOnly] = React.useState(false);
   const [filterExternalOnly, setFilterExternalOnly] = React.useState(false);
   const [externalAccessUrls, setExternalAccessUrls] = React.useState<Set<string>>(new Set());
@@ -513,6 +369,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     setSelectedNode(null);
     setNodePerms([]);
     setExternalAccessUrls(new Set());
+    setExpandedUrls(new Set());
+    setFocusedUrl('');
+    nodeRefs.current.clear();
     setPermissionsDenied(false);
     setMyPermLevel('');
     setSiteOwners([]);
@@ -528,6 +387,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         abortRef.current?.signal,
       );
       setRootNodes(nodes);
+      setFocusedUrl(nodes[0]?.serverRelativeUrl ?? '');
       if (nodes.length === 0) setTreeStatus('This library is empty.');
 
       // Proactively check whether role-assignment reads are permitted for this library.
@@ -662,6 +522,98 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     }
   };
 
+  // ── Tree expansion + keyboard navigation ─────────────────────────────────
+
+  const registerNodeRef = React.useCallback((url: string, el: HTMLDivElement | null): void => {
+    if (el) { nodeRefs.current.set(url, el); } else { nodeRefs.current.delete(url); }
+  }, []);
+
+  const nodeVisible = (n: FolderFileNode): boolean =>
+    (!showUniqueOnly || !!n.hasUniquePermissions || !!n.hasUniquePermissionsBelow) &&
+    (!filterExternalOnly || !!n.hasExternalUsers || !!n.hasExternalUsersBelow);
+
+  // Flat list of currently rendered nodes, mirroring the render filters —
+  // this is the keyboard navigation order.
+  const flattenVisible = (): FolderFileNode[] => {
+    const out: FolderFileNode[] = [];
+    const visit = (nodes: FolderFileNode[]): void => {
+      for (const n of nodes.filter(nodeVisible)) {
+        out.push(n);
+        if (n.isFolder && expandedUrls.has(n.serverRelativeUrl)) visit(n.children);
+      }
+    };
+    visit(rootNodes);
+    return out;
+  };
+
+  const toggleExpand = (node: FolderFileNode): void => {
+    if (!node.isFolder || !node.hasChildren) return;
+    const isOpen = expandedUrls.has(node.serverRelativeUrl);
+    if (!isOpen && node.children.length === 0) {
+      loadChildren(node).catch((e) => console.error('[SmartPermissions] loadChildren failed:', e));
+    }
+    setExpandedUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.serverRelativeUrl)) { next.delete(node.serverRelativeUrl); } else { next.add(node.serverRelativeUrl); }
+      return next;
+    });
+  };
+
+  const handleRowClick = (node: FolderFileNode): void => {
+    setFocusedUrl(node.serverRelativeUrl);
+    if (node.isFolder && node.hasChildren) toggleExpand(node);
+    handleSelectNode(node).catch((e) => console.error('[SmartPermissions] handleSelectNode failed:', e));
+  };
+
+  const focusNode = (node: FolderFileNode | undefined): void => {
+    if (!node) return;
+    setFocusedUrl(node.serverRelativeUrl);
+    nodeRefs.current.get(node.serverRelativeUrl)?.focus();
+  };
+
+  const handleTreeKeyDown = (e: React.KeyboardEvent): void => {
+    const visible = flattenVisible();
+    if (visible.length === 0) return;
+    const idx = visible.findIndex((n) => n.serverRelativeUrl === focusedUrl);
+    const current = idx >= 0 ? visible[idx] : visible[0];
+
+    switch (e.key) {
+      case 'ArrowDown':
+        focusNode(visible[Math.min(idx < 0 ? 0 : idx + 1, visible.length - 1)]);
+        break;
+      case 'ArrowUp':
+        focusNode(visible[Math.max(idx - 1, 0)]);
+        break;
+      case 'ArrowRight':
+        if (current.isFolder && current.hasChildren && !expandedUrls.has(current.serverRelativeUrl)) {
+          toggleExpand(current);
+        } else if (current.isFolder && expandedUrls.has(current.serverRelativeUrl) && idx + 1 < visible.length) {
+          focusNode(visible[idx + 1]);
+        }
+        break;
+      case 'ArrowLeft':
+        if (current.isFolder && expandedUrls.has(current.serverRelativeUrl)) {
+          toggleExpand(current);
+        } else if (current.parent) {
+          focusNode(current.parent);
+        }
+        break;
+      case 'Home':
+        focusNode(visible[0]);
+        break;
+      case 'End':
+        focusNode(visible[visible.length - 1]);
+        break;
+      case 'Enter':
+      case ' ':
+        handleRowClick(current);
+        break;
+      default:
+        return; // don't preventDefault on unhandled keys
+    }
+    e.preventDefault();
+  };
+
   // Background scan: checks only unique-permission nodes (inherited ones are skipped — no API
   // call needed). Uses one direct RoleAssignments fetch per node instead of two calls.
   const scanExternalUsers = (nodes: FolderFileNode[]): void => {
@@ -669,7 +621,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     if (!uniqueNodes.length) return;
     const tasks = uniqueNodes.map((node) => async (): Promise<undefined> => {
       if (abortRef.current?.signal.aborted) return undefined;
-      const hasExt = await sp.scanNodeForExternalUsers(siteUrl, node, abortRef.current?.signal);
+      const hasExt = await sp.scanNodeForExternalUsers(siteUrl.trim(), node, abortRef.current?.signal);
       if (hasExt === 'denied') {
         setPermissionsDenied(true);
       } else if (hasExt) {
@@ -895,7 +847,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
               >
                 {libraries.map((lib) => (
                   <option key={lib.serverRelativeUrl} value={lib.serverRelativeUrl}>
-                    {lib.title}
+                    {lib.noCrawl ? `${lib.title} (hidden from search)` : lib.title}
                   </option>
                 ))}
               </Select>
@@ -950,41 +902,36 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                 Reading who has access requires the <strong>Manage Permissions</strong> right (Site
                 Owner or higher). You can still see which items have broken inheritance using the ↓
                 indicators. To see locations you can access, use the <strong>User Access</strong> tool.
-                {siteOwners.length > 0 && (
-                  <> Site Owners: {siteOwners.map((o, i) => (
-                    <React.Fragment key={o.email || o.title}>
-                      {i > 0 && ', '}
-                      {o.email
-                        ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
-                        : o.title}
-                    </React.Fragment>
-                  ))}.</>
-                )}
+                <SiteOwnersLinks owners={siteOwners} />
               </MessageBarBody>
             </MessageBar>
           )}
 
           <div className={styles.twoCol}>
             {/* Tree panel */}
-            <div className={styles.treePanel}>
+            <div
+              className={styles.treePanel}
+              role="tree"
+              aria-label="Folders and files"
+              onKeyDown={handleTreeKeyDown}
+            >
               {treeStatus && (
                 <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
                   {treeStatus}
                 </Body1>
               )}
               {rootNodes
-                .filter((node) =>
-                  (!showUniqueOnly || node.hasUniquePermissions || node.hasUniquePermissionsBelow) &&
-                  (!filterExternalOnly || node.hasExternalUsers || node.hasExternalUsersBelow)
-                )
+                .filter(nodeVisible)
                 .map((node) => (
                   <TreeNode
                     key={node.serverRelativeUrl}
                     node={node}
                     depth={0}
                     selectedUrl={selectedNode?.serverRelativeUrl ?? ''}
-                    onSelect={handleSelectNode}
-                    onLoadChildren={loadChildren}
+                    focusedUrl={focusedUrl}
+                    expandedUrls={expandedUrls}
+                    onRowClick={handleRowClick}
+                    registerRef={registerNodeRef}
                     showUniqueOnly={showUniqueOnly}
                     filterExternalOnly={filterExternalOnly}
                     externalAccessUrls={externalAccessUrls}
@@ -1089,7 +1036,6 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                         ) : (
                           <PermTable
                             users={applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly)}
-                            styles={styles}
                             onCheckAccess={onNavigateToUserAccess}
                           />
                         )
@@ -1126,10 +1072,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                             </Body1>
                           ) : (
                             <PermTable
-                            users={applyPermFilters(parentPerms, excludeLimitedAccess, filterExternalOnly)}
-                            styles={styles}
-                            onCheckAccess={onNavigateToUserAccess}
-                          />
+                              users={applyPermFilters(parentPerms, excludeLimitedAccess, filterExternalOnly)}
+                              onCheckAccess={onNavigateToUserAccess}
+                            />
                           )}
                         </>
                       )}

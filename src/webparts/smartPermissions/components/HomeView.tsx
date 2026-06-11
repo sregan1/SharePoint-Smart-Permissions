@@ -13,14 +13,12 @@ import {
   DataBarVertical24Regular,
   FolderSearch24Regular,
   PersonSearch24Regular,
-  PeopleTeam24Regular,
   LockClosed16Regular,
 } from '@fluentui/react-icons';
 import { AppView } from './App';
 import screenshotReport from '../assets/screenshot_report.png';
 import screenshotExplorer from '../assets/screenshot_explorer.png';
 import screenshotUserAccess from '../assets/screenshot_user_access.png';
-import screenshotGroups from '../assets/screenshot_groups.png';
 
 const useStyles = makeStyles({
   banner: {

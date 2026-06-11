@@ -98,9 +98,9 @@ This applies to anyone without the Manage Permissions right — Members, Visitor
 
 ### What It Does
 
-The Permissions Report scans a site's libraries, folders, and files and produces a comprehensive view of every location where permissions differ from the site default. It focuses on **unique permission breaks** — places where someone has explicitly changed who can access a specific item.
+The Permissions Report scans a site's lists, libraries, folders, and files and produces a comprehensive view of every location where permissions differ from the site default. It focuses on **unique permission breaks** — places where someone has explicitly changed who can access a specific item. All visible lists are covered — generic lists, Site Pages, calendars, and task lists carry permissions too, not just document libraries — and you can optionally include every **subsite** below the site.
 
-Once the scan is complete, you can export the results as a **color-coded Excel workbook** suitable for sharing with stakeholders or retaining for compliance records.
+Once the scan is complete, you can browse the results directly in an **interactive table**, export them as a **color-coded Excel workbook** suitable for sharing with stakeholders or retaining for compliance records, or **compare** them against a previous scan to see exactly what changed.
 
 ![Permissions Report configuration screen with scan depth options](docs/screenshots/02_report_config.png)
 
@@ -119,32 +119,44 @@ Once the scan is complete, you can export the results as a **color-coded Excel w
 3. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
 4. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership. Expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
 5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organization.
-6. Click **Run Report**.
+6. Enable **Include subsites** to recursively scan every subsite below the selected site. Subsites often break inheritance from the parent site, so include them for a complete audit. (In all-sites mode, subsites of every site collection are included.)
+7. Click **Run Report**.
 
 ![Report scan in progress showing progress bar, elapsed timer, and item count](docs/screenshots/03_report_running.png)
 
-6. While the scan runs you will see:
+8. While the scan runs you will see:
    - A **progress bar** advancing library-by-library
    - The **name of the current item** being scanned
    - An **elapsed timer** (updated every half-second)
    - A running count of **items scanned** and **library N of N**
    - A **Cancel** button to stop the scan at any time
 
-7. When the scan finishes, a green result panel appears showing the total object count, the number with unique permissions, and an **Export to Excel** button.
+9. When the scan finishes, a green result panel appears showing the total object count, the number with unique permissions, a **results table**, and export buttons.
 
 ![Completed report with result summary and Export to Excel button](docs/screenshots/04_report_complete.png)
 
-8. Click **Export to Excel** to download the results as a color-coded workbook.
+10. Browse the results directly in the table, or click **Export to Excel** to download a color-coded workbook.
 
 ![Excel workbook downloaded after clicking Export to Excel](docs/screenshots/04b_report_export.png)
 
 
-### Understanding the Results
+### Browsing the Results
 
-The Excel export contains one row per scanned object (site, library, folder, or file). Key columns include:
+The results table appears below the filter bar after every scan:
 
-- **Type** — Site, Library, Folder, or File
-- **Name** — The display name of the object
+- One row per scanned object, in natural scan order (site → library → folders). Click the **Type**, **Name**, **Path**, or **Permissions** header to sort; click again to reverse.
+- Click any row (or its chevron) to **expand it** and see the full permission assignments for that object — every user and group with their color-coded permission level.
+- A **Unique** badge marks objects with broken inheritance; **Inherited** marks the rest.
+- A **Hidden from search** badge marks libraries an admin has excluded from search indexing (NoCrawl) — worth a closer look during an audit, since that setting is sometimes used to keep sensitive content out of sight.
+- The filter box and the **Unique permissions only** / **External users only** checkboxes filter the table and the exports together.
+- Large results paginate at 200 rows — click **Load more** for the rest.
+
+### Understanding the Excel Export
+
+The Excel export contains one row per scanned object. Key columns include:
+
+- **Type** — Site, Library, List, Folder, or File
+- **Name** — The display name of the object (with a "(hidden from search)" marker for NoCrawl libraries)
 - **Path** — The server-relative URL
 - **Has Unique Permissions** — Yes/No indicator
 - **Users / Groups** — Everyone who has been explicitly granted access
@@ -152,9 +164,21 @@ The Excel export contains one row per scanned object (site, library, folder, or 
 
 Rows for items with **unique permissions** are highlighted in the Excel workbook so they stand out immediately.
 
+### Report History and Compare
+
+Every completed scan is saved automatically to a local history log in your browser. Click the **History** button in the header to see past reports with their date, site, scope, and object counts. From there you can **Export** any past report without re-scanning, or **Delete** records.
+
+To see **what changed between two scans**, tick the checkboxes next to two reports and click **Compare selected**. The comparison shows:
+
+- **Permission changes** — users or groups added, removed, or given different roles on each object
+- **Inheritance changes** — objects whose inheritance was broken or restored
+- **New / removed objects** — items that appeared in or disappeared from the scan
+
+Run a scan on a schedule (for example, monthly) and compare against the previous one to turn the report into a change log of your site's permissions. A warning appears if the two reports were taken with different sites or scan options, since differences may then reflect settings rather than real changes.
+
 ### Cancelling a Long Scan
 
-Click the **Cancel** button that appears next to the progress bar. The scan stops after the current item finishes and any results gathered so far are kept.
+Click the **Cancel** button that appears next to the progress bar. The scan stops and everything collected so far is kept — the results table and both export buttons work on the partial results, and the header clearly marks them as *"Scan cancelled — partial results."* Cancelled scans are not saved to history.
 
 ---
 
@@ -169,10 +193,12 @@ The Permissions Explorer lets you browse a document library interactively — fo
 ### How to Use It
 
 1. Click **Open Permissions Explorer** from the home screen.
-2. The web part automatically connects to the site and loads the available document libraries.
+2. The web part automatically connects to the site and loads the available document libraries (including Site Pages and picture libraries). Libraries an admin has excluded from search indexing are marked **"(hidden from search)"** in the dropdown.
 3. Use the **Library** dropdown to select the library you want to browse.
 4. The **left panel** shows the folder and file tree. Click any item to select it.
 5. The **right panel** shows the permissions for the selected item.
+
+The tree is fully keyboard accessible: **Tab** into it, then use **Up/Down** arrows to move between items, **Right** to expand a folder, **Left** to collapse it (or jump to the parent), **Home/End** to jump to the first or last item, and **Enter** or **Space** to select the focused item.
 
 ### Understanding the Permission Panel
 
@@ -274,12 +300,13 @@ User Access answers the question: *"What can this specific person actually see?"
 1. Click **Check User Access** from the home screen.
 2. The web part loads the list of users on the site.
 3. Start typing in the **Select a user** search box to filter by name or email address, then select the user from the dropdown. The scan begins automatically once a user is selected.
-4. A progress bar, elapsed timer, and status message show the scan's progress.
+4. Once you have typed **3 or more characters**, the dropdown also searches the **whole tenant** and shows matches under a **"Not in this site"** group. This finds people who have access through a Microsoft 365 or security group but have never visited the site — they don't appear in the site's own user list, yet they may still have access worth checking.
+5. A progress bar, elapsed timer, and status message show the scan's progress.
 
 ![User Access scan in progress with progress bar, elapsed time, and cancel button](docs/screenshots/06_user_access_scanning.png)
 
-5. Once complete, a table shows every location the user can access.
-6. A **New scan** button appears in the header — click it to clear the results and select a different user.
+6. Once complete, a table shows every location the user can access.
+7. A **New scan** button appears in the header — click it to clear the results and select a different user.
 
 ### Cancelling a Scan
 
@@ -300,7 +327,7 @@ The results table shows one row per accessible location:
 
 | Column | Description |
 |--------|-------------|
-| **Type** | Site, Library, Folder, or File |
+| **Type** | Site, Library, List, Folder, or File |
 | **Name** | Display name of the location (indented to reflect hierarchy) |
 | **Path** | Server-relative URL |
 | **Permission Level** | The user's effective role at this location |
@@ -347,9 +374,9 @@ When **checked**, the tools also include system and hidden libraries such as:
 - Pages
 - Other libraries hidden from default views
 
-This setting is useful during a thorough security audit where you need to account for all content, including system-managed locations. Applies to all tools.
+This setting is useful during a thorough security audit where you need to account for all content, including system-managed locations. Applies to all tools, including the Permissions Report.
 
-> **Note:** The Permissions Report always excludes system and hidden libraries regardless of this setting.
+> **Note:** Libraries marked **NoCrawl** (hidden from search results) are always included and flagged with a "hidden from search" marker — they are not treated as system libraries, because hiding content from search is sometimes used to obscure sensitive material.
 
 ### Exclude Limited Access Entries
 
@@ -363,7 +390,7 @@ The **Performance** section controls how aggressively the tools scan in parallel
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Concurrent requests** | 4 | How many permission requests are sent simultaneously. A higher number speeds up scans on large sites but may hit SharePoint throttling limits. |
+| **Concurrent requests** | 4 | How many API requests are sent simultaneously during Permissions Report scans, User Access scans, and Explorer background checks. A higher number speeds up scans on large sites but may hit SharePoint throttling limits. |
 | **Group member cap** | 500 | Maximum number of members fetched per group when **Expand group members** is enabled. Groups larger than this cap are shown but their member list is truncated. |
 
 Reduce **Concurrent requests** if you see throttling errors during long scans. Reduce **Group member cap** if expanding large security groups causes timeouts.

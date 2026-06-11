@@ -34,17 +34,22 @@ Interactively browse a document library tree and inspect live permissions on any
 
 ### Permissions Report
 
-Scan a site's libraries, folders, and files and export a color-coded Excel workbook of every unique permission assignment.
+Scan a site's lists, libraries, folders, and files and export a color-coded Excel workbook of every unique permission assignment.
 
 | Feature | Description |
 |---|---|
 | **Configurable scan depth** | Choose Site only, Libraries, or full depth (folders and files) |
+| **Full list coverage** | Scans all visible lists — generic lists, Site Pages, calendars — not just document libraries |
+| **Subsite scanning** | Optionally recurse into every subsite below the selected site |
+| **In-browser results table** | Browse results directly: sortable, paginated, with expandable per-object permission details |
+| **Report compare** | Diff two saved reports to see permissions added, removed, or changed between scans |
 | **Folder depth limit** | Cap recursion at 1–5 levels to control scan time on large sites |
 | **Group member expansion** | Expand all group types into individual user rows in the export |
 | **External user filter** | Scope the scan and export to external accounts only |
+| **Hidden-from-search flag** | NoCrawl libraries are included and badged instead of silently skipped |
 | **Excel export** | In-browser `.xlsx` workbook with color-coded permission levels and an Access Via column |
 | **CSV export** | Plain-text alternative for scripted processing |
-| **Progress bar and timer** | Library-by-library progress with an elapsed timer and live item count |
+| **Progress bar and timer** | Concurrent, throttling-aware scan with elapsed timer and live item count |
 
 ![Permissions Report configuration screen](docs/screenshots/02_report_config.png)
 
@@ -59,6 +64,7 @@ Look up any user and see every location they can access on a site, with their ex
 | Feature | Description |
 |---|---|
 | **Searchable user picker** | Combobox with live filtering across all site users |
+| **Tenant-wide people search** | Type 3+ characters to also find users not yet in the site's user list ("Not in this site") |
 | **Site-level detection** | Immediately identifies when a user has full-site access via M365 Group or SP group membership |
 | **M365 Group support** | Detects membership via SharePoint REST, site GroupId, and Graph `transitiveMemberOf` |
 | **Sortable results table** | Click any column header to sort |
@@ -195,14 +201,18 @@ src/webparts/smartPermissions/
 ├── components/
 │   ├── App.tsx                        # Root component — routing, permission check, theme wiring
 │   ├── HomeView.tsx                   # Home screen with feature cards and non-owner warning
-│   ├── PermissionsReportView.tsx      # Report configuration, scan progress, export
+│   ├── PermissionsReportView.tsx      # Report configuration, results table, history, compare
 │   ├── PermissionsExplorerView.tsx    # Interactive folder/file tree and permission panel
 │   ├── UserAccessView.tsx             # Per-user access scan, history, export
-│   ├── PermissionGroupsView.tsx       # SharePoint group browser (backend only; not on home screen)
-│   └── SettingsView.tsx               # Full-page settings screen
+│   ├── SettingsView.tsx               # Full-page settings screen
+│   └── shared/                        # Shared UI: PermTable, role badge colors, site-owner links
 ├── services/
-│   ├── SharePointService.ts           # All REST and Graph API calls
-│   └── ExcelExportService.ts          # ExcelJS workbook generation
+│   ├── SharePointService.ts           # Facade over the sp/ modules (stable public API)
+│   ├── sp/                            # API client, report scan, explorer, groups, user access
+│   └── ExcelExportService.ts          # ExcelJS workbook generation (lazy-loaded chunk)
+├── utils/
+│   ├── notifications.ts               # Guarded browser-notification helpers
+│   └── reportDiff.ts                  # Pure diff between two stored reports
 ├── models/
 │   └── models.ts                      # Shared TypeScript interfaces
 └── SmartPermissionsWebPart.ts         # SPFx entry point, property pane, theme wiring

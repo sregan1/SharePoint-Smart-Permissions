@@ -3,7 +3,6 @@ import {
   Button,
   Field,
   Badge,
-  Link,
   Text,
   Title3,
   Body1,
@@ -13,6 +12,7 @@ import {
   ProgressBar,
   Combobox,
   Option,
+  OptionGroup,
   makeStyles,
   tokens,
 } from '@fluentui/react-components';
@@ -22,6 +22,9 @@ import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportHistoryService } from '../services/ReportHistoryService';
 import { SiteUserInfo, PermissionEntry, ObjectType, StoredUserAccessReport } from '../models/models';
+import { requestNotificationPermission, showNotification } from '../utils/notifications';
+import { roleBadgeColor } from './shared/roleBadge';
+import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -113,30 +116,6 @@ function isSystemAccount(u: SiteUserInfo): boolean {
   );
 }
 
-// ── Role badge color ──────────────────────────────────────────────────────────
-
-function roleBadgeColor(
-  roles: string[],
-): 'brand' | 'danger' | 'warning' | 'success' | 'informative' {
-  if (roles.some((r) => r.toLowerCase().includes('full control'))) return 'danger';
-  if (
-    roles.some(
-      (r) =>
-        r.toLowerCase().includes('edit') ||
-        r.toLowerCase().includes('contribute') ||
-        r.toLowerCase().includes('design'),
-    )
-  )
-    return 'warning';
-  if (
-    roles.some(
-      (r) => r.toLowerCase().includes('read') || r.toLowerCase().includes('view'),
-    )
-  )
-    return 'success';
-  return 'informative';
-}
-
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const sec = seconds % 60;
@@ -170,6 +149,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   // ── User access ──
   const [selectedUser, setSelectedUser] = React.useState('');
   const [userFilter, setUserFilter] = React.useState('');
+  // Tenant-wide people-picker suggestions for users not in the site's list
+  const [tenantSuggestions, setTenantSuggestions] = React.useState<SiteUserInfo[]>([]);
   const [userAccessBusy, setUserAccessBusy] = React.useState(false);
   const [userAccessStatus, setUserAccessStatus] = React.useState('');
   const [userAccessItems, setUserAccessItems] = React.useState<PermissionEntry[]>([]);
@@ -204,15 +185,16 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const TYPE_ORDER: Record<string, number> = {
     [ObjectType.Site]: 0,
     [ObjectType.Library]: 1,
-    [ObjectType.Folder]: 2,
-    [ObjectType.File]: 3,
+    [ObjectType.List]: 2,
+    [ObjectType.Folder]: 3,
+    [ObjectType.File]: 4,
   };
 
   const sortedAccessItems = React.useMemo(() => {
     return [...displayAccessItems].sort((a, b) => {
       let diff = 0;
       if (sortCol === 'type') {
-        diff = (TYPE_ORDER[a.objectType] ?? 4) - (TYPE_ORDER[b.objectType] ?? 4);
+        diff = (TYPE_ORDER[a.objectType] ?? 5) - (TYPE_ORDER[b.objectType] ?? 5);
       } else if (sortCol === 'name') {
         const va = a.name, vb = b.name;
         diff = va < vb ? -1 : va > vb ? 1 : 0;
@@ -225,8 +207,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         diff = va < vb ? -1 : va > vb ? 1 : 0;
       }
       if (diff !== 0) return sortAsc ? diff : -diff;
-      // Secondary sort: Site → Library → Folder → File, then by path
-      const typeDiff = (TYPE_ORDER[a.objectType] ?? 4) - (TYPE_ORDER[b.objectType] ?? 4);
+      // Secondary sort: Site → Library → List → Folder → File, then by path
+      const typeDiff = (TYPE_ORDER[a.objectType] ?? 5) - (TYPE_ORDER[b.objectType] ?? 5);
       if (typeDiff !== 0) return typeDiff;
       return a.serverRelativeUrl.localeCompare(b.serverRelativeUrl);
     });
@@ -304,13 +286,6 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     };
   }, [userAccessBusy]);
 
-  // Request notification permission on mount
-  React.useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => { /* ignore */ });
-    }
-  }, []);
-
   // ── Connect ──────────────────────────────────────────────────────────────
 
   const handleConnect = async (): Promise<void> => {
@@ -333,13 +308,15 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       setIsConnected(true);
       setConnectStatus(`Connected — ${users.length} user${users.length === 1 ? '' : 's'} found`);
 
-      // Auto-scan for prefill user (from Explorer cross-navigation)
+      // Auto-scan for prefill user (from Explorer cross-navigation). The
+      // display name is passed explicitly because the siteUsers state update
+      // hasn't committed yet when handleUserSelect runs.
       if (prefillLogin && !prefillHandledRef.current) {
         prefillHandledRef.current = true;
         onPrefillUsed?.();
         const match = users.find((u) => u.loginName === prefillLogin);
         setUserFilter(match?.displayName ?? prefillLogin);
-        handleUserSelect(prefillLogin).catch((e) =>
+        handleUserSelect(prefillLogin, match?.displayName).catch((e) =>
           console.error('[SmartPermissions] prefill handleUserSelect failed:', e),
         );
       }
@@ -356,12 +333,33 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     handleConnect().catch((e) => console.error('[SmartPermissions] UserAccess handleConnect failed:', e));
   }, []);
 
+  // Debounced tenant-wide people search: users who have access via an AAD
+  // group but never visited the site are missing from siteusers — offer them
+  // as "Not in this site" suggestions once the filter has 3+ characters.
+  React.useEffect(() => {
+    const q = userFilter.trim();
+    if (q.length < 3 || !isConnected || userAccessBusy) {
+      setTenantSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      sp.searchTenantUsers(siteUrl.trim(), q)
+        .then((results) => {
+          const existing = new Set(siteUsers.map((u) => u.loginName.toLowerCase()));
+          setTenantSuggestions(results.filter((r) => !existing.has(r.loginName.toLowerCase())));
+        })
+        .catch(() => setTenantSuggestions([]));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [userFilter, isConnected, userAccessBusy, siteUsers]);
+
   // ── User selection ───────────────────────────────────────────────────────
 
-  const handleUserSelect = async (login: string): Promise<void> => {
+  const handleUserSelect = async (login: string, knownDisplayName?: string): Promise<void> => {
     setSelectedUser(login);
     if (!login) return;
 
+    requestNotificationPermission();
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     scanStartRef.current = Date.now();
@@ -373,8 +371,9 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     setGraphPermissionRequired(false);
     setRoleAssignmentsDenied(false);
     setSiteOwners([]);
-    const user = siteUsers.find((u) => u.loginName === login);
-    setUserAccessStatus(`Checking access for ${user?.displayName ?? login}…`);
+    const displayName =
+      knownDisplayName ?? siteUsers.find((u) => u.loginName === login)?.displayName ?? login;
+    setUserAccessStatus(`Checking access for ${displayName}…`);
 
     try {
       const { fullSiteAccess, items, graphPermissionRequired: graphPerm, roleAssignmentsDenied: raDenied } = await sp.getUserAccess(
@@ -397,11 +396,10 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         : 'No accessible locations found.';
       setUserAccessStatus(fullSiteAccess ? '' : statusMsg);
 
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Smart Permissions — User Access scan complete', {
-          body: `${user?.displayName ?? login}: ${statusMsg}`,
-        });
-      }
+      showNotification(
+        'Smart Permissions — User Access scan complete',
+        `${displayName}: ${statusMsg}`,
+      );
 
       // Save to history (errors swallowed — never block the user)
       const storedReport: StoredUserAccessReport = {
@@ -409,7 +407,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         timestamp: new Date().toISOString(),
         siteUrl: siteUrl.trim(),
         userLoginName: login,
-        userDisplayName: user?.displayName ?? login,
+        userDisplayName: displayName,
         summary: {
           accessibleLocations: items.length,
           fullSiteAccess,
@@ -574,7 +572,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 onInput={(e) => setUserFilter((e.target as HTMLInputElement).value)}
                 onOptionSelect={(_, d) => {
                   setUserFilter(d.optionText ?? '');
-                  handleUserSelect(d.optionValue ?? '').catch((err) =>
+                  handleUserSelect(d.optionValue ?? '', d.optionText).catch((err) =>
                     console.error('[SmartPermissions] handleUserSelect failed:', err),
                   );
                 }}
@@ -590,10 +588,19 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                       (u.email != null && u.email.toLowerCase().includes(userFilter.toLowerCase())),
                   )
                   .map((u) => (
-                    <Option key={u.loginName} value={u.loginName}>
+                    <Option key={u.loginName} value={u.loginName} text={u.displayName}>
                       {u.email ? `${u.displayName} (${u.email})` : u.displayName}
                     </Option>
                   ))}
+                {tenantSuggestions.length > 0 && (
+                  <OptionGroup label="Not in this site">
+                    {tenantSuggestions.map((u) => (
+                      <Option key={u.loginName} value={u.loginName} text={u.displayName}>
+                        {u.email ? `${u.displayName} (${u.email})` : u.displayName}
+                      </Option>
+                    ))}
+                  </OptionGroup>
+                )}
               </Combobox>
             </Field>
           </div>
@@ -665,16 +672,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                     Member, or Visitor groups.
                   </>
                 )}
-                {siteOwners.length > 0 && (
-                  <> Site Owners: {siteOwners.map((o, i) => (
-                    <React.Fragment key={o.email || o.title}>
-                      {i > 0 && ', '}
-                      {o.email
-                        ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
-                        : o.title}
-                    </React.Fragment>
-                  ))}.</>
-                )}
+                <SiteOwnersLinks owners={siteOwners} />
               </MessageBarBody>
             </MessageBar>
           )}
@@ -757,6 +755,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                             ? 'brand'
                             : item.objectType === ObjectType.Library
                             ? 'informative'
+                            : item.objectType === ObjectType.List
+                            ? 'success'
                             : item.objectType === ObjectType.Folder
                             ? 'warning'
                             : undefined
