@@ -661,7 +661,6 @@ async function main() {
     ['screenshot_report.png',      reportPage,      { width: 800, height: 560 }],
     ['screenshot_explorer.png',    explorerPage,    { width: 800, height: 530 }],
     ['screenshot_user_access.png', userAccessPage,  { width: 800, height: 500 }],
-    ['screenshot_groups.png',      groupsPage,      { width: 800, height: 500 }],
   ];
 
   for (const [filename, htmlFn, vp] of assetShots) {

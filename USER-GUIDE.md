@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.3.0**
+**Version 1.4.0**
 **Applies to:** SharePoint Online
 
 ---
