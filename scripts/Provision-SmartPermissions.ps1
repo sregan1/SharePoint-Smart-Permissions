@@ -38,8 +38,11 @@
     Set $targetSiteUrl to provision a single site without touching the rest of
     the tenant. Leave it empty to run across all site collections.
 
-    The Smart Permissions app must already be deployed to the tenant App Catalog
-    and approved before this script will successfully add the web part.
+    The Smart Permissions app must already be deployed (and approved, if API
+    permissions require it) to the tenant App Catalog. The script installs the
+    app on each site automatically if it isn't already there, so ticking
+    "Make this solution available to all sites automatically" during upload
+    is not required.
 
     Audience targeting (the -AudienceIds parameter on Add-PnPNavigationNode
     and the page audience field) is only available on Microsoft 365
@@ -51,6 +54,7 @@
 $adminUrl       = ""   # Required: e.g. "https://contoso-admin.sharepoint.com"
 $targetSiteUrl  = ""   # Optional: set to provision a single site, e.g. "https://contoso.sharepoint.com/sites/mysite"
                        # Leave empty to provision all site collections in the tenant.
+$solutionId     = "a2f2de50-4e8b-4f3c-9abc-ef0123456789"  # Smart Permissions solution/app ID (package-solution.json) — do not change
 $componentId    = "c2f2de50-4e8b-4f3c-9abc-ef0123456789"  # Smart Permissions web part ID — do not change
 $pageName       = "Permissions"   # File name (without .aspx)
 $pageTitle      = "Permissions"   # Display title shown at top of page
@@ -80,34 +84,67 @@ foreach ($site in $sites) {
     try {
         Connect-PnPOnline -Url $site.Url -Interactive
 
+        # ── Ensure the Smart Permissions app is installed on this site ───────
+        # Scope defaults to Tenant, which is where the app is deployed. Passing
+        # -Scope Site here would look for a site-collection app catalog instead,
+        # which most sites don't have, causing a sitecollectionappcatalog 404.
+        $app = Get-PnPApp -Identity $solutionId -ErrorAction SilentlyContinue
+        if (-not $app) {
+            Write-Warning "  Smart Permissions app not found in this site's available apps — attempting install from tenant App Catalog..."
+        }
+        if (-not $app -or -not $app.InstalledVersion) {
+            Write-Host "  Installing Smart Permissions app on this site..."
+            # -Wait blocks until the (asynchronous) install actually finishes, instead of
+            # guessing with a fixed sleep — a too-short sleep left the component unresolved
+            # and Add-PnPPageWebPart silently added a control the page couldn't render.
+            Install-PnPApp -Identity $solutionId -Wait
+        }
+
         # Create the page only if it doesn't already exist
         $page = Get-PnPPage -Identity "$pageName.aspx" -ErrorAction SilentlyContinue
         if (-not $page) {
             $page = Add-PnPPage -Name $pageName -Title $pageTitle `
-                                -LayoutType Article -SkipPublish
+                                -LayoutType Article -Publish
             Write-Host "  Created $pageName.aspx"
         } else {
             Write-Host "  $pageName.aspx already exists — adding web part"
         }
 
-        Add-PnPPageWebPart -Page $page `
-            -DefaultWebPartType ThirdParty `
-            -WebPartId $componentId `
-            -WebPartProperties $webPartProps
+        # Resolve the actual component object instead of passing a raw GUID string —
+        # passing $componentId directly to -Component silently produced an empty
+        # placeholder control (no WebPartId/JsonWebPartData bound) even though the
+        # component is genuinely deployed and available on the site.
+        $targetComponent = Get-PnPAvailablePageComponents -Page $page | Where-Object { [Guid]$_.Id -eq [Guid]$componentId }
 
-        Publish-PnPPage -Identity "$pageName.aspx"
+        # Skip if the web part is already on the page (re-running the script on an
+        # existing page would otherwise stack up a new duplicate copy each time).
+        $existingWebPart = $page.Controls | Where-Object { $_.WebPartId -eq $componentId }
+        if (-not $existingWebPart) {
+            if ($targetComponent) {
+                Add-PnPPageWebPart -Page $page `
+                    -Component $targetComponent `
+                    -WebPartProperties $webPartProps
+            } else {
+                Write-Warning "  Could not resolve the Smart Permissions component on this page — skipping add"
+            }
+        } else {
+            Write-Host "  Web part already on page — skipping duplicate add"
+        }
+
+        # Publish the SAME in-memory $page object that just had the web part added to
+        # it — re-resolving by filename here fetched a stale copy without the new
+        # control and published that over the real change.
+        Set-PnPPage -Identity $page -Publish -CommentsEnabled:$false
 
         # ── Permissions: Owners only ──────────────────────────────────────────
         $pageItem = Get-PnPListItem -List "Site Pages" `
             -Query "<View><Query><Where><Eq><FieldRef Name='FileLeafRef'/><Value Type='Text'>$pageName.aspx</Value></Eq></Where></Query></View>"
         if ($pageItem) {
             $ownersGroup = Get-PnPGroup -AssociatedOwnerGroup
-            # Break inheritance and remove all existing role assignments
+            # -ClearExisting is only valid alongside -User/-Group (not -InheritPermissions),
+            # so break inheritance, clear existing role assignments, and grant Owners in one call.
             Set-PnPListItemPermission -List "Site Pages" -Identity $pageItem.Id `
-                -InheritPermissions:$false -ClearExisting
-            # Grant the Owners group Full Control
-            Set-PnPListItemPermission -List "Site Pages" -Identity $pageItem.Id `
-                -Group $ownersGroup -AddRole "Full Control"
+                -Group $ownersGroup -AddRole "Full Control" -ClearExisting
             Write-Host "  Permissions set: Owners only"
         } else {
             Write-Warning "  Could not find page list item — permissions not updated"

@@ -15,6 +15,9 @@ sharepoint/solution/
 # Local dev server config — contains tenant-specific URLs
 config/serve.json
 
+# Personal tenant-specific copy of the provisioning script
+scripts/Provision-SmartPermissions.local.ps1
+
 # Environment and secrets
 .env
 .env.*
