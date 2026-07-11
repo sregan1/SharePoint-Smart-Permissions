@@ -104,7 +104,8 @@ async function scanSite(client: SpApiClient,
       entries.push(siteEntry);
       onEntry?.(siteEntry);
     } catch (err: any) {
-      if (isPermissionDenied(err) && flags) flags.roleAssignmentsDenied = true;
+      const denied = isPermissionDenied(err);
+      if (denied && flags) flags.roleAssignmentsDenied = true;
       // Fallback: no role assignments, just record the site.
       try {
         const webData = await client.getJson(
@@ -118,6 +119,7 @@ async function scanSite(client: SpApiClient,
           hasUniquePermissions: true,
           depth: 0,
           uniquePermissions: [],
+          scanIncomplete: denied ? undefined : true,
         };
         entries.push(siteEntry);
         onEntry?.(siteEntry);
@@ -173,6 +175,7 @@ async function scanSite(client: SpApiClient,
           const isLib = isLibraryTemplate(lib.BaseTemplate ?? 0);
 
           let libPerms = sitePerms;
+          let libIncomplete = false;
           if (lib.HasUniqueRoleAssignments && libUrl) {
             try {
               const raData = await client.getJson(
@@ -182,7 +185,14 @@ async function scanSite(client: SpApiClient,
               );
               libPerms = toPermissionInfoList(valueArray(raData));
             } catch (err: any) {
-              if (isPermissionDenied(err) && flags) flags.roleAssignmentsDenied = true;
+              if (isPermissionDenied(err)) {
+                if (flags) flags.roleAssignmentsDenied = true;
+              } else {
+                // Transient failure, not "no access" — this item genuinely has
+                // unique permissions we couldn't read; don't silently present
+                // the parent's (site) permissions as if they were confirmed.
+                libIncomplete = true;
+              }
             }
           }
 
@@ -195,6 +205,7 @@ async function scanSite(client: SpApiClient,
             depth: 1,
             uniquePermissions: libPerms,
             noCrawl: lib.NoCrawl ? true : undefined,
+            scanIncomplete: libIncomplete || undefined,
           };
           local.push(libEntry);
           onEntry?.(libEntry);
@@ -255,7 +266,7 @@ async function scanSite(client: SpApiClient,
               members = memberCache.get(cacheKey)!;
             } else {
               try {
-                members = await getGroupMembers(client, siteUrl, up.displayName, up.loginName, up.principalType, signal);
+                members = await getGroupMembers(client, siteUrl, up.displayName, up.loginName, up.principalType, signal, up.groupId);
               } catch (err: any) {
                 if (err?.isGraphPermissionError && flags) flags.groupPermissionDenied = true;
                 members = [];
@@ -290,8 +301,8 @@ async function walkFolder(client: SpApiClient,
     let files: any[] = [];
     let uniquePermsLoaded = false;
 
-    try {
-      [subFolders, files] = await Promise.all([
+    const fetchEnriched = (): Promise<[any[], any[]]> =>
+      Promise.all([
         client.getJsonPaged(
           `${apiBase}/Folders` +
             `?$select=Name,ServerRelativeUrl,ItemCount,ListItemAllFields/HasUniqueRoleAssignments` +
@@ -307,23 +318,38 @@ async function walkFolder(client: SpApiClient,
             )
           : Promise.resolve([]),
       ]);
+
+    try {
+      [subFolders, files] = await fetchEnriched();
       uniquePermsLoaded = true;
     } catch {
+      // One retry of the enriched (unique-flags) query before giving up
+      // richness — a single transient failure here previously dropped every
+      // unique-permission flag for the whole subtree silently.
       try {
-        [subFolders, files] = await Promise.all([
-          client.getJsonPaged(
-            `${apiBase}/Folders?$select=Name,ServerRelativeUrl,ItemCount&$top=2000`,
-            signal,
-          ),
-          options.scope === ReportScope.Item
-            ? client.getJsonPaged(
-                `${apiBase}/Files?$select=Name,ServerRelativeUrl&$top=2000`,
-                signal,
-              )
-            : Promise.resolve([]),
-        ]);
-      } catch { return; }
+        [subFolders, files] = await fetchEnriched();
+        uniquePermsLoaded = true;
+      } catch {
+        try {
+          [subFolders, files] = await Promise.all([
+            client.getJsonPaged(
+              `${apiBase}/Folders?$select=Name,ServerRelativeUrl,ItemCount&$top=2000`,
+              signal,
+            ),
+            options.scope === ReportScope.Item
+              ? client.getJsonPaged(
+                  `${apiBase}/Files?$select=Name,ServerRelativeUrl&$top=2000`,
+                  signal,
+                )
+              : Promise.resolve([]),
+          ]);
+        } catch { return; }
+      }
     }
+    // When the enriched query never succeeded, every entry below inherits the
+    // parent's permissions as a best-effort fallback — flag them as
+    // unknown/incomplete rather than presenting that as a confirmed result.
+    const branchIncomplete = !uniquePermsLoaded;
 
     const visibleFolders = subFolders.filter(
       (f: any) =>
@@ -336,6 +362,7 @@ async function walkFolder(client: SpApiClient,
 
       let folderPerms = parentPerms;
       let hasUnique = false;
+      let folderIncomplete = branchIncomplete;
 
       if (uniquePermsLoaded && subfolder.ListItemAllFields?.HasUniqueRoleAssignments) {
         try {
@@ -346,7 +373,11 @@ async function walkFolder(client: SpApiClient,
           );
           folderPerms = toPermissionInfoList(valueArray(raData));
           hasUnique = true;
-        } catch { /* inherit parent */ }
+        } catch (err: any) {
+          // Permission-denied means we genuinely can't read this item's ACL — not
+          // the same as a transient failure that should be flagged as incomplete.
+          if (!isPermissionDenied(err)) folderIncomplete = true;
+        }
       }
 
       const folderEntry: PermissionEntry = {
@@ -357,6 +388,7 @@ async function walkFolder(client: SpApiClient,
         hasUniquePermissions: hasUnique,
         depth,
         uniquePermissions: folderPerms,
+        scanIncomplete: folderIncomplete || undefined,
       };
       results.push(folderEntry);
       onEntry?.(folderEntry);
@@ -389,6 +421,7 @@ async function walkFolder(client: SpApiClient,
 
       let filePerms = parentPerms;
       let hasUnique = false;
+      let fileIncomplete = branchIncomplete;
 
       if (uniquePermsLoaded && file.ListItemAllFields?.HasUniqueRoleAssignments) {
         try {
@@ -399,7 +432,9 @@ async function walkFolder(client: SpApiClient,
           );
           filePerms = toPermissionInfoList(valueArray(raData));
           hasUnique = true;
-        } catch { /* inherit parent */ }
+        } catch (err: any) {
+          if (!isPermissionDenied(err)) fileIncomplete = true;
+        }
       }
 
       const fileEntry: PermissionEntry = {
@@ -410,6 +445,7 @@ async function walkFolder(client: SpApiClient,
         hasUniquePermissions: hasUnique,
         depth,
         uniquePermissions: filePerms,
+        scanIncomplete: fileIncomplete || undefined,
       };
       results.push(fileEntry);
       onEntry?.(fileEntry);

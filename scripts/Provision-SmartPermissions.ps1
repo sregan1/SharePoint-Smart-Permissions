@@ -51,9 +51,13 @@
 #>
 
 # --- Configuration ---
-$adminUrl       = ""   # Required: e.g. "https://contoso-admin.sharepoint.com"
+$adminUrl       = ""   # Required in tenant-wide mode: e.g. "https://contoso-admin.sharepoint.com"
+                       # Not used in single-site mode (when $targetSiteUrl is set).
 $targetSiteUrl  = ""   # Optional: set to provision a single site, e.g. "https://contoso.sharepoint.com/sites/mysite"
                        # Leave empty to provision all site collections in the tenant.
+$clientId       = ""   # Optional: Entra ID App client id from Register-PnPEntraIDAppForInteractiveLogin.
+                       # Only needed on tenants that reject the default PnP Management Shell app —
+                       # a growing number of tenants require this for any interactive PnP sign-in.
 $solutionId     = "a2f2de50-4e8b-4f3c-9abc-ef0123456789"  # Smart Permissions solution/app ID (package-solution.json) — do not change
 $componentId    = "c2f2de50-4e8b-4f3c-9abc-ef0123456789"  # Smart Permissions web part ID — do not change
 $pageName       = "Permissions"   # File name (without .aspx)
@@ -63,8 +67,16 @@ $webPartProps   = @{
 }
 
 # --- Validate config ---
-if (-not $adminUrl) {
-    throw "adminUrl is required. Set it at the top of the script before running."
+# Only required in tenant-wide mode — single-site mode connects directly to
+# $targetSiteUrl and never touches $adminUrl.
+if (-not $targetSiteUrl -and -not $adminUrl) {
+    throw "adminUrl is required for tenant-wide mode. Set it at the top of the script, or set targetSiteUrl to provision a single site instead."
+}
+
+# Splat so -ClientId is only passed when set, without an empty-string arg
+$connectParams = @{ Interactive = $true }
+if ($clientId) {
+    $connectParams["ClientId"] = $clientId
 }
 
 # --- Build the list of sites to provision ---
@@ -74,7 +86,7 @@ if ($targetSiteUrl) {
     $sites = @([PSCustomObject]@{ Url = $targetSiteUrl.TrimEnd('/') })
 } else {
     # Tenant-wide mode
-    Connect-PnPOnline -Url $adminUrl -Interactive
+    Connect-PnPOnline -Url $adminUrl @connectParams
     $sites = Get-PnPTenantSite -IncludeOneDriveSites:$false
     Write-Host "Found $($sites.Count) site(s). Starting provisioning..." -ForegroundColor Cyan
 }
@@ -82,7 +94,7 @@ if ($targetSiteUrl) {
 foreach ($site in $sites) {
     Write-Host "Processing: $($site.Url)"
     try {
-        Connect-PnPOnline -Url $site.Url -Interactive
+        Connect-PnPOnline -Url $site.Url @connectParams
 
         # ── Ensure the Smart Permissions app is installed on this site ───────
         # Scope defaults to Tenant, which is where the app is deployed. Passing
@@ -118,7 +130,9 @@ foreach ($site in $sites) {
 
         # Skip if the web part is already on the page (re-running the script on an
         # existing page would otherwise stack up a new duplicate copy each time).
-        $existingWebPart = $page.Controls | Where-Object { $_.WebPartId -eq $componentId }
+        # Cast both sides to [Guid] — a plain string compare silently fails (and the
+        # guard never triggers) if WebPartId ever surfaces braced or upper-case.
+        $existingWebPart = $page.Controls | Where-Object { $_.WebPartId -and ([Guid]$_.WebPartId -eq [Guid]$componentId) }
         if (-not $existingWebPart) {
             if ($targetComponent) {
                 Add-PnPPageWebPart -Page $page `
@@ -136,14 +150,21 @@ foreach ($site in $sites) {
         # control and published that over the real change.
         Set-PnPPage -Identity $page -Publish -CommentsEnabled:$false
 
+        # Resolve the pages library once by its stable, non-localized root-folder
+        # URL segment ("SitePages") rather than the display title "Site Pages" —
+        # the title is localized (e.g. German "Websiteseiten"), which would make
+        # every -List "Site Pages" lookup below fail silently on non-English sites,
+        # leaving the page provisioned but still inheriting Members/Visitors access.
+        $pagesList = Get-PnPList -Identity "SitePages"
+
         # ── Permissions: Owners only ──────────────────────────────────────────
-        $pageItem = Get-PnPListItem -List "Site Pages" `
+        $pageItem = Get-PnPListItem -List $pagesList `
             -Query "<View><Query><Where><Eq><FieldRef Name='FileLeafRef'/><Value Type='Text'>$pageName.aspx</Value></Eq></Where></Query></View>"
         if ($pageItem) {
             $ownersGroup = Get-PnPGroup -AssociatedOwnerGroup
             # -ClearExisting is only valid alongside -User/-Group (not -InheritPermissions),
             # so break inheritance, clear existing role assignments, and grant Owners in one call.
-            Set-PnPListItemPermission -List "Site Pages" -Identity $pageItem.Id `
+            Set-PnPListItemPermission -List $pagesList -Identity $pageItem.Id `
                 -Group $ownersGroup -AddRole "Full Control" -ClearExisting
             Write-Host "  Permissions set: Owners only"
         } else {
@@ -152,9 +173,10 @@ foreach ($site in $sites) {
 
         # ── Navigation: add to Quick Launch ──────────────────────────────────
         $pageUrl = "$($site.Url)/SitePages/$pageName.aspx"
-        # Remove any existing node with the same title to avoid duplicates
+        # Remove any existing node for this exact page URL (not just matching Title)
+        # so an unrelated node that happens to share the page's title is left alone.
         $existingNode = Get-PnPNavigationNode -Location QuickLaunch |
-            Where-Object { $_.Title -eq $pageTitle }
+            Where-Object { $_.Title -eq $pageTitle -and $_.Url -eq $pageUrl }
         if ($existingNode) {
             Remove-PnPNavigationNode -Identity $existingNode.Id -Force
         }
@@ -176,10 +198,10 @@ foreach ($site in $sites) {
         # ── Page audience targeting ───────────────────────────────────────────
         if ($pageItem -and $siteData.GroupId -ne [Guid]::Empty) {
             # Enable audience targeting on the Site Pages library (idempotent)
-            Set-PnPList -Identity "Site Pages" -EnableAudienceTargeting $true
+            Set-PnPList -Identity $pagesList -EnableAudienceTargeting $true
             # Set the M365 Owners group as the page audience
             $ownersClaim = "c:0o.c|federateddirectoryclaimprovider|$($siteData.GroupId)"
-            Set-PnPListItem -List "Site Pages" -Identity $pageItem.Id -Values @{
+            Set-PnPListItem -List $pagesList -Identity $pageItem.Id -Values @{
                 "_ModernAudienceTargetUserField" = $ownersClaim
             } | Out-Null
             Write-Host "  Page audience set: Owners group"

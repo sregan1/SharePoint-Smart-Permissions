@@ -117,6 +117,9 @@ Look up any user and see every location they can access on a site, with their ex
 # Install dependencies
 npm install
 
+# Copy the serve.json template (config/serve.json is git-ignored, per-developer)
+cp config/serve.json.template config/serve.json
+
 # Edit config/serve.json and set initialPage to your hosted workbench URL:
 # "initialPage": "https://<tenant>.sharepoint.com/_layouts/15/workbench.aspx"
 
@@ -219,11 +222,11 @@ src/webparts/smartPermissions/
 
 config/
 ├── package-solution.json              # Solution ID, version, Graph permission requests
-└── serve.json                         # Local dev server config — set initialPage here
+└── serve.json.template                # Local dev server config template — copy to serve.json and set initialPage
 
 docs/
 ├── generate-screenshots.js            # Puppeteer script to regenerate all screenshots
-└── screenshots/                       # Auto-generated UI screenshots (git-ignored)
+└── screenshots/                       # UI screenshots (tracked in the repo)
 
 scripts/
 └── Provision-SmartPermissions.ps1     # PnP PowerShell provisioning script

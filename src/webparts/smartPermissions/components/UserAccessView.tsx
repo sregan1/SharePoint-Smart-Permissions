@@ -180,7 +180,10 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     return userAccessItems.filter((e) => e.uniquePermissions.some((p) => p.roles.length > 0));
   }, [userAccessItems, excludeLimitedAccess]);
 
-  const hasSiteEntry = userAccessItems.some((i) => i.objectType === ObjectType.Site);
+  // Derived from the filtered list (displayAccessItems), not the raw scan
+  // results — otherwise the "site-level access" banner below could reference
+  // a site row that excludeLimitedAccess has actually filtered out of view.
+  const hasSiteEntry = displayAccessItems.some((i) => i.objectType === ObjectType.Site);
 
   const TYPE_ORDER: Record<string, number> = {
     [ObjectType.Site]: 0,
@@ -236,10 +239,11 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
 
   const handleHistoryExport = async (item: StoredUserAccessReport): Promise<void> => {
     setExportingHistoryId(item.id);
+    setExportError('');
     try {
       await excel.exportUserAccess(item.entries, item.siteUrl, item.userDisplayName);
     } catch (err: any) {
-      console.error('[SmartPermissions] history export failed:', err);
+      setExportError(`Export error: ${err?.message ?? String(err)}`);
     } finally {
       setExportingHistoryId(null);
     }
@@ -253,14 +257,16 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   // ── Export ──
   const [isExporting, setIsExporting] = React.useState(false);
   const [graphPermissionRequired, setGraphPermissionRequired] = React.useState(false);
+  const [exportError, setExportError] = React.useState('');
 
   const handleExport = async (): Promise<void> => {
     const user = siteUsers.find((u) => u.loginName === selectedUser);
     setIsExporting(true);
+    setExportError('');
     try {
       await excel.exportUserAccess(sortedAccessItems, siteUrl.trim(), user?.displayName ?? selectedUser);
     } catch (err: any) {
-      console.error('[SmartPermissions] exportUserAccess failed:', err);
+      setExportError(`Export error: ${err?.message ?? String(err)}`);
     } finally {
       setIsExporting(false);
     }
@@ -485,6 +491,11 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               Back to scan
             </Button>
           </div>
+          {exportError && (
+            <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
+              <MessageBarBody>{exportError}</MessageBarBody>
+            </MessageBar>
+          )}
           {historyItems.length === 0 ? (
             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>No user access scans saved yet.</Body1>
           ) : (
@@ -711,6 +722,11 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               </Button>
             </div>
           )}
+          {exportError && (
+            <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalS }}>
+              <MessageBarBody>{exportError}</MessageBarBody>
+            </MessageBar>
+          )}
           {!userAccessBusy && hasSiteEntry && !isFullSiteAccess && (
             <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
@@ -737,6 +753,12 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                       key={col}
                       className={styles.accessTh}
                       onClick={() => handleSort(col)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(col); }
+                      }}
+                      tabIndex={0}
+                      role="columnheader"
+                      aria-sort={sortCol !== col ? 'none' : sortAsc ? 'ascending' : 'descending'}
                       style={{ cursor: 'pointer', userSelect: 'none' }}
                     >
                       {label}{sortInd(col)}
@@ -746,7 +768,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               </thead>
               <tbody>
                 {sortedAccessItems.slice(0, visibleCount).map((item, i) => (
-                  <tr key={i}>
+                  <tr key={`${item.serverRelativeUrl}|${item.objectType}|${i}`}>
                     <td className={styles.accessTd}>
                       <Badge
                         appearance="filled"
@@ -783,9 +805,9 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                       </Text>
                     </td>
                     <td className={styles.accessTd}>
-                      {item.uniquePermissions[0]?.roles.map((r, ri) => (
+                      {item.uniquePermissions[0]?.roles.map((r) => (
                         <Badge
-                          key={ri}
+                          key={r}
                           appearance="filled"
                           color={roleBadgeColor([r])}
                           size="small"

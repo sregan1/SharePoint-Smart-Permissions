@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { Badge, Button, Text, makeStyles, tokens } from '@fluentui/react-components';
-import { Person24Regular, People24Regular, PersonSearch16Regular } from '@fluentui/react-icons';
+import { Person24Regular, People24Regular, PersonSearch16Regular, Warning24Filled } from '@fluentui/react-icons';
 
 import { UserPermissionInfo } from '../../models/models';
 import { roleBadgeColor } from './roleBadge';
 import { isExternalUser, externalUserEmail } from './externalUsers';
+import { broadClaimLabel } from './broadClaims';
 
 const useStyles = makeStyles({
   permTable: {
@@ -51,10 +52,22 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
         </tr>
       </thead>
       <tbody>
-        {users.map((u, i) => (
-          <tr key={i}>
+        {users.map((u, i) => {
+          const broadLabel = broadClaimLabel(u);
+          const rowKey = `${u.loginName || u.displayName}|${u.sourceGroup ?? 'direct'}|${i}`;
+          return (
+          <tr key={rowKey} style={broadLabel ? { background: tokens.colorPaletteRedBackground1 } : undefined}>
             <td className={styles.permTd}>
-              {u.isGroupMember ? (
+              {broadLabel ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Warning24Filled
+                    style={{ fontSize: '16px', flexShrink: 0, color: tokens.colorPaletteRedForeground1 }}
+                  />
+                  <Text weight="semibold" style={{ color: tokens.colorPaletteRedForeground1 }}>
+                    {broadLabel} — tenant-wide access
+                  </Text>
+                </span>
+              ) : u.isGroupMember ? (
                 <span style={{ paddingLeft: '16px', color: tokens.colorNeutralForeground3 }}>
                   ↳ {u.displayName}
                 </span>
@@ -116,7 +129,8 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
               </td>
             )}
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );

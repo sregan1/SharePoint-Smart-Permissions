@@ -39,6 +39,7 @@ import { ReportOptions, ReportScope, PermissionEntry, ObjectType, ScanProgress, 
 import { requestNotificationPermission, showNotification } from '../utils/notifications';
 import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
 import { PermTable } from './shared/PermTable';
+import { applyPermFilters } from './shared/permFilters';
 import { diffReports, ReportDiff } from '../utils/reportDiff';
 
 // Badge color per object type (matches the User Access view's mapping).
@@ -205,7 +206,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   React.useEffect(() => {
     setResultsVisible(RESULTS_PAGE_SIZE);
     setExpandedKeys(new Set());
-  }, [entries, filterText, filterExternalOnly, filterUniqueOnly]);
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
 
   const sortedResults = React.useMemo(() => {
     if (!filteredEntries) return [];
@@ -469,25 +470,43 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     abortRef.current?.abort();
   };
 
+  // Mirrors the same excludeLimitedAccess/filterExternalOnly filtering the Explorer
+  // and User Access views apply at the user level (shared applyPermFilters) —
+  // previously this only trimmed external users, so the exported workbook still
+  // listed limited-access principals the on-screen filter had hidden. Rows whose
+  // principals are entirely filtered out by these trims are dropped rather than
+  // exported as an empty-looking row.
   const applyExportFilters = (entriesToFilter: PermissionEntry[]): PermissionEntry[] => {
     let result = filterUniqueOnly
       ? entriesToFilter.filter((e) => e.hasUniquePermissions)
       : entriesToFilter;
-    if (!filterExternalOnly) return result;
-    return result.map((e) => ({
-      ...e,
-      uniquePermissions: e.uniquePermissions.filter((u) =>
-        u.loginName.toLowerCase().indexOf('#ext#') !== -1,
-      ),
-    }));
+    const trimming = filterExternalOnly || excludeLimitedAccess;
+    if (trimming) {
+      result = result
+        .map((e) => ({
+          ...e,
+          uniquePermissions: applyPermFilters(e.uniquePermissions, excludeLimitedAccess, filterExternalOnly),
+        }))
+        .filter((e) => e.uniquePermissions.length > 0);
+    }
+    return result;
   };
 
+  // Memoized so the export button's enabled state and label reflect exactly
+  // what handleExport/handleExportCsv will actually produce (see A13) — the
+  // disabled-guard previously checked filteredEntries.length, which could be
+  // non-zero even when applyExportFilters trimmed every row's principals away.
+  const exportableEntries = React.useMemo(
+    () => applyExportFilters(filteredEntries ?? entries ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredEntries, entries, filterUniqueOnly, filterExternalOnly, excludeLimitedAccess],
+  );
+
   const handleExport = async (): Promise<void> => {
-    const toExport = applyExportFilters(filteredEntries ?? entries ?? []);
-    if (toExport.length === 0) return;
+    if (exportableEntries.length === 0) return;
     setIsExporting(true);
     try {
-      await excel.export(toExport, siteUrl.trim());
+      await excel.export(exportableEntries, siteUrl.trim());
     } catch (err: any) {
       setError(`Export error: ${err?.message ?? String(err)}`);
     } finally {
@@ -496,8 +515,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   };
 
   const handleExportCsv = (): void => {
-    const toExport = applyExportFilters(filteredEntries ?? entries ?? []);
-    excel.exportPermissionsCsv(toExport, siteUrl.trim());
+    excel.exportPermissionsCsv(exportableEntries, siteUrl.trim());
   };
 
   const handleHistoryExport = async (item: StoredReport): Promise<void> => {
@@ -604,7 +622,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                         </thead>
                         <tbody>
                           {obj.added.map((c, i) => (
-                            <tr key={`a${i}`}>
+                            <tr key={`a-${c.loginName || c.displayName}-${i}`}>
                               <td className={styles.historyTd}><Badge appearance="filled" color="success" size="small">Added</Badge></td>
                               <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
                               <td className={styles.historyTd}>—</td>
@@ -612,7 +630,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                             </tr>
                           ))}
                           {obj.removed.map((c, i) => (
-                            <tr key={`r${i}`}>
+                            <tr key={`r-${c.loginName || c.displayName}-${i}`}>
                               <td className={styles.historyTd}><Badge appearance="filled" color="danger" size="small">Removed</Badge></td>
                               <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
                               <td className={styles.historyTd}>{c.oldRoles}</td>
@@ -620,7 +638,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                             </tr>
                           ))}
                           {obj.changed.map((c, i) => (
-                            <tr key={`c${i}`}>
+                            <tr key={`c-${c.loginName || c.displayName}-${i}`}>
                               <td className={styles.historyTd}><Badge appearance="filled" color="warning" size="small">Changed</Badge></td>
                               <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
                               <td className={styles.historyTd}>{c.oldRoles}</td>
@@ -747,6 +765,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                       key={col}
                       className={styles.historyTh}
                       onClick={() => handleHistorySort(col)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleHistorySort(col); }
+                      }}
+                      tabIndex={0}
+                      role="columnheader"
+                      aria-sort={historySortCol !== col ? 'none' : historySortAsc ? 'ascending' : 'descending'}
                       style={{ cursor: 'pointer', userSelect: 'none' }}
                     >
                       {label}{sortIndicator(col)}
@@ -817,6 +841,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           onChange={(_, d) => setAllSites(!!d.checked)}
           disabled={!isRootSite || isBusy}
         />
+        {allSites && (
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginLeft: '28px' }}>
+            Site list comes from search and may not include every site collection — very
+            recently created sites, or sites excluded from the search index, can be missed.
+          </Text>
+        )}
 
         <Checkbox
           label="Include subsites (scans every subsite below this site)"
@@ -1027,6 +1057,17 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               </MessageBar>
             )}
 
+            {entries.some((e) => e.scanIncomplete) && (
+              <MessageBar intent="warning">
+                <MessageBarBody>
+                  {entries.filter((e) => e.scanIncomplete).length} item(s) could not be fully read due to a
+                  temporary error (not a permission issue) and are shown with their parent&apos;s permissions
+                  as a best-effort fallback — this may not reflect their actual access. Re-run the scan to
+                  retry these items.
+                </MessageBarBody>
+              </MessageBar>
+            )}
+
             <Divider />
 
             {/* Filter bar */}
@@ -1074,6 +1115,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           key={col}
                           className={styles.historyTh}
                           onClick={() => handleResultSort(col)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleResultSort(col); }
+                          }}
+                          tabIndex={0}
+                          role="columnheader"
+                          aria-sort={resultSortCol !== col ? 'none' : resultSortAsc ? 'ascending' : 'descending'}
                           style={{ cursor: 'pointer', userSelect: 'none' }}
                         >
                           {label}{resultSortInd(col)}
@@ -1085,7 +1132,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                     {sortedResults.slice(0, resultsVisible).map((entry) => {
                       const key = entryKey(entry);
                       const isExpanded = expandedKeys.has(key);
-                      const expandable = entry.uniquePermissions.length > 0;
+                      // Filtered the same way as the export (shared applyPermFilters) so the
+                      // "N assignments" count and the expanded table agree with what
+                      // excludeLimitedAccess/filterExternalOnly are actually showing.
+                      const rowPerms = applyPermFilters(entry.uniquePermissions, excludeLimitedAccess, filterExternalOnly);
+                      const expandable = rowPerms.length > 0;
                       return (
                         <React.Fragment key={key}>
                           <tr
@@ -1130,7 +1181,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                               )}
                               {expandable && (
                                 <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, marginLeft: '6px' }}>
-                                  {entry.uniquePermissions.length} assignment{entry.uniquePermissions.length !== 1 ? 's' : ''}
+                                  {rowPerms.length} assignment{rowPerms.length !== 1 ? 's' : ''}
                                 </Text>
                               )}
                             </td>
@@ -1139,7 +1190,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                             <tr>
                               <td className={styles.historyTd} />
                               <td className={styles.historyTd} colSpan={4} style={{ background: tokens.colorNeutralBackground2 }}>
-                                <PermTable users={entry.uniquePermissions} />
+                                <PermTable users={rowPerms} />
                               </td>
                             </tr>
                           )}
@@ -1163,19 +1214,19 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 appearance="primary"
                 icon={<DocumentArrowDown24Regular />}
                 onClick={handleExport}
-                disabled={isExporting || (filteredEntries?.length ?? 0) === 0}
+                disabled={isExporting || exportableEntries.length === 0}
               >
                 {isExporting
                   ? 'Generating Excel…'
-                  : filteredEntries && filteredEntries.length < entries.length
-                  ? `Export ${filteredEntries.length} filtered rows`
+                  : exportableEntries.length < entries.length
+                  ? `Export ${exportableEntries.length} filtered rows`
                   : 'Export to Excel'}
               </Button>
               <Button
                 appearance="secondary"
                 icon={<DocumentArrowDown24Regular />}
                 onClick={handleExportCsv}
-                disabled={isExporting || (filteredEntries?.length ?? 0) === 0}
+                disabled={isExporting || exportableEntries.length === 0}
               >
                 Export to CSV
               </Button>

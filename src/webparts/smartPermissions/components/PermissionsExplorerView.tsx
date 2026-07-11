@@ -37,6 +37,7 @@ import {
 import { PermTable } from './shared/PermTable';
 import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
 import { isExternalUser } from './shared/externalUsers';
+import { applyPermFilters } from './shared/permFilters';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -132,17 +133,6 @@ function ArrowCircleAndTriangleDown({ style }: { style?: React.CSSProperties }):
 }
 
 
-function applyPermFilters(
-  users: UserPermissionInfo[],
-  excludeLimited: boolean,
-  extOnly: boolean,
-): UserPermissionInfo[] {
-  let result = users;
-  if (excludeLimited) result = result.filter((u) => u.roles.length > 0);
-  if (extOnly) result = result.filter(isExternalUser);
-  return result;
-}
-
 // ── Folder tree node ──────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -156,6 +146,13 @@ interface TreeNodeProps {
   showUniqueOnly: boolean;
   filterExternalOnly: boolean;
   externalAccessUrls: Set<string>;
+  /**
+   * Bumped by the parent on every in-place node mutation. Not read directly —
+   * its purpose is to be a prop that changes on every tree mutation, so that
+   * if TreeNode is ever wrapped in React.memo, a mutation is still guaranteed
+   * to trigger a re-render even though `node`'s own reference doesn't change.
+   */
+  structureVersion: number;
 }
 
 // Expansion state lives in the parent (expandedUrls) so the view can compute
@@ -172,6 +169,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   showUniqueOnly,
   filterExternalOnly,
   externalAccessUrls,
+  structureVersion,
 }) => {
   const styles = useStyles();
   const expanded = expandedUrls.has(node.serverRelativeUrl);
@@ -190,6 +188,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         className={`${styles.treeNode} ${isSelected ? styles.treeNodeSelected : ''}`}
         style={{ paddingLeft: `${depth * 16 + 4}px` }}
         onClick={(e) => { e.stopPropagation(); onRowClick(node); }}
+        data-structure-version={structureVersion}
       >
         {node.isFolder && node.hasChildren ? (
           expanded ? (
@@ -243,6 +242,19 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         )}
       </div>
 
+      {expanded && node.loadError && (
+        <div
+          role="none"
+          style={{
+            paddingLeft: `${(depth + 1) * 16 + 24}px`,
+            color: tokens.colorPaletteRedForeground1,
+            fontSize: tokens.fontSizeBase200,
+          }}
+        >
+          {node.loadError}
+        </div>
+      )}
+
       {expanded && node.children.length > 0 && (
         <div role="group">
           {node.children
@@ -263,6 +275,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 showUniqueOnly={showUniqueOnly}
                 filterExternalOnly={filterExternalOnly}
                 externalAccessUrls={externalAccessUrls}
+                structureVersion={structureVersion}
               />
             ))}
         </div>
@@ -325,6 +338,21 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const rawParentPermsRef = React.useRef<UserPermissionInfo[] | null>(null);
   const groupMemberCacheRef = React.useRef<Map<string, UserPermissionInfo[]>>(new Map());
   const folderCacheRef = React.useRef<Map<string, FolderFileNode[]>>(new Map());
+  // Bumped at the start of every loadLibrary call. Background work (probes,
+  // prefetches, external-user scans) captures the generation active when it
+  // started and checks it before applying state — so a library switch that
+  // happens mid-flight can't have a stale result bleed into the new view.
+  const loadGenerationRef = React.useRef(0);
+  // Bumped alongside every tree mutation so the render can be forced even if
+  // TreeNode is ever wrapped in React.memo in the future — plain node
+  // mutation + array-copy (below) works today only because TreeNode isn't
+  // memoized; a memoized TreeNode wouldn't see a changed `node` prop
+  // reference on mutation-in-place.
+  const [structureVersion, setStructureVersion] = React.useState(0);
+  const touchTree = React.useCallback((): void => {
+    setRootNodes((prev) => [...prev]);
+    setStructureVersion((v) => v + 1);
+  }, []);
 
   // ── Connect ──────────────────────────────────────────────────────────────
 
@@ -364,6 +392,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // ── Load library root ────────────────────────────────────────────────────
 
   const loadLibrary = async (lib: LibraryInfo): Promise<void> => {
+    const myGeneration = ++loadGenerationRef.current;
+    const isStale = (): boolean => loadGenerationRef.current !== myGeneration;
+
     setRootNodes([]);
     setTreeStatus('');
     setSelectedNode(null);
@@ -386,6 +417,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         lib.serverRelativeUrl,
         abortRef.current?.signal,
       );
+      if (isStale()) return; // user switched libraries again while this fetch was in flight
       setRootNodes(nodes);
       setFocusedUrl(nodes[0]?.serverRelativeUrl ?? '');
       if (nodes.length === 0) setTreeStatus('This library is empty.');
@@ -396,33 +428,41 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         { name: lib.title, serverRelativeUrl: lib.serverRelativeUrl, isFolder: true, hasChildren: false, children: [] },
         abortRef.current?.signal,
       ).then((probe) => {
+        // A slow probe resolving after the user has already switched to another
+        // library must not flag the (unrelated) library now on screen as denied.
+        if (isStale()) return;
         if (probe.permissionDenied) setPermissionsDenied(true);
       }).catch(() => { /* ignore probe errors */ });
 
       // Background scan for external users on root-level nodes.
-      scanExternalUsers(nodes);
+      scanExternalUsers(nodes, myGeneration);
 
       // Pre-fetch one level deep for each root folder to detect hasUniquePermissionsBelow
       // at load time rather than requiring the user to expand each folder first.
       // Results are stored in folderCacheRef so expanding a folder skips the API call.
+      // Bounded by scanConcurrency — previously fired one request per root folder
+      // simultaneously with no cap, risking throttling on wide libraries.
       const signal = abortRef.current?.signal;
-      nodes.filter((n) => n.isFolder).forEach((folder) => {
-        sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, signal)
-          .then((children) => {
-            // Set parent now so propagation works correctly when the external-user scan fires.
-            children.forEach((c) => { c.parent = folder; });
-            folderCacheRef.current.set(folder.serverRelativeUrl, children);
-            if (children.some((c) => c.hasUniquePermissions)) {
-              folder.hasUniquePermissionsBelow = true;
-              setRootNodes((prev) => [...prev]);
-            }
-            // Scan pre-fetched children so icons appear at library-load time,
-            // not only after the user expands the folder.
-            scanExternalUsers(children);
-          })
-          .catch(() => { /* ignore prefetch errors */ });
+      const prefetchTasks = nodes.filter((n) => n.isFolder).map((folder) => async (): Promise<undefined> => {
+        try {
+          const children = await sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, signal);
+          if (isStale()) return undefined;
+          // Set parent now so propagation works correctly when the external-user scan fires.
+          children.forEach((c) => { c.parent = folder; });
+          folderCacheRef.current.set(folder.serverRelativeUrl, children);
+          if (children.some((c) => c.hasUniquePermissions)) {
+            folder.hasUniquePermissionsBelow = true;
+            touchTree();
+          }
+          // Scan pre-fetched children so icons appear at library-load time,
+          // not only after the user expands the folder.
+          scanExternalUsers(children, myGeneration);
+        } catch { /* ignore prefetch errors */ }
+        return undefined;
       });
+      sp.runConcurrent(prefetchTasks, sp.scanConcurrency).catch(() => { /* ignore — background prefetch */ });
     } catch (err: any) {
+      if (isStale()) return;
       setTreeStatus(`Error loading library: ${err?.message ?? String(err)}`);
     }
   };
@@ -437,8 +477,13 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // ── Load folder children ─────────────────────────────────────────────────
 
   const loadChildren = React.useCallback(async (node: FolderFileNode): Promise<void> => {
+    // Snapshot (don't bump) — this call rides on whichever library load is
+    // current; if the user switches libraries while it's in flight, the
+    // generation changes and the guards below discard the stale result.
+    const myGeneration = loadGenerationRef.current;
     node.isLoading = true;
-    setRootNodes((prev) => [...prev]);
+    node.loadError = undefined;
+    touchTree();
 
     try {
       const cached = folderCacheRef.current.get(node.serverRelativeUrl);
@@ -447,6 +492,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         node.serverRelativeUrl,
         abortRef.current?.signal,
       );
+      if (loadGenerationRef.current !== myGeneration) return;
       if (!cached) folderCacheRef.current.set(node.serverRelativeUrl, children);
       node.children = children.map((c) => {
         c.parent = node;
@@ -465,41 +511,41 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       }
 
       // Background scan for external users on newly loaded children.
-      scanExternalUsers(children);
+      scanExternalUsers(children, myGeneration);
 
       // Pre-fetch one level deeper for each folder child so their icons are ready
       // before the user expands them — same pattern used in loadLibrary for depth-0.
+      // Bounded by scanConcurrency — previously fired one request per child folder
+      // simultaneously with no cap, and each expansion multiplied it further.
       const prefetchSignal = abortRef.current?.signal;
-      children.filter((c) => c.isFolder && c.hasChildren).forEach((folder) => {
-        if (folderCacheRef.current.has(folder.serverRelativeUrl)) return;
-        sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, prefetchSignal)
-          .then((grandchildren) => {
+      const prefetchTasks = children
+        .filter((c) => c.isFolder && c.hasChildren && !folderCacheRef.current.has(c.serverRelativeUrl))
+        .map((folder) => async (): Promise<undefined> => {
+          try {
+            const grandchildren = await sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, prefetchSignal);
+            if (loadGenerationRef.current !== myGeneration) return undefined;
             grandchildren.forEach((gc) => { gc.parent = folder; });
             folderCacheRef.current.set(folder.serverRelativeUrl, grandchildren);
             if (grandchildren.some((gc) => gc.hasUniquePermissions)) {
               propagateUniqueBelow(folder);
-              setRootNodes((prev) => [...prev]);
+              touchTree();
             }
-            scanExternalUsers(grandchildren);
-          })
-          .catch(() => { /* ignore */ });
-      });
+            scanExternalUsers(grandchildren, myGeneration);
+          } catch { /* ignore */ }
+          return undefined;
+        });
+      sp.runConcurrent(prefetchTasks, sp.scanConcurrency).catch(() => { /* ignore — background prefetch */ });
     } catch {
-      node.children = [
-        {
-          name: 'Error loading contents',
-          serverRelativeUrl: '',
-          isFolder: false,
-          hasChildren: false,
-          children: [],
-          isLoading: false,
-        },
-      ];
+      // Rendered as inline, non-navigable text (see FolderFileNode.loadError) —
+      // a synthetic child node here previously collided on an empty-string key
+      // and was reachable via arrow-key tree navigation like a real item.
+      node.loadError = 'Error loading contents';
+      node.children = [];
     } finally {
       node.isLoading = false;
-      setRootNodes((prev) => [...prev]);
+      touchTree();
     }
-  }, [siteUrl]);
+  }, [siteUrl, touchTree]);
 
   const propagateUniqueBelow = (node: FolderFileNode): void => {
     node.hasUniquePermissionsBelow = true;
@@ -533,8 +579,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     (!filterExternalOnly || !!n.hasExternalUsers || !!n.hasExternalUsersBelow);
 
   // Flat list of currently rendered nodes, mirroring the render filters —
-  // this is the keyboard navigation order.
-  const flattenVisible = (): FolderFileNode[] => {
+  // this is the keyboard navigation order. Memoized: this previously walked
+  // the entire (possibly large) tree on every Arrow/Home/End keypress.
+  const flattenVisible = React.useMemo((): FolderFileNode[] => {
     const out: FolderFileNode[] = [];
     const visit = (nodes: FolderFileNode[]): void => {
       for (const n of nodes.filter(nodeVisible)) {
@@ -544,7 +591,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     };
     visit(rootNodes);
     return out;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootNodes, structureVersion, expandedUrls, showUniqueOnly, filterExternalOnly]);
 
   const toggleExpand = (node: FolderFileNode): void => {
     if (!node.isFolder || !node.hasChildren) return;
@@ -572,7 +620,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   };
 
   const handleTreeKeyDown = (e: React.KeyboardEvent): void => {
-    const visible = flattenVisible();
+    const visible = flattenVisible;
     if (visible.length === 0) return;
     const idx = visible.findIndex((n) => n.serverRelativeUrl === focusedUrl);
     const current = idx >= 0 ? visible[idx] : visible[0];
@@ -616,12 +664,16 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   // Background scan: checks only unique-permission nodes (inherited ones are skipped — no API
   // call needed). Uses one direct RoleAssignments fetch per node instead of two calls.
-  const scanExternalUsers = (nodes: FolderFileNode[]): void => {
+  // `generation` is the loadLibrary/loadChildren generation active when this scan was
+  // started — if the user has since switched libraries, results are discarded instead
+  // of being applied to whatever is now on screen.
+  const scanExternalUsers = (nodes: FolderFileNode[], generation: number): void => {
     const uniqueNodes = nodes.filter((n) => n.hasUniquePermissions);
     if (!uniqueNodes.length) return;
     const tasks = uniqueNodes.map((node) => async (): Promise<undefined> => {
-      if (abortRef.current?.signal.aborted) return undefined;
+      if (abortRef.current?.signal.aborted || loadGenerationRef.current !== generation) return undefined;
       const hasExt = await sp.scanNodeForExternalUsers(siteUrl.trim(), node, abortRef.current?.signal);
+      if (loadGenerationRef.current !== generation) return undefined;
       if (hasExt === 'denied') {
         setPermissionsDenied(true);
       } else if (hasExt) {
@@ -629,7 +681,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         if (node.parent) propagateExternalBelow(node.parent);
         propagateExternalDown(node);  // mark already-loaded descendants that inherit
         setExternalAccessUrls((prev) => { const next = new Set(Array.from(prev)); next.add(node.serverRelativeUrl); return next; });
-        setRootNodes((prev) => [...prev]);
+        touchTree();
       }
       return undefined;
     });
@@ -652,6 +704,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
               u.loginName,
               u.principalType,
               abortRef.current?.signal,
+              u.groupId,
             );
             groupMemberCacheRef.current.set(key, members);
           }
@@ -794,10 +847,24 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     }
   };
 
-  // Auto-connect on mount
+  // Auto-connect on mount. Cleanup aborts in-flight work on unmount (e.g. the
+  // user navigates away from Explorer) — without this, background scans kept
+  // running and calling setState on an unmounted component.
   React.useEffect(() => {
     handleConnect().catch((e) => console.error('[SmartPermissions] handleConnect failed:', e));
+    return () => {
+      loadGenerationRef.current++; // invalidate any in-flight generation-guarded callbacks
+      abortRef.current?.abort();
+    };
   }, []);
+
+  // Computed once per render instead of re-filtering nodePerms up to 3× in the
+  // permission panel below (each call re-filters the same, potentially large,
+  // expanded-group list).
+  const filteredNodePerms = React.useMemo(
+    () => applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly),
+    [nodePerms, excludeLimitedAccess, filterExternalOnly],
+  );
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -935,6 +1002,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     showUniqueOnly={showUniqueOnly}
                     filterExternalOnly={filterExternalOnly}
                     externalAccessUrls={externalAccessUrls}
+                    structureVersion={structureVersion}
                   />
                 ))}
             </div>
@@ -1012,7 +1080,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
                   {/* Unique permissions table */}
                   {!nodeLoading && !nodeError && nodeHasUnique && (
-                    permissionsDenied && applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly).length === 0
+                    permissionsDenied && filteredNodePerms.length === 0
                       ? (
                         <>
                           {myPermLevel && (
@@ -1028,14 +1096,14 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                           </Body1>
                         </>
                       )
-                      : applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly).length === 0 && filterExternalOnly
+                      : filteredNodePerms.length === 0 && filterExternalOnly
                         ? (
                           <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
                             No external users have direct access to this item.
                           </Body1>
                         ) : (
                           <PermTable
-                            users={applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly)}
+                            users={filteredNodePerms}
                             onCheckAccess={onNavigateToUserAccess}
                           />
                         )

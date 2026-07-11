@@ -20,6 +20,14 @@ export interface UserPermissionInfo {
   roles: string[];
   isGroupMember?: boolean;
   sourceGroup?: string; // group name if this user was expanded from a group; undefined = direct assignment
+  /**
+   * Numeric SharePoint group id (RoleAssignment.Member.Id), present when
+   * principalType is 'SharePointGroup'. Preferred over displayName for group
+   * expansion lookups — role-assignment Member.Title is the group's display
+   * name, which can 404 against sitegroups/getbyname if the group was renamed
+   * or contains characters getbyname mishandles; the id is unambiguous.
+   */
+  groupId?: number;
 }
 
 export interface PermissionEntry {
@@ -32,6 +40,15 @@ export interface PermissionEntry {
   uniquePermissions: UserPermissionInfo[];
   /** True when the list/library is marked NoCrawl (hidden from search). */
   noCrawl?: boolean;
+  /**
+   * True when a unique-permissions check for this entry (or its children, for
+   * a folder whose enriched listing failed) could not complete due to a
+   * transient error — NOT a permission-denied response. The entry is reported
+   * with its parent's permissions as a best-effort fallback, but that may be
+   * inaccurate: it should be shown as "unknown/incomplete", never as a
+   * confirmed inherited result.
+   */
+  scanIncomplete?: boolean;
 }
 
 export interface FolderFileNode {
@@ -46,6 +63,13 @@ export interface FolderFileNode {
   isLoading?: boolean;
   parent?: FolderFileNode;
   children: FolderFileNode[];
+  /**
+   * Set when this node's children failed to load. Rendered as inline,
+   * non-navigable text — previously represented as a synthetic child node
+   * with an empty serverRelativeUrl, which collided on "" as a React key and
+   * was reachable via arrow-key tree navigation like a real item.
+   */
+  loadError?: string;
 }
 
 export interface LibraryInfo {

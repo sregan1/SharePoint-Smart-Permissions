@@ -575,12 +575,13 @@ For organizations that want to make Smart Permissions available on every site co
 
 ### Prerequisites
 
-- The **Smart Permissions** app must already be deployed to the tenant App Catalog and approved for all sites before running this script.
+- The **Smart Permissions** app must already be deployed to the tenant App Catalog. Ticking "Make this solution available to all sites automatically" during upload is **not required** — the script installs the app on each site automatically as it goes (see [What the Script Does](#what-the-script-does)).
 - The **PnP.PowerShell** module must be installed on the machine running the script:
   ```powershell
   Install-Module PnP.PowerShell
   ```
 - The account used must have **SharePoint Administrator** or **Global Administrator** permissions.
+- On tenants that reject the default PnP Management Shell app during interactive sign-in, register your own Entra ID app (via `Register-PnPEntraIDAppForInteractiveLogin`) and set `$clientId` in the script — see Configuration below.
 
 ### Script Location
 
@@ -597,8 +598,9 @@ $targetSiteUrl = ""   # leave empty to run across all sites
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `$adminUrl` | *(empty — must set)* | Your SharePoint admin center URL |
+| `$adminUrl` | *(empty)* | Your SharePoint admin center URL. Only required in tenant-wide mode (when `$targetSiteUrl` is empty). |
 | `$targetSiteUrl` | *(empty)* | Set to a single site URL to provision only that site. Leave empty to provision all sites in the tenant. |
+| `$clientId` | *(empty)* | Optional Entra ID app client id, for tenants that reject the default PnP Management Shell app during interactive sign-in. |
 | `$componentId` | Pre-filled | The Smart Permissions web part ID |
 | `$pageName` | `Permissions` | File name of the created page (without `.aspx`) |
 | `$pageTitle` | `Permissions` | Display title shown at the top of the page |
@@ -622,16 +624,23 @@ $targetSiteUrl = ""   # leave empty to run across all sites
 
 For each site collection:
 1. Connects to the site
-2. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
-3. Adds the Smart Permissions web part with default properties
-4. Publishes the page
-5. Breaks permission inheritance on the page and grants Full Control to the site Owners group only — Members and Visitors cannot access the page
-6. Adds the page to the site's Quick Launch navigation (scoped to the Owners group on Microsoft 365 Group-connected sites)
-7. On M365-connected sites: enables audience targeting on the Site Pages library and sets the Owners group as the page audience
+2. Checks whether the Smart Permissions app is already installed on the site and, if not, installs it from the tenant App Catalog automatically (waiting for the install to complete before continuing)
+3. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
+4. Adds the Smart Permissions web part with default properties (skipped if it's already on the page — see Re-Running Safely below)
+5. Publishes the page
+6. Breaks permission inheritance on the page and grants Full Control to the site Owners group only — Members and Visitors cannot access the page
+7. Adds the page to the site's Quick Launch navigation (scoped to the Owners group on Microsoft 365 Group-connected sites)
+8. On M365-connected sites: enables audience targeting on the Site Pages library and sets the Owners group as the page audience
 
 ### Re-Running Safely
 
-The script is safe to re-run. If `Permissions.aspx` already exists on a site, the script skips creating it and proceeds to add the web part. However, running it multiple times may result in duplicate web parts on pages where the script has already run. To avoid this, filter `$sites` to only newly created sites before re-running.
+The script is idempotent — running it again on a site it has already provisioned is safe and won't create duplicates:
+- If `Permissions.aspx` already exists, page creation is skipped and the existing page is reused.
+- If the Smart Permissions web part is already on the page, it isn't added again.
+- The Quick Launch navigation node is matched by both title and URL before being replaced, so it isn't duplicated either.
+- Audience targeting and the Owners-only permission grant are re-applied each run, which is harmless (they simply reset to the same state).
+
+This means you can safely re-run the script tenant-wide at any time — for example, after creating new sites — without needing to filter `$sites` down to only the new ones first.
 
 ---
 

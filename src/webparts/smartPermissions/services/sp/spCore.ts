@@ -1,5 +1,5 @@
 import { WebPartContext } from '@microsoft/sp-webpart-base';
-import { SPHttpClient } from '@microsoft/sp-http';
+import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 import { UserPermissionInfo } from '../../models/models';
 
 // Escape single-quotes in OData string literals (SQL-style doubling).
@@ -178,13 +178,25 @@ export class SpApiClient {
     this.context = context;
   }
 
-  // Retries on 429/503 using the Retry-After header, with a 3-attempt cap.
-  public async getJson(url: string, attempt = 0): Promise<any> {
-    const resp = await this.context.spHttpClient.get(url, SPHttpClient.configurations.v1);
+  // Retries on 429/503 using the Retry-After header, and on thrown/rejected
+  // errors (network blips) using capped exponential backoff with jitter —
+  // both share the same 3-attempt cap. A rejected fetch previously got no
+  // retry at all, which fed spurious "permission denied"/"inherited" results
+  // into callers that treat any thrown error as a permission failure.
+  public async getJson(url: string, attempt = 0, signal?: AbortSignal): Promise<any> {
+    let resp: SPHttpClientResponse;
+    try {
+      resp = await this.context.spHttpClient.get(url, SPHttpClient.configurations.v1);
+    } catch (err) {
+      if (signal?.aborted || attempt >= 3) throw err;
+      const backoff = Math.min(1000 * 2 ** attempt, 8000) + Math.random() * 500;
+      await new Promise((r) => setTimeout(r, backoff));
+      return this.getJson(url, attempt + 1, signal);
+    }
     if ((resp.status === 429 || resp.status === 503) && attempt < 3) {
       const retryAfter = parseInt(resp.headers.get('Retry-After') ?? '10', 10);
       await new Promise((r) => setTimeout(r, (isNaN(retryAfter) ? 10 : retryAfter) * 1000));
-      return this.getJson(url, attempt + 1);
+      return this.getJson(url, attempt + 1, signal);
     }
     if (!resp.ok) {
       const txt = await resp.text();
@@ -200,7 +212,7 @@ export class SpApiClient {
     const all: any[] = [];
     let next: string | undefined = url;
     for (let page = 0; next && page < maxPages && !signal?.aborted; page++) {
-      const data = await this.getJson(next);
+      const data = await this.getJson(next, 0, signal);
       all.push(...valueArray(data));
       next = data?.['odata.nextLink'] ?? data?.['@odata.nextLink'] ?? data?.d?.__next;
     }
@@ -233,11 +245,13 @@ export function toPermissionInfoList(roleAssignments: any[]): UserPermissionInfo
         .map((r: any) => r.Name as string)
         .filter((r) => !isSystemRole(r));
       if (roles.length > 0) {
+        const principalType = principalTypeLabel(ra.Member?.PrincipalType ?? 1);
         result.push({
           loginName: ra.Member?.LoginName ?? '',
           displayName: ra.Member?.Title ?? '',
-          principalType: principalTypeLabel(ra.Member?.PrincipalType ?? 1),
+          principalType,
           roles,
+          groupId: principalType === 'SharePointGroup' ? (ra.Member?.Id as number | undefined) : undefined,
         });
       }
     }

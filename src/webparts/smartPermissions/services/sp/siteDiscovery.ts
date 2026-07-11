@@ -152,6 +152,11 @@ export async function checkCanManagePermissions(client: SpApiClient, siteUrl: st
       const low = parseInt(data?.EffectiveBasePermissions?.Low ?? '0', 10) >>> 0;
       return !!(low & 0x02000000 || low & 0x40000000);
     } catch {
-      return true; // fail open — don't block owners on API error
+      // Fail closed: an API error here must not grant the "can manage
+      // permissions" UI/behavior to someone we couldn't actually confirm has
+      // it. A real owner sees the (harmless) Member-access affordances until
+      // the transient error clears; that's a better failure mode than
+      // showing privileged actions to a caller we couldn't verify.
+      return false;
     }
   }

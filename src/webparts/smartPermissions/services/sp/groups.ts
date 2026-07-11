@@ -6,17 +6,24 @@ import {
 
 // ── Group membership expansion (SharePoint groups + AAD/M365 via Graph) ─────
 
-export async function getGroupMembers(client: SpApiClient, 
+export async function getGroupMembers(client: SpApiClient,
     siteUrl: string,
     groupName: string,
     loginName: string,
     principalType: string,
     signal?: AbortSignal,
+    groupId?: number,
   ): Promise<UserPermissionInfo[]> {
     if (principalType === 'SharePointGroup') {
       try {
+        // Prefer the numeric id — Member.Title/LoginName from a role assignment is the
+        // group's display name, and getbyname(displayName) 404s on renamed or
+        // non-canonically-named groups, silently dropping their members from results.
+        const groupRef = groupId
+          ? `getbyid(${groupId})`
+          : `getbyname('${encodeURIComponent(odata(groupName))}')`;
         const data = await client.getJson(
-          `${siteUrl}/_api/web/sitegroups/getbyname('${encodeURIComponent(odata(groupName))}')/users` +
+          `${siteUrl}/_api/web/sitegroups/${groupRef}/users` +
             // Fetch one extra to detect truncation without a separate count call
             `?$select=LoginName,Title,IsHiddenInUI,PrincipalType&$top=${client.groupMemberCap + 1}`,
         );
@@ -92,10 +99,13 @@ export async function getGroupMembers(client: SpApiClient,
 async function getAadGroupMembers(client: SpApiClient, groupId: string, endpoint: 'members' | 'owners' = 'members'): Promise<UserPermissionInfo[] | null> {
     try {
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
+      // Graph rejects $top > 999, but the Settings UI allows a cap up to 5000 — clamp
+      // the request and instead rely on @odata.nextLink to detect true truncation.
+      const topCount = Math.min(client.groupMemberCap + 1, 999);
       const result = await graph
         .api(`/groups/${groupId}/${endpoint}`)
         .select('displayName,userPrincipalName,mail,id')
-        .top(client.groupMemberCap + 1)
+        .top(topCount)
         .get();
       const all = (result?.value ?? [])
         .map((m: any): UserPermissionInfo => ({
@@ -108,7 +118,8 @@ async function getAadGroupMembers(client: SpApiClient, groupId: string, endpoint
         .sort((a: UserPermissionInfo, b: UserPermissionInfo) =>
           a.displayName.localeCompare(b.displayName),
         );
-      if (all.length > client.groupMemberCap) {
+      const truncated = all.length > client.groupMemberCap || !!result?.['@odata.nextLink'];
+      if (truncated) {
         const capped = all.slice(0, client.groupMemberCap);
         capped.push({
           loginName: '',

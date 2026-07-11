@@ -139,7 +139,11 @@ try {
 }
 
 export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brandColors }) => {
-  const theme = React.useMemo(() => buildTheme(brandColors), [brandColors.primary]);
+  // Depend on the whole brandColors object, not just .primary — buildTheme reads
+  // all six palette fields (dark/darkAlt/darker/light/lighter too), so a theme
+  // change that alters those while primary stays constant previously left
+  // hover/pressed/border brand tokens stale.
+  const theme = React.useMemo(() => buildTheme(brandColors), [brandColors]);
 
   const [view, setView] = React.useState<AppView>(defaultView ?? 'home');
   const [prevView, setPrevView] = React.useState<AppView>('home');
@@ -185,7 +189,11 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
       if (cancelled) return;
       setCanManagePermissions(can);
       if (!can) sp.getSiteOwners(siteUrl).then(owners => { if (!cancelled) setSiteOwners(owners); }).catch(() => { /* ignore */ });
-    }).catch(() => { if (!cancelled) setCanManagePermissions(true); });
+    }).catch(() => {
+      // Fail closed, matching checkCanManagePermissions' own internal fallback —
+      // don't grant Owner-level UI to a caller we couldn't verify.
+      if (!cancelled) setCanManagePermissions(false);
+    });
     return () => { cancelled = true; };
   }, [siteUrl]);
 

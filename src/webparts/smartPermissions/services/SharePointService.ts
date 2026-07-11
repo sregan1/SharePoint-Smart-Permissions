@@ -121,8 +121,9 @@ export class SharePointService {
     loginName: string,
     principalType: string,
     signal?: AbortSignal,
+    groupId?: number,
   ): Promise<UserPermissionInfo[]> {
-    return groups.getGroupMembers(this.client, siteUrl, groupName, loginName, principalType, signal);
+    return groups.getGroupMembers(this.client, siteUrl, groupName, loginName, principalType, signal, groupId);
   }
 
   // ── User Access scan ──────────────────────────────────────────────────────

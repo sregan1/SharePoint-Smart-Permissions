@@ -1,9 +1,39 @@
 import { MSGraphClientV3 } from '@microsoft/sp-http';
 import { UserPermissionInfo, PermissionEntry, ObjectType } from '../../models/models';
 import {
-  SpApiClient, TaskQueue, odata, valueArray, rdbArray, isPermissionDenied, isSystemRole, isSystemLibrary,
-  folderApi, fileApi, isLibraryTemplate, extractRoles,
+  SpApiClient, TaskQueue, odata, valueArray, rdbArray, isPermissionDenied, isGraphPermissionError,
+  isSystemRole, isSystemLibrary, folderApi, fileApi, isLibraryTemplate, extractRoles,
 } from './spCore';
+
+// Verbose diagnostic logging for the group/role resolution logic below. This
+// includes PII about the audited user (email, login, AAD object id) and group
+// topology, which shouldn't sit in the browser console by default — opt in
+// via localStorage.setItem('smartPermissionsDebug', '1') when troubleshooting.
+function debugLog(...args: unknown[]): void {
+  try {
+    if (window.localStorage?.getItem('smartPermissionsDebug') === '1') {
+      // eslint-disable-next-line no-console
+      console.debug(...args);
+    }
+  } catch { /* localStorage unavailable (e.g. private browsing) */ }
+}
+
+// A single .top(999) page silently truncated for users in more than 999 groups,
+// turning a genuine member into a false "not a member" result. Follow
+// @odata.nextLink so the membership check is exhaustive.
+async function fetchAllTransitiveGroupIds(graph: MSGraphClientV3, identifier: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let resp = await graph.api(`/users/${encodeURIComponent(identifier)}/transitiveMemberOf`).select('id').top(999).get();
+  for (;;) {
+    (resp?.value ?? []).forEach((g: any) => ids.add((g.id as string).toLowerCase()));
+    const nextLink: string | undefined = resp?.['@odata.nextLink'];
+    if (!nextLink) break;
+    // nextLink is an absolute URL; the Graph client's .api() expects a path
+    // relative to its configured base, so strip the version prefix.
+    resp = await graph.api(nextLink.replace(/^https:\/\/graph\.microsoft\.com\/v1\.0/, '')).get();
+  }
+  return ids;
+}
 
 // ── User Access scan ─────────────────────────────────────────────────────────
 
@@ -31,10 +61,10 @@ export async function getUserAccess(client: SpApiClient,
       // Normalize to lowercase — role-assignment member logins can differ in case
       // from user-groups logins depending on the SharePoint REST endpoint used.
       groupLogins = new Set(groups.map((g: any) => (g.LoginName as string).toLowerCase()));
-      console.debug('[SmartPermissions] getUserAccess: user=%s email=%s SP-groups=%o',
+      debugLog('[SmartPermissions] getUserAccess: user=%s email=%s SP-groups=%o',
         userLoginName, userEmail, Array.from(groupLogins));
     } catch (err) {
-      console.debug('[SmartPermissions] getUserAccess: siteusers fetch failed', err);
+      debugLog('[SmartPermissions] getUserAccess: siteusers fetch failed', err);
     }
 
     // ── Site roles ──
@@ -50,7 +80,7 @@ export async function getUserAccess(client: SpApiClient,
           `&$expand=RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings`,
       );
       const allRa = valueArray(webData.RoleAssignments);
-      console.debug('[SmartPermissions] getUserAccess: site RoleAssignments=%o',
+      debugLog('[SmartPermissions] getUserAccess: site RoleAssignments=%o',
         allRa.map((ra: any) => ({
           login: ra.Member?.LoginName,
           principalType: ra.Member?.PrincipalType,
@@ -58,9 +88,9 @@ export async function getUserAccess(client: SpApiClient,
         })));
       siteRoles = extractRoles(allRa, userLoginName, groupLogins)
         .filter((r) => !isSystemRole(r));
-      console.debug('[SmartPermissions] getUserAccess: siteRoles after extractRoles=%o', siteRoles);
+      debugLog('[SmartPermissions] getUserAccess: siteRoles after extractRoles=%o', siteRoles);
     } catch (err) {
-      console.debug('[SmartPermissions] getUserAccess: web RoleAssignments fetch failed', err);
+      debugLog('[SmartPermissions] getUserAccess: web RoleAssignments fetch failed', err);
       if (isPermissionDenied(err)) roleAssignmentsDenied = true;
     }
 
@@ -112,7 +142,7 @@ export async function getUserAccess(client: SpApiClient,
     // transitive membership in any such groups found in the site's role assignments.
     let graphPermissionRequired = false;
     if (siteRoles.length === 0 && webData) {
-      console.debug('[SmartPermissions] getUserAccess: extractRoles returned empty — trying AAD group fallback');
+      debugLog('[SmartPermissions] getUserAccess: extractRoles returned empty — trying AAD group fallback');
       const aadResult = await getAadGroupSiteRoles(client, 
         siteUrl,
         userLoginName,
@@ -121,7 +151,7 @@ export async function getUserAccess(client: SpApiClient,
       );
       siteRoles = aadResult.roles;
       graphPermissionRequired = aadResult.graphUnavailable;
-      console.debug('[SmartPermissions] getUserAccess: siteRoles after AAD fallback=%o graphPermissionRequired=%s',
+      debugLog('[SmartPermissions] getUserAccess: siteRoles after AAD fallback=%o graphPermissionRequired=%s',
         siteRoles, graphPermissionRequired);
     }
 
@@ -418,11 +448,11 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
         ),
       ]);
       const m365GroupId: string = siteProps?.GroupId ?? '';
-      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: site GroupId=%s ownerGroupId=%s memberGroupId=%s',
+      debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: site GroupId=%s ownerGroupId=%s memberGroupId=%s',
         m365GroupId || '(none)', webProps?.AssociatedOwnerGroup?.Id, webProps?.AssociatedMemberGroup?.Id);
 
       if (!m365GroupId || m365GroupId === '00000000-0000-0000-0000-000000000000') {
-        console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: site not M365-connected');
+        debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: site not M365-connected');
         return { roles: [], graphUnavailable: false };
       }
 
@@ -434,16 +464,18 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
 
       // Fetch transitive group memberships and the user's AAD object ID in parallel.
-      // The AAD ID is needed for the ownership check below.
-      const [memberOfData, userProfileData] = await Promise.all([
-        graph.api(`/users/${encodeURIComponent(identifier)}/transitiveMemberOf`).select('id').top(999).get(),
-        graph.api(`/users/${encodeURIComponent(identifier)}`).select('id').get().catch(() => null),
+      // The AAD ID is needed for the ownership check below. A permission error on the
+      // profile lookup (fetching another user's profile can need a wider Graph scope
+      // than transitiveMemberOf) is tracked separately from "profile not found" so it
+      // isn't silently treated the same as a resolved-but-empty result below.
+      let userProfileError: any = null;
+      const [userGroupIds, userProfileData] = await Promise.all([
+        fetchAllTransitiveGroupIds(graph, identifier),
+        graph.api(`/users/${encodeURIComponent(identifier)}`).select('id').get()
+          .catch((e) => { userProfileError = e; return null; }),
       ]);
-      const userGroupIds = new Set<string>(
-        (memberOfData?.value ?? []).map((g: any) => (g.id as string).toLowerCase()),
-      );
       const userAadId: string = userProfileData?.id ?? '';
-      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: user in %d group(s), site M365 Group present=%s, aadId=%s',
+      debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: user in %d group(s), site M365 Group present=%s, aadId=%s',
         userGroupIds.size, userGroupIds.has(m365GroupId.toLowerCase()), userAadId || '(unknown)');
 
       if (!userGroupIds.has(m365GroupId.toLowerCase())) {
@@ -455,13 +487,15 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
       // Strategy: try GET /groups/{groupId}/owners/{userId} first (direct lookup, no filter
       // needed). Fall back to a filtered list with ConsistencyLevel:eventual if ID unknown.
       let isOwner = false;
+      let ownerCheckFailed = false;
       try {
         if (userAadId) {
           // Direct lookup: 200 = owner, 404 = not owner (no filter, always supported)
           await graph.api(`/groups/${m365GroupId}/owners/${userAadId}`).select('id').get();
           isOwner = true;
         } else {
-          // Fallback: filter requires ConsistencyLevel:eventual
+          // No AAD id resolved (profile lookup failed or lacked permission) — fall back
+          // to a filtered list, which itself requires ConsistencyLevel:eventual.
           const ownersResp = await graph
             .api(`/groups/${m365GroupId}/owners`)
             .header('ConsistencyLevel', 'eventual')
@@ -470,14 +504,31 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
             .select('id').top(1).get();
           isOwner = (ownersResp?.value?.length ?? 0) > 0;
         }
-      } catch { /* 404 = not an owner; other errors → treat as member */ }
+      } catch (err) {
+        if (userAadId) {
+          // Direct lookup 404 = genuinely not an owner — a safe, confirmed negative.
+          isOwner = false;
+        } else if (isGraphPermissionError(err) || (userProfileError && isGraphPermissionError(userProfileError))) {
+          // Couldn't confirm the AAD id AND the fallback query also failed on
+          // permissions — we have no reliable signal either way. Treating this as
+          // "member" (as before) risked under-reporting an Owner's actual access.
+          ownerCheckFailed = true;
+        } else {
+          isOwner = false; // filtered query resolved but found nothing = not an owner
+        }
+      }
 
-      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: isOwner=%s', isOwner);
+      if (ownerCheckFailed) {
+        debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: owner check inconclusive — Graph permission required');
+        return { roles: [], graphUnavailable: true };
+      }
+
+      debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: isOwner=%s', isOwner);
 
       const targetSpGroupId: number | undefined = isOwner
         ? webProps?.AssociatedOwnerGroup?.Id as number | undefined
         : webProps?.AssociatedMemberGroup?.Id as number | undefined;
-      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: mapped to SP group id=%s', targetSpGroupId);
+      debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: mapped to SP group id=%s', targetSpGroupId);
 
       const roles: string[] = [];
       if (targetSpGroupId) {
@@ -489,10 +540,10 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
             .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
         }
       }
-      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: resolved roles=%o', roles);
+      debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: resolved roles=%o', roles);
       return { roles, graphUnavailable: false };
     } catch (err) {
-      console.debug('[SmartPermissions] checkM365ConnectedSiteRoles: failed', err);
+      debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: failed', err);
       return { roles: [], graphUnavailable: true };
     }
   }
@@ -530,7 +581,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
     const actionableGroupRas = groupRas.filter((ra: any) =>
       rdbArray(ra.RoleDefinitionBindings).some((r: any) => !isSystemRole(r.Name as string)),
     );
-    console.debug('[SmartPermissions] getAadGroupSiteRoles: actionable groups=%o',
+    debugLog('[SmartPermissions] getAadGroupSiteRoles: actionable groups=%o',
       actionableGroupRas.map((ra: any) => ({
         id: ra.Member?.Id,
         login: ra.Member?.LoginName,
@@ -539,7 +590,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
         roles: rdbArray(ra.RoleDefinitionBindings).map((r: any) => r.Name),
       })));
     if (actionableGroupRas.length === 0) {
-      console.debug('[SmartPermissions] getAadGroupSiteRoles: no actionable groups — nothing to check');
+      debugLog('[SmartPermissions] getAadGroupSiteRoles: no actionable groups — nothing to check');
       return { roles: [], graphUnavailable: false };
     }
 
@@ -572,20 +623,20 @@ async function getAadGroupSiteRoles(client: SpApiClient,
       try {
         const data = await client.getJson(url);
         const found = valueArray(data).length > 0;
-        console.debug('[SmartPermissions] getAadGroupSiteRoles: REST "%s" (id=%s pt=%s) → found=%s', label, groupId, pt, found);
+        debugLog('[SmartPermissions] getAadGroupSiteRoles: REST "%s" (id=%s pt=%s) → found=%s', label, groupId, pt, found);
         if (found) {
           rdbArray(ra.RoleDefinitionBindings)
             .map((r: any) => r.Name as string)
             .filter((r) => !isSystemRole(r))
             .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
         } else if (isAadGroup(groupLogin)) {
-          console.debug('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (AAD, ambiguous), queuing for Graph', label);
+          debugLog('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (AAD, ambiguous), queuing for Graph', label);
           needsGraph.push(ra);
         } else {
-          console.debug('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (SP group, not a member)', label);
+          debugLog('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (SP group, not a member)', label);
         }
       } catch (err) {
-        console.debug('[SmartPermissions] getAadGroupSiteRoles: "%s" → REST error=%o', label, err);
+        debugLog('[SmartPermissions] getAadGroupSiteRoles: "%s" → REST error=%o', label, err);
         if (isAadGroup(groupLogin)) {
           needsGraph.push(ra);
         }
@@ -593,7 +644,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
     }));
 
     if (roles.length > 0) {
-      console.debug('[SmartPermissions] getAadGroupSiteRoles: resolved via REST=%o', roles);
+      debugLog('[SmartPermissions] getAadGroupSiteRoles: resolved via REST=%o', roles);
       return { roles, graphUnavailable: false };
     }
     if (needsGraph.length === 0) {
@@ -601,7 +652,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
       // For M365 Group-connected sites, members are resolved dynamically — the user
       // won't appear in sitegroups/users even though they have access. Check the site's
       // connected M365 Group via Graph and map back to the SP group's roles.
-      console.debug('[SmartPermissions] getAadGroupSiteRoles: no direct AAD groups — checking M365-connected site');
+      debugLog('[SmartPermissions] getAadGroupSiteRoles: no direct AAD groups — checking M365-connected site');
       return await checkM365ConnectedSiteRoles(client, siteUrl, userLoginName, userEmail, actionableGroupRas);
     }
 
@@ -609,27 +660,19 @@ async function getAadGroupSiteRoles(client: SpApiClient,
     const identifier = userEmail ||
       (userLoginName.includes('|') ? userLoginName.split('|').pop() : null) ||
       userLoginName;
-    console.debug('[SmartPermissions] getAadGroupSiteRoles: %d group(s) need Graph, identifier=%s',
+    debugLog('[SmartPermissions] getAadGroupSiteRoles: %d group(s) need Graph, identifier=%s',
       needsGraph.length, identifier);
     if (!identifier) return { roles: [], graphUnavailable: true };
 
     try {
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
-      const memberOfData = await graph
-        .api(`/users/${encodeURIComponent(identifier)}/transitiveMemberOf`)
-        .select('id')
-        .top(999)
-        .get();
-
-      const userGroupIds = new Set<string>(
-        (memberOfData?.value ?? []).map((g: any) => (g.id as string).toLowerCase()),
-      );
-      console.debug('[SmartPermissions] getAadGroupSiteRoles: user in %d AAD group(s) via Graph', userGroupIds.size);
+      const userGroupIds = await fetchAllTransitiveGroupIds(graph, identifier);
+      debugLog('[SmartPermissions] getAadGroupSiteRoles: user in %d AAD group(s) via Graph', userGroupIds.size);
 
       for (const ra of needsGraph) {
         const guid = ((ra.Member?.LoginName ?? '').split('|').pop() ?? '').toLowerCase();
         const matched = guid && userGroupIds.has(guid);
-        console.debug('[SmartPermissions] getAadGroupSiteRoles: Graph guid=%s matched=%s', guid, matched);
+        debugLog('[SmartPermissions] getAadGroupSiteRoles: Graph guid=%s matched=%s', guid, matched);
         if (matched) {
           rdbArray(ra.RoleDefinitionBindings)
             .map((r: any) => r.Name as string)
@@ -637,10 +680,10 @@ async function getAadGroupSiteRoles(client: SpApiClient,
             .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
         }
       }
-      console.debug('[SmartPermissions] getAadGroupSiteRoles: resolved via Graph=%o', roles);
+      debugLog('[SmartPermissions] getAadGroupSiteRoles: resolved via Graph=%o', roles);
       return { roles, graphUnavailable: false };
     } catch (err) {
-      console.debug('[SmartPermissions] getAadGroupSiteRoles: Graph failed', err);
+      debugLog('[SmartPermissions] getAadGroupSiteRoles: Graph failed', err);
       return { roles: [], graphUnavailable: true };
     }
   }

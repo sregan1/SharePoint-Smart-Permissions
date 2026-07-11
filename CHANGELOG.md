@@ -4,6 +4,92 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Provisioning script (`scripts/Provision-SmartPermissions.ps1`)**
+  - App install now targets the tenant App Catalog by default instead of a
+    site-collection app catalog most sites don't have, and waits (`-Wait`) for
+    the (asynchronous) install to actually finish before adding the web part.
+  - Publishing now uses `Set-PnPPage -Publish` (the current PnP.PowerShell
+    cmdlet) instead of the removed `Publish-PnPPage`, and publishes the same
+    in-memory page object that was just edited instead of re-fetching a stale
+    copy that overwrote the change.
+  - The web part is now resolved via `Get-PnPAvailablePageComponents` before
+    being added — passing a raw component ID string previously produced an
+    empty, non-rendering placeholder control.
+  - Fixed a duplicate-webpart guard that silently never matched due to a
+    braced-vs-unbraced GUID string comparison.
+  - The pages library is now resolved once by its stable "SitePages" URL
+    segment instead of the localized "Site Pages" display title, which broke
+    every permission/audience-targeting step on non-English sites.
+  - Added optional `$clientId` support for tenants that reject the default PnP
+    Management Shell app during interactive sign-in.
+  - `$adminUrl` is now only required in tenant-wide mode, not when provisioning
+    a single site via `$targetSiteUrl`.
+  - Quick Launch navigation node de-duplication now matches on URL as well as
+    title.
+  - Comments are now disabled on the provisioned page.
+
+- **Audit accuracy (Permissions Report / User Access)**
+  - Items whose unique-permission check fails transiently (network blip,
+    throttling past retries) are now flagged as scan-incomplete instead of
+    being silently presented as inheriting their parent's permissions.
+  - `getJson` now retries thrown/rejected requests (not just 429/503
+    responses) with backoff, and threads an abort signal through paged
+    requests.
+  - A Graph profile-lookup permission error in the M365-group ownership check
+    no longer gets misreported as a confirmed "Member" role — it's now
+    surfaced as "Graph permission required" instead of a false result.
+  - `transitiveMemberOf` group-membership checks now follow `@odata.nextLink`
+    instead of silently truncating at 999 groups.
+  - SharePoint group member expansion now resolves by numeric group ID
+    instead of by display name, which 404'd (and silently dropped members)
+    for renamed or non-canonically-named groups.
+  - `checkCanManagePermissions` now fails closed on an API error instead of
+    granting Owner-level UI to an unverified caller.
+  - "Everyone" and "Everyone except external users" claims are now detected
+    and flagged prominently as tenant-wide access instead of rendering as an
+    ordinary, easy-to-miss group row.
+  - The "exclude limited access" and "external users only" filters are now
+    applied consistently across the Explorer, Report, and User Access views
+    and their Excel/CSV exports (shared `applyPermFilters` helper) — the
+    Report's export and expanded-row view previously ignored the
+    limited-access filter, so the workbook and on-screen filter could
+    disagree.
+  - The Report export button's enabled state and row count now reflect what
+    will actually be exported after filtering, instead of a pre-filter count
+    that could show "0 filtered rows" as exportable.
+  - A results-pagination reset effect now also fires when "exclude limited
+    access" is toggled.
+  - Group-member-count fetches no longer request more than Graph's 999-item
+    `$top` maximum, even when the configured display cap is set higher.
+
+- **Explorer view reliability/performance**
+  - Folder prefetches are now bounded by the configured scan concurrency
+    instead of firing one request per folder simultaneously.
+  - Background scans and prefetches are now discarded if the user switches
+    libraries (or navigates away) while they're still in flight, instead of
+    applying stale results to whatever is now on screen.
+  - A failed folder listing now shows inline, non-navigable error text
+    instead of a synthetic tree node with an empty URL.
+
+### Changed
+
+- User-identifying diagnostic logging in the User Access scan is now gated
+  behind `localStorage.setItem('smartPermissionsDebug', '1')` instead of
+  always writing to the browser console.
+- `.yo-rc.json` now records the actual SPFx generator version (1.21.1).
+- `config/package-solution.json` now includes publisher name and website.
+- Removed the superseded `docs/screenshot.js` in favor of the current
+  `docs/generate-screenshots.js`.
+- Documentation (README, USER-GUIDE) updated to match current script/build
+  behavior: idempotent re-running, the app auto-install step, the
+  `serve.json.template` copy step, and accurate screenshot tracking status.
+
+---
+
 ## [1.4.0] — 2026-06-13
 
 ### Added
