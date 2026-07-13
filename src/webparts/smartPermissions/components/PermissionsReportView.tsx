@@ -1036,6 +1036,32 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               </Badge>
             </div>
 
+            {/* Export buttons live here (top of the results) as well as at the
+                bottom of the table — with potentially thousands of rows, requiring
+                a full scroll just to export defeats the point of a quick export. */}
+            <div className={styles.row}>
+              <Button
+                appearance="primary"
+                icon={<DocumentArrowDown24Regular />}
+                onClick={handleExport}
+                disabled={isExporting || exportableEntries.length === 0}
+              >
+                {isExporting
+                  ? 'Generating Excel…'
+                  : exportableEntries.length < entries.length
+                  ? `Export ${exportableEntries.length} filtered rows`
+                  : 'Export to Excel'}
+              </Button>
+              <Button
+                appearance="secondary"
+                icon={<DocumentArrowDown24Regular />}
+                onClick={handleExportCsv}
+                disabled={isExporting || exportableEntries.length === 0}
+              >
+                Export to CSV
+              </Button>
+            </div>
+
             {roleAssignmentsDenied && (
               <MessageBar intent="warning">
                 <MessageBarBody>
@@ -1208,29 +1234,6 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 )}
               </>
             )}
-
-            <div className={styles.row}>
-              <Button
-                appearance="primary"
-                icon={<DocumentArrowDown24Regular />}
-                onClick={handleExport}
-                disabled={isExporting || exportableEntries.length === 0}
-              >
-                {isExporting
-                  ? 'Generating Excel…'
-                  : exportableEntries.length < entries.length
-                  ? `Export ${exportableEntries.length} filtered rows`
-                  : 'Export to Excel'}
-              </Button>
-              <Button
-                appearance="secondary"
-                icon={<DocumentArrowDown24Regular />}
-                onClick={handleExportCsv}
-                disabled={isExporting || exportableEntries.length === 0}
-              >
-                Export to CSV
-              </Button>
-            </div>
           </div>
         )}
       </div>}

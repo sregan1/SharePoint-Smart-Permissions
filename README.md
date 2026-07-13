@@ -27,6 +27,7 @@ Interactively browse a document library tree and inspect live permissions on any
 | **Three folder indicators** | Circle arrow = unique permissions below; triangle arrow = external access below; both together = both |
 | **External user email decoding** | Decoded email shown beneath the display name in the permissions panel |
 | **Tree filters** | Toggle to show only unique-permission items or only items with external user access |
+| **Tenant-wide access warnings** | "Everyone" and "Everyone except external users" claims are highlighted in red as tenant-wide access instead of appearing as an ordinary group row |
 
 ![Permissions Explorer with a folder selected and the permissions panel showing group members](docs/screenshots/05_explorer.png)
 
@@ -50,6 +51,8 @@ Scan a site's lists, libraries, folders, and files and export a color-coded Exce
 | **Excel export** | In-browser `.xlsx` workbook with color-coded permission levels and an Access Via column |
 | **CSV export** | Plain-text alternative for scripted processing |
 | **Progress bar and timer** | Concurrent, throttling-aware scan with elapsed timer and live item count |
+| **Tenant-wide access warnings** | "Everyone" and "Everyone except external users" claims are highlighted in red as tenant-wide access instead of appearing as an ordinary group row |
+| **Scan-incomplete flag** | Items that couldn't be fully read after retries (transient network/throttling errors) are flagged instead of silently shown as inheriting their parent's permissions |
 
 ![Permissions Report configuration screen](docs/screenshots/02_report_config.png)
 
@@ -70,6 +73,7 @@ Look up any user and see every location they can access on a site, with their ex
 | **Sortable results table** | Click any column header to sort |
 | **Export to Excel / CSV** | Download the results for any user |
 | **Scan history** | Past scans persist in IndexedDB — re-export without re-scanning |
+| **Honest M365 group ownership checks** | If a Graph permission error prevents confirming M365 Group ownership, the result is shown as "Graph permission required" rather than a false Member/Owner result |
 
 ![User Access results showing accessible locations for a selected user](docs/screenshots/07_user_access_complete.png)
 
@@ -259,6 +263,8 @@ sharepoint/solution/
 **"npm install fails" or build errors about Node version** — This project requires Node 18.x exactly (`>=18.17.1 <19.0.0`). Run `node --version` to confirm. Use `nvm` or `nvm-windows` to switch versions.
 
 **"The scan takes a very long time"** — User Access and Permissions Report scan time scales with the number of unique permission assignments on the site. Use the scan depth and folder depth settings in the Permissions Report to limit scope, or run the scan against a specific library.
+
+**"I need more detail on a User Access result"** — Run `localStorage.setItem('smartPermissionsDebug', '1')` in the browser console, then re-run the scan and check the console for step-by-step diagnostic logging. Remove the key (or set it to any other value) to turn logging back off.
 
 ---
 

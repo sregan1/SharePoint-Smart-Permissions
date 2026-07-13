@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [Unreleased]
+## [1.5.0] — 2026-07-13
 
 ### Fixed
 
@@ -77,6 +77,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **Permissions Report — export buttons moved to the top of the results**
+  With large scans producing thousands of rows, the "Export to Excel"/"Export
+  to CSV" buttons at the bottom of the table required a long scroll to reach.
+  They now appear directly below the results summary badges instead.
 - User-identifying diagnostic logging in the User Access scan is now gated
   behind `localStorage.setItem('smartPermissionsDebug', '1')` instead of
   always writing to the browser console.

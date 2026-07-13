@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.4.0**
+**Version 1.5.0**
 **Applies to:** SharePoint Online
 
 ---
@@ -150,6 +150,8 @@ The results table appears below the filter bar after every scan:
 - A **Hidden from search** badge marks libraries an admin has excluded from search indexing (NoCrawl) — worth a closer look during an audit, since that setting is sometimes used to keep sensitive content out of sight.
 - The filter box and the **Unique permissions only** / **External users only** checkboxes filter the table and the exports together.
 - Large results paginate at 200 rows — click **Load more** for the rest.
+- **"Everyone" and "Everyone except external users"** claims are highlighted in red as tenant-wide access, both in the table and in the Excel export, so a broad grant doesn't blend in as an ordinary group row.
+- If a temporary network or throttling error prevents an item from being fully read even after retries, it's flagged with a warning banner instead of being silently shown with its parent's permissions. Re-run the scan to retry those items.
 
 ### Understanding the Excel Export
 
@@ -214,6 +216,8 @@ When you select an item, the right panel shows:
 ![A folder with inherited permissions showing the blue banner and parent permissions table](docs/screenshots/05_explorer.png)
 
 Color-coded permission badges: **red** for Full Control, **amber** for Edit/Contribute, **green** for Read/View.
+
+**"Everyone" and "Everyone except external users"** claims are highlighted in red as tenant-wide access rather than appearing as an ordinary group row, since a grant to either of these claims effectively opens the item to the whole organization (or the whole internet, for external sharing links).
 
 ### Expand Group Members
 
@@ -337,6 +341,8 @@ Click any column header to sort the table by that column; click again to reverse
 Permission level badges use the same color coding as the Permissions Explorer (red = Full Control, amber = Edit, green = Read).
 
 When a user has site-level access, an information banner appears explaining that only locations with **unique permission assignments** are listed — all other content is accessible through the site-level permission shown at the top of the list.
+
+On a Microsoft 365 Group-connected site, if a Graph permission error prevents the tool from confirming whether the user is an Owner or Member of the group, the result shows **"Graph permission required"** rather than guessing. Approving the optional `GroupMember.Read.All` Graph permission (see [Expand Group Members](#expand-group-members)) resolves this.
 
 ### Scan History
 
@@ -566,6 +572,11 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 - Ensure **Include system and hidden libraries** is unchecked in Settings.
 - These libraries are excluded by URL pattern as well as their metadata flags. If they still appear, check that you are running the latest version of the web part package.
+
+### A User Access result looks wrong and you need more detail
+
+- Open the browser console and run `localStorage.setItem('smartPermissionsDebug', '1')`, then re-run the scan. Step-by-step diagnostic messages for that user's access resolution will appear in the console.
+- Set the key to any other value (or remove it) to turn this logging back off.
 
 ---
 
