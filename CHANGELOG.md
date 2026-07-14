@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.5.1] — 2026-07-14
+
+### Changed
+
+- **Home screen — card layout**
+  Feature card screenshots now sit between the title/description and the
+  action button instead of above the title, with `object-position: left top`
+  cropping and added footer padding around the button.
+- **Documentation — refreshed screenshots**
+  All home screen and feature screenshots regenerated to reflect the current
+  UI.
+
+---
+
 ## [1.5.0] — 2026-07-13
 
 ### Fixed

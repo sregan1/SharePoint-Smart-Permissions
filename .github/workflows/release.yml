@@ -35,7 +35,7 @@ jobs:
           VERSION=$(node -p "require('./config/package-solution.json').solution.version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Publish to GitHub Releases
+      - name: Publish rolling "latest" build
         uses: ncipollo/release-action@v1
         with:
           tag: latest
@@ -47,5 +47,49 @@ jobs:
           artifactContentType: application/zip
           allowUpdates: true
           removeArtifacts: true
+          makeLatest: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether a versioned release already exists
+        id: check_version_tag
+        run: |
+          # config/package-solution.json uses a 4-part version (X.Y.Z.0); release tags are 3-part (vX.Y.Z)
+          SEMVER=$(echo "${{ steps.version.outputs.version }}" | cut -d. -f1-3)
+          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          if git ls-remote --tags origin "refs/tags/v$SEMVER" | grep -q .; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract changelog section for this version
+        if: steps.check_version_tag.outputs.exists == 'false'
+        run: |
+          SEMVER="${{ steps.check_version_tag.outputs.semver }}"
+          awk -v ver="$SEMVER" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]") > 0) { found=1 }
+              next
+            }
+            found && $0 !~ /^---[[:space:]]*$/ { print }
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "Release v$SEMVER. See CHANGELOG.md for details." > release_notes.md
+          fi
+
+      - name: Publish versioned release
+        if: steps.check_version_tag.outputs.exists == 'false'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "v${{ steps.check_version_tag.outputs.semver }}"
+          name: "v${{ steps.check_version_tag.outputs.semver }}"
+          bodyFile: "release_notes.md"
+          commit: ${{ github.sha }}
+          artifacts: "sharepoint/solution/smart-permissions.sppkg"
+          artifactContentType: application/zip
+          allowUpdates: false
+          makeLatest: true
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
