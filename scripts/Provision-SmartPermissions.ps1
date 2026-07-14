@@ -38,11 +38,8 @@
     Set $targetSiteUrl to provision a single site without touching the rest of
     the tenant. Leave it empty to run across all site collections.
 
-    The Smart Permissions app must already be deployed (and approved, if API
-    permissions require it) to the tenant App Catalog. The script installs the
-    app on each site automatically if it isn't already there, so ticking
-    "Make this solution available to all sites automatically" during upload
-    is not required.
+    The Smart Permissions app must already be deployed to the tenant App Catalog
+    and approved before this script will successfully add the web part.
 
     Audience targeting (the -AudienceIds parameter on Add-PnPNavigationNode
     and the page audience field) is only available on Microsoft 365
@@ -51,14 +48,9 @@
 #>
 
 # --- Configuration ---
-$adminUrl       = ""   # Required in tenant-wide mode: e.g. "https://contoso-admin.sharepoint.com"
-                       # Not used in single-site mode (when $targetSiteUrl is set).
+$adminUrl       = ""   # Required: e.g. "https://contoso-admin.sharepoint.com"
 $targetSiteUrl  = ""   # Optional: set to provision a single site, e.g. "https://contoso.sharepoint.com/sites/mysite"
                        # Leave empty to provision all site collections in the tenant.
-$clientId       = ""   # Optional: Entra ID App client id from Register-PnPEntraIDAppForInteractiveLogin.
-                       # Only needed on tenants that reject the default PnP Management Shell app —
-                       # a growing number of tenants require this for any interactive PnP sign-in.
-$solutionId     = "a2f2de50-4e8b-4f3c-9abc-ef0123456789"  # Smart Permissions solution/app ID (package-solution.json) — do not change
 $componentId    = "c2f2de50-4e8b-4f3c-9abc-ef0123456789"  # Smart Permissions web part ID — do not change
 $pageName       = "Permissions"   # File name (without .aspx)
 $pageTitle      = "Permissions"   # Display title shown at top of page
@@ -67,16 +59,8 @@ $webPartProps   = @{
 }
 
 # --- Validate config ---
-# Only required in tenant-wide mode — single-site mode connects directly to
-# $targetSiteUrl and never touches $adminUrl.
-if (-not $targetSiteUrl -and -not $adminUrl) {
-    throw "adminUrl is required for tenant-wide mode. Set it at the top of the script, or set targetSiteUrl to provision a single site instead."
-}
-
-# Splat so -ClientId is only passed when set, without an empty-string arg
-$connectParams = @{ Interactive = $true }
-if ($clientId) {
-    $connectParams["ClientId"] = $clientId
+if (-not $adminUrl) {
+    throw "adminUrl is required. Set it at the top of the script before running."
 }
 
 # --- Build the list of sites to provision ---
@@ -86,7 +70,7 @@ if ($targetSiteUrl) {
     $sites = @([PSCustomObject]@{ Url = $targetSiteUrl.TrimEnd('/') })
 } else {
     # Tenant-wide mode
-    Connect-PnPOnline -Url $adminUrl @connectParams
+    Connect-PnPOnline -Url $adminUrl -Interactive
     $sites = Get-PnPTenantSite -IncludeOneDriveSites:$false
     Write-Host "Found $($sites.Count) site(s). Starting provisioning..." -ForegroundColor Cyan
 }
@@ -94,77 +78,53 @@ if ($targetSiteUrl) {
 foreach ($site in $sites) {
     Write-Host "Processing: $($site.Url)"
     try {
-        Connect-PnPOnline -Url $site.Url @connectParams
-
-        # ── Ensure the Smart Permissions app is installed on this site ───────
-        # Scope defaults to Tenant, which is where the app is deployed. Passing
-        # -Scope Site here would look for a site-collection app catalog instead,
-        # which most sites don't have, causing a sitecollectionappcatalog 404.
-        $app = Get-PnPApp -Identity $solutionId -ErrorAction SilentlyContinue
-        if (-not $app) {
-            Write-Warning "  Smart Permissions app not found in this site's available apps — attempting install from tenant App Catalog..."
-        }
-        if (-not $app -or -not $app.InstalledVersion) {
-            Write-Host "  Installing Smart Permissions app on this site..."
-            # -Wait blocks until the (asynchronous) install actually finishes, instead of
-            # guessing with a fixed sleep — a too-short sleep left the component unresolved
-            # and Add-PnPPageWebPart silently added a control the page couldn't render.
-            Install-PnPApp -Identity $solutionId -Wait
-        }
+        Connect-PnPOnline -Url $site.Url -Interactive
 
         # Create the page only if it doesn't already exist
         $page = Get-PnPPage -Identity "$pageName.aspx" -ErrorAction SilentlyContinue
         if (-not $page) {
             $page = Add-PnPPage -Name $pageName -Title $pageTitle `
-                                -LayoutType Article -Publish
+                                -LayoutType Article
             Write-Host "  Created $pageName.aspx"
         } else {
             Write-Host "  $pageName.aspx already exists — adding web part"
         }
 
-        # Resolve the actual component object instead of passing a raw GUID string —
-        # passing $componentId directly to -Component silently produced an empty
-        # placeholder control (no WebPartId/JsonWebPartData bound) even though the
-        # component is genuinely deployed and available on the site.
-        $targetComponent = Get-PnPAvailablePageComponents -Page $page | Where-Object { [Guid]$_.Id -eq [Guid]$componentId }
+        $web = Get-PnPWeb
+        $pageFileUrl = "$($web.ServerRelativeUrl.TrimEnd('/'))/SitePages/$pageName.aspx"
 
-        # Skip if the web part is already on the page (re-running the script on an
-        # existing page would otherwise stack up a new duplicate copy each time).
-        # Cast both sides to [Guid] — a plain string compare silently fails (and the
-        # guard never triggers) if WebPartId ever surfaces braced or upper-case.
-        $existingWebPart = $page.Controls | Where-Object { $_.WebPartId -and ([Guid]$_.WebPartId -eq [Guid]$componentId) }
-        if (-not $existingWebPart) {
-            if ($targetComponent) {
-                Add-PnPPageWebPart -Page $page `
-                    -Component $targetComponent `
-                    -WebPartProperties $webPartProps
-            } else {
-                Write-Warning "  Could not resolve the Smart Permissions component on this page — skipping add"
-            }
-        } else {
-            Write-Host "  Web part already on page — skipping duplicate add"
+        # Resolve to a full component object rather than passing the bare GUID —
+        # passing just the string leaves the control's component reference
+        # unbound (null id / empty data-sp-componentid in the saved canvas),
+        # which breaks manifest resolution when the page renders.
+        $component = Get-PnPPageComponent -Page $page -ListAvailable |
+            Where-Object { [Guid]$_.Id -eq [Guid]$componentId }
+        if (-not $component) {
+            throw "Component $componentId is not available on this site (not installed/approved?)"
         }
 
-        # Publish the SAME in-memory $page object that just had the web part added to
-        # it — re-resolving by filename here fetched a stale copy without the new
-        # control and published that over the real change.
-        Set-PnPPage -Identity $page -Publish -CommentsEnabled:$false
+        Add-PnPPageWebPart -Page $page `
+            -Component $component `
+            -WebPartProperties $webPartProps
 
-        # Resolve the pages library once by its stable, non-localized root-folder
-        # URL segment ("SitePages") rather than the display title "Site Pages" —
-        # the title is localized (e.g. German "Websiteseiten"), which would make
-        # every -List "Site Pages" lookup below fail silently on non-English sites,
-        # leaving the page provisioned but still inheriting Members/Visitors access.
-        $pagesList = Get-PnPList -Identity "SitePages"
+        # Publish now, establishing the first major/published version. Nav
+        # nodes can't link to a page that has never been published at all
+        # ("Cannot add the file ... because it is a draft item") — a minor
+        # draft bump on top of an already-published page is fine, but a page
+        # with zero major versions isn't. The permissions/audience updates
+        # below will bump it back to an unpublished draft; the REST call
+        # further down re-publishes it for good afterward.
+        Set-PnPPage -Identity $page -Publish -CommentsEnabled:$false -HeaderLayoutType NoImage
 
         # ── Permissions: Owners only ──────────────────────────────────────────
-        $pageItem = Get-PnPListItem -List $pagesList `
+        $pageItem = Get-PnPListItem -List "Site Pages" `
             -Query "<View><Query><Where><Eq><FieldRef Name='FileLeafRef'/><Value Type='Text'>$pageName.aspx</Value></Eq></Where></Query></View>"
         if ($pageItem) {
             $ownersGroup = Get-PnPGroup -AssociatedOwnerGroup
-            # -ClearExisting is only valid alongside -User/-Group (not -InheritPermissions),
-            # so break inheritance, clear existing role assignments, and grant Owners in one call.
-            Set-PnPListItemPermission -List $pagesList -Identity $pageItem.Id `
+            # Breaks inheritance, clears existing role assignments, and grants
+            # the Owners group Full Control — all in one call, since
+            # -ClearExisting is only valid alongside -User/-Group.
+            Set-PnPListItemPermission -List "Site Pages" -Identity $pageItem.Id `
                 -Group $ownersGroup -AddRole "Full Control" -ClearExisting
             Write-Host "  Permissions set: Owners only"
         } else {
@@ -173,10 +133,9 @@ foreach ($site in $sites) {
 
         # ── Navigation: add to Quick Launch ──────────────────────────────────
         $pageUrl = "$($site.Url)/SitePages/$pageName.aspx"
-        # Remove any existing node for this exact page URL (not just matching Title)
-        # so an unrelated node that happens to share the page's title is left alone.
+        # Remove any existing node with the same title to avoid duplicates
         $existingNode = Get-PnPNavigationNode -Location QuickLaunch |
-            Where-Object { $_.Title -eq $pageTitle -and $_.Url -eq $pageUrl }
+            Where-Object { $_.Title -eq $pageTitle }
         if ($existingNode) {
             Remove-PnPNavigationNode -Identity $existingNode.Id -Force
         }
@@ -198,10 +157,10 @@ foreach ($site in $sites) {
         # ── Page audience targeting ───────────────────────────────────────────
         if ($pageItem -and $siteData.GroupId -ne [Guid]::Empty) {
             # Enable audience targeting on the Site Pages library (idempotent)
-            Set-PnPList -Identity $pagesList -EnableAudienceTargeting $true
+            Set-PnPList -Identity "Site Pages" -EnableAudienceTargeting $true
             # Set the M365 Owners group as the page audience
             $ownersClaim = "c:0o.c|federateddirectoryclaimprovider|$($siteData.GroupId)"
-            Set-PnPListItem -List $pagesList -Identity $pageItem.Id -Values @{
+            Set-PnPListItem -List "Site Pages" -Identity $pageItem.Id -Values @{
                 "_ModernAudienceTargetUserField" = $ownersClaim
             } | Out-Null
             Write-Host "  Page audience set: Owners group"
@@ -209,11 +168,21 @@ foreach ($site in $sites) {
             Write-Host "  Page audience skipped — non-M365 site (SharePoint groups not supported for audience targeting)"
         }
 
+        # Publish directly via SharePoint's native REST endpoint (the same one
+        # the browser's "Publish" button calls) rather than relying on
+        # PnP.Core's Page.Publish(), which has repeatedly left the page in an
+        # unpublished "Needs Publishing" state after the permissions/audience
+        # updates above touch the list item.
+        $publishUrl = "$($web.Url)/_api/web/getfilebyserverrelativeurl('$pageFileUrl')/Publish(comment='Automated provisioning')"
+        Invoke-PnPSPRestMethod -Url $publishUrl -Method Post -Content "{}" -ContentType "application/json" | Out-Null
+        Write-Host "  Page published"
+
         Write-Host "  Done." -ForegroundColor Green
     }
     catch {
         # Log and continue — don't abort the entire run for one site
         Write-Warning "  Failed on $($site.Url): $_"
+        Write-Warning "  At line $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"
     }
 }
 
