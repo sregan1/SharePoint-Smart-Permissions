@@ -62,10 +62,11 @@ const useStyles = makeStyles({
   cardImage: {
     width: '100%',
     height: '180px',
+    flexShrink: 0,
     objectFit: 'cover',
-    objectPosition: 'top',
+    objectPosition: 'left top',
     display: 'block',
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   cardBody: {
     display: 'flex',
@@ -87,6 +88,9 @@ const useStyles = makeStyles({
     flexGrow: 1,
     color: tokens.colorNeutralForeground2,
     fontSize: tokens.fontSizeBase200,
+  },
+  cardFooter: {
+    padding: tokens.spacingVerticalM,
   },
   navButton: {
     width: '100%',
@@ -191,13 +195,15 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
                 aria-label={buttonLabel}
                 onKeyDown={disabled ? undefined : (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(view); } }}
               >
-                <img src={screenshot} alt={alt} className={styles.cardImage} />
                 <div className={styles.cardBody}>
                   <div className={styles.cardTitleRow}>
                     {icon}
                     <Text className={styles.cardTitle}>{title}</Text>
                   </div>
                   <Body1 className={styles.cardDesc}>{desc}</Body1>
+                </div>
+                <img src={screenshot} alt={alt} className={styles.cardImage} />
+                <div className={styles.cardFooter}>
                   <Button
                     appearance="primary"
                     className={styles.navButton}

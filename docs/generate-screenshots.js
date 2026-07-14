@@ -1,7 +1,8 @@
 'use strict';
-// Generates custom card-header images for the HomeView.
-// Output: src/webparts/smartPermissions/assets/screenshot_*.png
-// Also generates docs/screenshots/01_home.png for the README.
+// Generates docs/screenshots/01_home.png for the README / user guide.
+// The card images it embeds are the REAL assets at
+// src/webparts/smartPermissions/assets/screenshot_*.png (supplied screenshots,
+// not generated mockups) — this script only reads them, it never writes there.
 // Run: node docs/generate-screenshots.js
 
 const puppeteer = require('puppeteer-core');
@@ -19,6 +20,14 @@ const DOCS_OUT = path.join(__dirname, 'screenshots');
 if (!fs.existsSync(DOCS_OUT)) fs.mkdirSync(DOCS_OUT, { recursive: true });
 
 const font = `'Segoe UI', Arial, sans-serif`;
+
+// Reads a real asset (src/webparts/smartPermissions/assets/<filename>) and
+// returns it as a base64 data URI, so docs screenshots embed the actual
+// shipped images rather than a re-rendered mockup.
+function assetDataUri(filename) {
+  const data = fs.readFileSync(path.join(OUT, filename)).toString('base64');
+  return `data:image/png;base64,${data}`;
+}
 
 // ── Shared UI primitives ──────────────────────────────────────────────────────
 function appBanner() {
@@ -554,19 +563,11 @@ function groupsPage() {
 function homePage() {
   const blue = '#0078D4';
 
-  // Embed each card page as a scaled iframe using a data URI.
-  function cardThumb(htmlFn, srcW, srcH) {
-    // Card column width ≈ (1000 - 56 padding - 32 gaps) / 3 ≈ 304px
-    const colW = 304;
-    const scale = colW / srcW;
-    const scaledH = Math.ceil(180 / scale);
-    const encoded = encodeURIComponent(htmlFn());
-    return `<div style="width:100%;height:180px;overflow:hidden;border-bottom:1px solid #EDEBE9;flex-shrink:0;background:#F8F8F8;">
-      <iframe src="data:text/html;charset=utf-8,${encoded}"
-        style="width:${srcW}px;height:${srcH}px;border:none;
-          transform:scale(${scale.toFixed(4)});transform-origin:top left;pointer-events:none;"
-        scrolling="no"></iframe>
-    </div>`;
+  // Render the real shipped asset as a <img>, matching HomeView's cardImage CSS
+  // (width:100%, height:180px, object-fit:cover, object-position:left top).
+  function cardImg(filename) {
+    return `<img src="${assetDataUri(filename)}" style="width:100%;height:180px;flex-shrink:0;
+      object-fit:cover;object-position:left top;display:block;border-top:1px solid #EDEBE9;" />`;
   }
 
   const cards = [
@@ -575,34 +576,36 @@ function homePage() {
       icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="${blue}" style="flex-shrink:0;"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-2 10H6v-2h12v2zm0-4H6v-2h12v2z"/></svg>`,
       desc: 'Browse any folder or file and instantly see who has access — with live, real-time permission lookups.',
       buttonLabel: 'Open Permissions Explorer',
-      thumb: cardThumb(explorerPage, 800, 530),
+      image: 'screenshot_explorer.png',
     },
     {
       title: 'Permissions Report',
       icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="${blue}" style="flex-shrink:0;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>`,
       desc: 'Generate a color-coded Excel report of every unique permission assignment across your site.',
       buttonLabel: 'Run Permissions Report',
-      thumb: cardThumb(reportPage, 800, 560),
+      image: 'screenshot_report.png',
     },
     {
       title: 'User Access',
       icon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="${blue}" style="flex-shrink:0;"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
       desc: 'Look up any user to see every location they can access on a site, with their exact permission level.',
       buttonLabel: 'Check User Access',
-      thumb: cardThumb(userAccessPage, 800, 500),
+      image: 'screenshot_user_access.png',
     },
   ];
 
   const cardHtml = cards.map(c => `
     <div style="display:flex;flex-direction:column;overflow:hidden;border-radius:4px;
       border:1px solid #EDEBE9;box-shadow:0 1px 4px rgba(0,0,0,0.08);background:#fff;">
-      ${c.thumb}
-      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;flex:1;">
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;">
           ${c.icon}
           <span style="font-size:15px;font-weight:600;color:#323130;font-family:${font};">${c.title}</span>
         </div>
-        <div style="font-size:12px;color:#605E5C;font-family:${font};flex:1;line-height:1.5;">${c.desc}</div>
+        <div style="font-size:12px;color:#605E5C;font-family:${font};line-height:1.5;">${c.desc}</div>
+      </div>
+      ${cardImg(c.image)}
+      <div style="padding:14px 16px;">
         <button style="width:100%;padding:7px 12px;background:${blue};color:#fff;border:none;
           border-radius:4px;font-size:13px;font-family:${font};font-weight:600;cursor:pointer;">
           ${c.buttonLabel}
@@ -656,22 +659,6 @@ async function main() {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=none'],
   });
 
-  // Card header images (used by HomeView as card thumbnails)
-  const assetShots = [
-    ['screenshot_report.png',      reportPage,      { width: 800, height: 560 }],
-    ['screenshot_explorer.png',    explorerPage,    { width: 800, height: 530 }],
-    ['screenshot_user_access.png', userAccessPage,  { width: 800, height: 500 }],
-  ];
-
-  for (const [filename, htmlFn, vp] of assetShots) {
-    const pg = await browser.newPage();
-    await pg.setViewport(vp);
-    await pg.setContent(htmlFn(), { waitUntil: 'load' });
-    await pg.screenshot({ path: path.join(OUT, filename), clip: { x: 0, y: 0, width: vp.width, height: vp.height } });
-    await pg.close();
-    console.log('✓', filename);
-  }
-
   // README / docs screenshots
   const docsShots = [
     ['01_home.png', homePage, { width: 1000, height: 620 }],
@@ -687,8 +674,7 @@ async function main() {
   }
 
   await browser.close();
-  console.log(`\nAsset images → ${OUT}`);
-  console.log(`Docs screenshots → ${DOCS_OUT}`);
+  console.log(`\nDocs screenshots → ${DOCS_OUT}`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
