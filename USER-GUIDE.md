@@ -170,6 +170,8 @@ Rows for items with **unique permissions** are highlighted in the Excel workbook
 
 Every completed scan is saved automatically to a local history log in your browser. Click the **History** button in the header to see past reports with their date, site, scope, and object counts. From there you can **Export** any past report without re-scanning, or **Delete** records.
 
+![Report History panel showing past scans with date, site, scope, and object counts, and two reports selected for Compare](docs/screenshots/10_report_history.png)
+
 To see **what changed between two scans**, tick the checkboxes next to two reports and click **Compare selected**. The comparison shows:
 
 - **Permission changes** — users or groups added, removed, or given different roles on each object
@@ -257,6 +259,8 @@ Click the **External users only** toggle button (person with warning icon) in th
 When active:
 - The tree shows only items with external user access (direct or inherited) and their ancestor folders
 - The permissions panel for the selected item also shows only external-user rows
+
+![External users only filter active in the Permissions Explorer, showing the filtered tree and external-user rows with warning icons](docs/screenshots/11_explorer_external.png)
 - If the selected item has no external users, a message appears instead of an empty table
 
 Toggle it off to return to the full tree view.

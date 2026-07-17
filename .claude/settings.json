@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node docs/generate-history-external-screenshots.js)"
+    ]
+  }
+}
