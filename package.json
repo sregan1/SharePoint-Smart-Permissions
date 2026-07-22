@@ -1,12 +1,13 @@
 {
   "name": "sharepoint-smart-permissions-webpart",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "private": true,
   "engines": {
     "node": ">=18.17.1 <19.0.0"
   },
   "scripts": {
     "build": "gulp bundle",
+    "workbench": "gulp clean && gulp serve",
     "clean": "gulp clean",
     "test": "gulp test",
     "ship": "gulp bundle --ship && gulp package-solution --ship"

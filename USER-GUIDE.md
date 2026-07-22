@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.5.0**
+**Version 1.6.0**
 **Applies to:** SharePoint Online
 
 ---
@@ -590,13 +590,12 @@ For organizations that want to make Smart Permissions available on every site co
 
 ### Prerequisites
 
-- The **Smart Permissions** app must already be deployed to the tenant App Catalog. Ticking "Make this solution available to all sites automatically" during upload is **not required** — the script installs the app on each site automatically as it goes (see [What the Script Does](#what-the-script-does)).
+- The **Smart Permissions** app must already be deployed to the tenant App Catalog **and available on each site you plan to provision** — either by ticking *"Make this solution available to all sites automatically"* during upload (recommended for tenant-wide runs), or by installing it on each site collection beforehand. The script does not install the app itself; a site where the web part component isn't available is logged as a warning and skipped, and the rest of the run continues.
 - The **PnP.PowerShell** module must be installed on the machine running the script:
   ```powershell
   Install-Module PnP.PowerShell
   ```
 - The account used must have **SharePoint Administrator** or **Global Administrator** permissions.
-- On tenants that reject the default PnP Management Shell app during interactive sign-in, register your own Entra ID app (via `Register-PnPEntraIDAppForInteractiveLogin`) and set `$clientId` in the script — see Configuration below.
 
 ### Script Location
 
@@ -613,9 +612,8 @@ $targetSiteUrl = ""   # leave empty to run across all sites
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `$adminUrl` | *(empty)* | Your SharePoint admin center URL. Only required in tenant-wide mode (when `$targetSiteUrl` is empty). |
+| `$adminUrl` | *(empty)* | Your SharePoint admin center URL. Required by the script even in single-site mode, though it's only actually used to connect to the admin center for tenant-wide enumeration. |
 | `$targetSiteUrl` | *(empty)* | Set to a single site URL to provision only that site. Leave empty to provision all sites in the tenant. |
-| `$clientId` | *(empty)* | Optional Entra ID app client id, for tenants that reject the default PnP Management Shell app during interactive sign-in. |
 | `$componentId` | Pre-filled | The Smart Permissions web part ID |
 | `$pageName` | `Permissions` | File name of the created page (without `.aspx`) |
 | `$pageTitle` | `Permissions` | Display title shown at the top of the page |
@@ -639,13 +637,14 @@ $targetSiteUrl = ""   # leave empty to run across all sites
 
 For each site collection:
 1. Connects to the site
-2. Checks whether the Smart Permissions app is already installed on the site and, if not, installs it from the tenant App Catalog automatically (waiting for the install to complete before continuing)
-3. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
-4. Adds the Smart Permissions web part with default properties (skipped if it's already on the page — see Re-Running Safely below)
-5. Publishes the page
-6. Breaks permission inheritance on the page and grants Full Control to the site Owners group only — Members and Visitors cannot access the page
-7. Adds the page to the site's Quick Launch navigation (scoped to the Owners group on Microsoft 365 Group-connected sites)
-8. On M365-connected sites: enables audience targeting on the Site Pages library and sets the Owners group as the page audience
+2. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
+3. Adds the Smart Permissions web part with default properties (skipped if it's already on the page — see Re-Running Safely below)
+4. Publishes the page
+5. Breaks permission inheritance on the page and grants Full Control to the site Owners group only — Members and Visitors cannot access the page
+6. Adds the page to the site's Quick Launch navigation (scoped to the Owners group on Microsoft 365 Group-connected sites)
+7. On M365-connected sites: enables audience targeting on the Site Pages library and sets the Owners group as the page audience
+8. Clears the page's author byline so it doesn't show whichever account ran the script
+9. Re-publishes the page to ensure the final state is saved
 
 ### Re-Running Safely
 

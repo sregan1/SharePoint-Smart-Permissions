@@ -131,12 +131,41 @@ export function spBitmaskToLevel(high: number, low: number): string {
   return 'Limited access';
 }
 
+// SharePoint RoleTypeKind values for the two auto-assigned system roles that
+// carry no meaningful permission of their own: 1 = Guest ("Limited Access"),
+// 7 = System ("Web-Only Limited Access"). Language-invariant — unlike Name,
+// these don't change on localized tenants (DE "Eingeschränkter Zugriff", FR
+// "Accès limité", ...). Falls back to the name check when RoleTypeKind wasn't
+// requested/returned.
+const SYSTEM_ROLE_TYPE_KINDS = new Set([1, 7]);
+
 // Returns true for system-assigned pass-through roles that carry no meaningful permission
 // of their own and should be hidden from all results ("Limited Access" and its web-scoped
 // variant are both auto-assigned by SharePoint and are never explicitly granted).
-export function isSystemRole(name: string): boolean {
+export function isSystemRole(role: { Name?: string; RoleTypeKind?: number } | string): boolean {
+  const roleTypeKind = typeof role === 'string' ? undefined : role.RoleTypeKind;
+  if (typeof roleTypeKind === 'number') return SYSTEM_ROLE_TYPE_KINDS.has(roleTypeKind);
+  const name = typeof role === 'string' ? role : role.Name ?? '';
   const l = name.toLowerCase();
   return l === 'limited access' || l === 'web-only limited access' || l.startsWith('system.');
+}
+
+// Classifies a role by access tier using its language-invariant RoleTypeKind
+// when known (5 = Administrator/Full Control, 3/4/6 = Contributor/
+// WebDesigner/Editor "edit-level", 2 = Reader "read-level"), falling back to
+// the English name for custom permission levels or when RoleTypeKind wasn't
+// fetched — same defensive pattern as isSystemRole.
+export function roleAccessTier(name: string, roleTypeKind?: number): 'admin' | 'edit' | 'read' | 'other' {
+  switch (roleTypeKind) {
+    case 5: return 'admin';
+    case 3: case 4: case 6: return 'edit';
+    case 2: return 'read';
+  }
+  const l = name.toLowerCase();
+  if (l.includes('full control')) return 'admin';
+  if (l.includes('edit') || l.includes('contribute') || l.includes('design')) return 'edit';
+  if (l.includes('read') || l.includes('view')) return 'read';
+  return 'other';
 }
 
 // Known system/infrastructure library URL suffixes (lowercased, site-relative).
@@ -241,9 +270,12 @@ export class SpApiClient {
 export function toPermissionInfoList(roleAssignments: any[]): UserPermissionInfo[] {
     const result: UserPermissionInfo[] = [];
     for (const ra of roleAssignments) {
-      const roles = rdbArray(ra.RoleDefinitionBindings)
-        .map((r: any) => r.Name as string)
-        .filter((r) => !isSystemRole(r));
+      const bindings = rdbArray(ra.RoleDefinitionBindings).filter((r: any) => !isSystemRole(r));
+      const roles = bindings.map((r: any) => r.Name as string);
+      const roleTypeKinds: Record<string, number> = {};
+      for (const b of bindings) {
+        if (typeof b.RoleTypeKind === 'number') roleTypeKinds[b.Name] = b.RoleTypeKind;
+      }
       if (roles.length > 0) {
         const principalType = principalTypeLabel(ra.Member?.PrincipalType ?? 1);
         result.push({
@@ -251,6 +283,7 @@ export function toPermissionInfoList(roleAssignments: any[]): UserPermissionInfo
           displayName: ra.Member?.Title ?? '',
           principalType,
           roles,
+          roleTypeKinds: Object.keys(roleTypeKinds).length > 0 ? roleTypeKinds : undefined,
           groupId: principalType === 'SharePointGroup' ? (ra.Member?.Id as number | undefined) : undefined,
         });
       }
@@ -262,8 +295,9 @@ export function extractRoles(
     roleAssignments: any[],
     userLogin: string,
     groupLogins: Set<string>,
-  ): string[] {
+  ): { roles: string[]; roleTypeKinds: Record<string, number> } {
     const roles = new Set<string>();
+    const roleTypeKinds: Record<string, number> = {};
     for (const ra of roleAssignments) {
       const memberLogin: string = ra.Member?.LoginName ?? '';
       const match =
@@ -271,9 +305,12 @@ export function extractRoles(
         groupLogins.has(memberLogin.toLowerCase());
       if (match) {
         for (const rb of rdbArray(ra.RoleDefinitionBindings)) {
-          roles.add(rb.Name);
+          if (!isSystemRole(rb)) {
+            roles.add(rb.Name);
+            if (typeof rb.RoleTypeKind === 'number') roleTypeKinds[rb.Name] = rb.RoleTypeKind;
+          }
         }
       }
     }
-    return Array.from(roles);
+    return { roles: Array.from(roles), roleTypeKinds };
   }

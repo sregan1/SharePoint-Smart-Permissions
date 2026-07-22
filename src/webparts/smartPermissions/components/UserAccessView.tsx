@@ -809,7 +809,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                         <Badge
                           key={r}
                           appearance="filled"
-                          color={roleBadgeColor([r])}
+                          color={roleBadgeColor([r], item.uniquePermissions[0]?.roleTypeKinds)}
                           size="small"
                           style={{ marginRight: '4px', marginBottom: '2px' }}
                         >

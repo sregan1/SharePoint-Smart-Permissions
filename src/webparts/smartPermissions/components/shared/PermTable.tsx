@@ -106,7 +106,7 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
                 <Badge
                   key={ri}
                   appearance="filled"
-                  color={roleBadgeColor([r])}
+                  color={roleBadgeColor([r], u.roleTypeKinds)}
                   size="small"
                   style={{ marginRight: '4px', marginBottom: '2px' }}
                 >

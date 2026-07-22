@@ -93,7 +93,7 @@ export async function getItemPermissions(client: SpApiClient,
       const raData = await client.getJson(
         `${base}/RoleAssignments` +
           `?$expand=Member,RoleDefinitionBindings` +
-          `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+          `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
       );
       return { hasUnique: true, users: toPermissionInfoList(valueArray(raData)) };
     } catch (err) {
@@ -163,7 +163,7 @@ export async function getParentPermissions(client: SpApiClient,
           const raData = await client.getJson(
             `${base}/RoleAssignments` +
               `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
           );
           return {
             name: currentUrl.substring(currentUrl.lastIndexOf('/') + 1),

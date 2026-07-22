@@ -87,25 +87,41 @@ foreach ($site in $sites) {
                                 -LayoutType Article
             Write-Host "  Created $pageName.aspx"
         } else {
-            Write-Host "  $pageName.aspx already exists — adding web part"
+            Write-Host "  $pageName.aspx already exists"
         }
 
         $web = Get-PnPWeb
         $pageFileUrl = "$($web.ServerRelativeUrl.TrimEnd('/'))/SitePages/$pageName.aspx"
 
-        # Resolve to a full component object rather than passing the bare GUID —
-        # passing just the string leaves the control's component reference
-        # unbound (null id / empty data-sp-componentid in the saved canvas),
-        # which breaks manifest resolution when the page renders.
-        $component = Get-PnPPageComponent -Page $page -ListAvailable |
-            Where-Object { [Guid]$_.Id -eq [Guid]$componentId }
-        if (-not $component) {
-            throw "Component $componentId is not available on this site (not installed/approved?)"
-        }
+        # Resolve the pages library once by its stable, non-localized root-folder
+        # URL segment ("SitePages") rather than the display title "Site Pages" —
+        # the title is localized (e.g. German "Websiteseiten"), which would make
+        # every -List "Site Pages" lookup below fail silently on non-English sites,
+        # leaving the page provisioned but still inheriting Members/Visitors access.
+        $pagesList = Get-PnPList -Identity "SitePages"
 
-        Add-PnPPageWebPart -Page $page `
-            -Component $component `
-            -WebPartProperties $webPartProps
+        # Skip if the web part is already on the page - otherwise re-running
+        # against an existing page adds a second copy of it every time.
+        $existingWebPart = Get-PnPPageComponent -Page $page |
+            Where-Object { $_.Id -and [Guid]$_.Id -eq [Guid]$componentId }
+        if ($existingWebPart) {
+            Write-Host "  Web part already present - skipping add"
+        } else {
+            # Resolve to a full component object rather than passing the bare GUID -
+            # passing just the string leaves the control's component reference
+            # unbound (null id / empty data-sp-componentid in the saved canvas),
+            # which breaks manifest resolution when the page renders.
+            $component = Get-PnPPageComponent -Page $page -ListAvailable |
+                Where-Object { [Guid]$_.Id -eq [Guid]$componentId }
+            if (-not $component) {
+                throw "Component $componentId is not available on this site (not installed/approved?)"
+            }
+
+            Add-PnPPageWebPart -Page $page `
+                -Component $component `
+                -WebPartProperties $webPartProps
+            Write-Host "  Web part added"
+        }
 
         # Publish now, establishing the first major/published version. Nav
         # nodes can't link to a page that has never been published at all
@@ -117,14 +133,14 @@ foreach ($site in $sites) {
         Set-PnPPage -Identity $page -Publish -CommentsEnabled:$false -HeaderLayoutType NoImage
 
         # ── Permissions: Owners only ──────────────────────────────────────────
-        $pageItem = Get-PnPListItem -List "Site Pages" `
+        $pageItem = Get-PnPListItem -List $pagesList `
             -Query "<View><Query><Where><Eq><FieldRef Name='FileLeafRef'/><Value Type='Text'>$pageName.aspx</Value></Eq></Where></Query></View>"
         if ($pageItem) {
             $ownersGroup = Get-PnPGroup -AssociatedOwnerGroup
             # Breaks inheritance, clears existing role assignments, and grants
             # the Owners group Full Control — all in one call, since
             # -ClearExisting is only valid alongside -User/-Group.
-            Set-PnPListItemPermission -List "Site Pages" -Identity $pageItem.Id `
+            Set-PnPListItemPermission -List $pagesList -Identity $pageItem.Id `
                 -Group $ownersGroup -AddRole "Full Control" -ClearExisting
             Write-Host "  Permissions set: Owners only"
         } else {
@@ -133,9 +149,10 @@ foreach ($site in $sites) {
 
         # ── Navigation: add to Quick Launch ──────────────────────────────────
         $pageUrl = "$($site.Url)/SitePages/$pageName.aspx"
-        # Remove any existing node with the same title to avoid duplicates
+        # Remove any existing node for this exact page (title AND url) so an
+        # unrelated node that happens to share the page's title is left alone.
         $existingNode = Get-PnPNavigationNode -Location QuickLaunch |
-            Where-Object { $_.Title -eq $pageTitle }
+            Where-Object { $_.Title -eq $pageTitle -and $_.Url -eq $pageUrl }
         if ($existingNode) {
             Remove-PnPNavigationNode -Identity $existingNode.Id -Force
         }
@@ -157,16 +174,26 @@ foreach ($site in $sites) {
         # ── Page audience targeting ───────────────────────────────────────────
         if ($pageItem -and $siteData.GroupId -ne [Guid]::Empty) {
             # Enable audience targeting on the Site Pages library (idempotent)
-            Set-PnPList -Identity "Site Pages" -EnableAudienceTargeting $true
+            Set-PnPList -Identity $pagesList -EnableModernAudienceTargeting $true
             # Set the M365 Owners group as the page audience
             $ownersClaim = "c:0o.c|federateddirectoryclaimprovider|$($siteData.GroupId)"
-            Set-PnPListItem -List "Site Pages" -Identity $pageItem.Id -Values @{
+            Set-PnPListItem -List $pagesList -Identity $pageItem.Id -Values @{
                 "_ModernAudienceTargetUserField" = $ownersClaim
             } | Out-Null
             Write-Host "  Page audience set: Owners group"
         } elseif ($pageItem) {
             Write-Host "  Page audience skipped — non-M365 site (SharePoint groups not supported for audience targeting)"
         }
+
+        # Clear the byline so the page doesn't show whichever account ran
+        # this provisioning script as the author. Article's page header
+        # always renders "By <name>" from PageHeader.AuthorByLine unless
+        # it's blanked out here; done last so the permissions/audience
+        # list-item updates above don't get overwritten by this Save().
+        $page = Get-PnPPage -Identity "$pageName.aspx"
+        $page.PageHeader.AuthorByLine = ""
+        $page.PageHeader.Authors = ""
+        $page.Save() | Out-Null
 
         # Publish directly via SharePoint's native REST endpoint (the same one
         # the browser's "Publish" button calls) rather than relying on

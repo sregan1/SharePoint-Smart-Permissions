@@ -181,7 +181,7 @@ async function scanSite(client: SpApiClient,
               const raData = await client.getJson(
                 `${listApi(siteUrl, libUrl)}/RoleAssignments` +
                   `?$expand=Member,RoleDefinitionBindings` +
-                  `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+                  `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
               );
               libPerms = toPermissionInfoList(valueArray(raData));
             } catch (err: any) {
@@ -273,7 +273,7 @@ async function scanSite(client: SpApiClient,
               }
               memberCache.set(cacheKey, members);
             }
-            members.forEach((m) => expanded.push({ ...m, roles: [...up.roles], sourceGroup: up.displayName }));
+            members.forEach((m) => expanded.push({ ...m, roles: [...up.roles], roleTypeKinds: up.roleTypeKinds, sourceGroup: up.displayName }));
           }
         }
         entry.uniquePermissions = expanded;
@@ -369,7 +369,7 @@ async function walkFolder(client: SpApiClient,
           const raData = await client.getJson(
             `${folderApi(siteUrl, subfolder.ServerRelativeUrl)}/ListItemAllFields/RoleAssignments` +
               `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
           );
           folderPerms = toPermissionInfoList(valueArray(raData));
           hasUnique = true;
@@ -428,7 +428,7 @@ async function walkFolder(client: SpApiClient,
           const raData = await client.getJson(
             `${fileApi(siteUrl, file.ServerRelativeUrl)}/ListItemAllFields/RoleAssignments` +
               `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name`,
+              `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
           );
           filePerms = toPermissionInfoList(valueArray(raData));
           hasUnique = true;

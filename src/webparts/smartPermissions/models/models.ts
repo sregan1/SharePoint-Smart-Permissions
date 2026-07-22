@@ -18,6 +18,8 @@ export interface UserPermissionInfo {
   displayName: string;
   principalType: string; // 'User', 'SecurityGroup', 'SharePointGroup'
   roles: string[];
+  /** Maps each entry in `roles` to its SharePoint RoleTypeKind, when known. */
+  roleTypeKinds?: Record<string, number>;
   isGroupMember?: boolean;
   sourceGroup?: string; // group name if this user was expanded from a group; undefined = direct assignment
   /**

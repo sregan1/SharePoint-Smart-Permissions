@@ -2,7 +2,7 @@ import { MSGraphClientV3 } from '@microsoft/sp-http';
 import { UserPermissionInfo, PermissionEntry, ObjectType } from '../../models/models';
 import {
   SpApiClient, TaskQueue, odata, valueArray, rdbArray, isPermissionDenied, isGraphPermissionError,
-  isSystemRole, isSystemLibrary, folderApi, fileApi, isLibraryTemplate, extractRoles,
+  isSystemRole, isSystemLibrary, folderApi, fileApi, isLibraryTemplate, extractRoles, roleAccessTier,
 } from './spCore';
 
 // Verbose diagnostic logging for the group/role resolution logic below. This
@@ -70,6 +70,7 @@ export async function getUserAccess(client: SpApiClient,
     // ── Site roles ──
     onProgress('Loading site permissions…');
     let siteRoles: string[] = [];
+    let siteRoleTypeKinds: Record<string, number> = {};
     let webData: any = null;
     let roleAssignmentsDenied = false;
 
@@ -86,8 +87,9 @@ export async function getUserAccess(client: SpApiClient,
           principalType: ra.Member?.PrincipalType,
           roles: rdbArray(ra.RoleDefinitionBindings).map((r: any) => r.Name),
         })));
-      siteRoles = extractRoles(allRa, userLoginName, groupLogins)
-        .filter((r) => !isSystemRole(r));
+      const siteExtract = extractRoles(allRa, userLoginName, groupLogins);
+      siteRoles = siteExtract.roles;
+      siteRoleTypeKinds = siteExtract.roleTypeKinds;
       debugLog('[SmartPermissions] getUserAccess: siteRoles after extractRoles=%o', siteRoles);
     } catch (err) {
       debugLog('[SmartPermissions] getUserAccess: web RoleAssignments fetch failed', err);
@@ -150,6 +152,7 @@ export async function getUserAccess(client: SpApiClient,
         valueArray(webData.RoleAssignments),
       );
       siteRoles = aadResult.roles;
+      siteRoleTypeKinds = aadResult.roleTypeKinds;
       graphPermissionRequired = aadResult.graphUnavailable;
       debugLog('[SmartPermissions] getUserAccess: siteRoles after AAD fallback=%o graphPermissionRequired=%s',
         siteRoles, graphPermissionRequired);
@@ -169,7 +172,7 @@ export async function getUserAccess(client: SpApiClient,
           `?${libFilterClause}` +
           `$select=Title,BaseTemplate,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
           `,RoleAssignments/Member/LoginName,RoleAssignments/Member/PrincipalType` +
-          `,RoleAssignments/RoleDefinitionBindings/Name` +
+          `,RoleAssignments/RoleDefinitionBindings/Name,RoleAssignments/RoleDefinitionBindings/RoleTypeKind` +
           `&$expand=RootFolder,RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings` +
           `&$top=500`,
         signal,
@@ -206,16 +209,13 @@ export async function getUserAccess(client: SpApiClient,
             displayName: userTitle,
             principalType: 'User',
             roles: siteRoles,
+            roleTypeKinds: siteRoleTypeKinds,
           },
         ],
       };
     }
 
-    const isOwner = siteRoles.some(
-      (r) =>
-        r.toLowerCase().includes('full control') ||
-        r.toLowerCase().includes('owner'),
-    );
+    const isOwner = siteRoles.some((r) => roleAccessTier(r, siteRoleTypeKinds[r]) === 'admin');
 
     // Full Site Access banner — owners have Full Control everywhere when no
     // library breaks inheritance. If some do, scan to verify actual access.
@@ -243,11 +243,12 @@ export async function getUserAccess(client: SpApiClient,
         const isLib = isLibraryTemplate(lib.BaseTemplate ?? 0);
 
         if (lib.HasUniqueRoleAssignments && libsHaveRoles) {
-          const libRoles = extractRoles(
+          const libExtract = extractRoles(
             valueArray(lib.RoleAssignments),
             userLoginName,
             groupLogins,
-          ).filter((r) => !isSystemRole(r));
+          );
+          const libRoles = libExtract.roles;
 
           if (libRoles.length > 0) {
             items.push({
@@ -263,6 +264,7 @@ export async function getUserAccess(client: SpApiClient,
                   displayName: userTitle,
                   principalType: 'User',
                   roles: libRoles,
+                  roleTypeKinds: libExtract.roleTypeKinds,
                 },
               ],
               noCrawl: lib.NoCrawl ? true : undefined,
@@ -354,11 +356,10 @@ async function walkFoldersForUser(client: SpApiClient,
           const raData = await client.getJson(
             `${folderApi(siteUrl, subfolder.ServerRelativeUrl)}/ListItemAllFields/RoleAssignments` +
               `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
+              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
           );
-          const roles = extractRoles(valueArray(raData), userLogin, groupLogins).filter(
-            (r) => !isSystemRole(r),
-          );
+          const extracted = extractRoles(valueArray(raData), userLogin, groupLogins);
+          const roles = extracted.roles;
           if (roles.length > 0) {
             results.push({
               objectType: ObjectType.Folder,
@@ -368,7 +369,7 @@ async function walkFoldersForUser(client: SpApiClient,
               hasUniquePermissions: true,
               depth,
               uniquePermissions: [
-                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles },
+                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles, roleTypeKinds: extracted.roleTypeKinds },
               ],
             });
           }
@@ -381,11 +382,10 @@ async function walkFoldersForUser(client: SpApiClient,
           const raData = await client.getJson(
             `${fileApi(siteUrl, file.ServerRelativeUrl)}/ListItemAllFields/RoleAssignments` +
               `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name`,
+              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
           );
-          const roles = extractRoles(valueArray(raData), userLogin, groupLogins).filter(
-            (r) => !isSystemRole(r),
-          );
+          const extracted = extractRoles(valueArray(raData), userLogin, groupLogins);
+          const roles = extracted.roles;
           if (roles.length > 0) {
             results.push({
               objectType: ObjectType.File,
@@ -395,7 +395,7 @@ async function walkFoldersForUser(client: SpApiClient,
               hasUniquePermissions: true,
               depth,
               uniquePermissions: [
-                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles },
+                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles, roleTypeKinds: extracted.roleTypeKinds },
               ],
             });
           }
@@ -436,7 +436,7 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
     userLoginName: string,
     userEmail: string,
     actionableGroupRas: any[],
-  ): Promise<{ roles: string[]; graphUnavailable: boolean }> {
+  ): Promise<{ roles: string[]; roleTypeKinds: Record<string, number>; graphUnavailable: boolean }> {
     try {
       // GroupId lives on the site collection (_api/site), not the web.
       // AssociatedOwnerGroup/MemberGroup live on the web (_api/web).
@@ -453,13 +453,13 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
 
       if (!m365GroupId || m365GroupId === '00000000-0000-0000-0000-000000000000') {
         debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: site not M365-connected');
-        return { roles: [], graphUnavailable: false };
+        return { roles: [], roleTypeKinds: {}, graphUnavailable: false };
       }
 
       const identifier = userEmail ||
         (userLoginName.includes('|') ? userLoginName.split('|').pop() : null) ||
         userLoginName;
-      if (!identifier) return { roles: [], graphUnavailable: true };
+      if (!identifier) return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
 
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
 
@@ -479,7 +479,7 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
         userGroupIds.size, userGroupIds.has(m365GroupId.toLowerCase()), userAadId || '(unknown)');
 
       if (!userGroupIds.has(m365GroupId.toLowerCase())) {
-        return { roles: [], graphUnavailable: false };
+        return { roles: [], roleTypeKinds: {}, graphUnavailable: false };
       }
 
       // User is in the M365 Group. Check if they're an Owner (→ AssociatedOwnerGroup →
@@ -520,7 +520,7 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
 
       if (ownerCheckFailed) {
         debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: owner check inconclusive — Graph permission required');
-        return { roles: [], graphUnavailable: true };
+        return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
       }
 
       debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: isOwner=%s', isOwner);
@@ -531,20 +531,23 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
       debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: mapped to SP group id=%s', targetSpGroupId);
 
       const roles: string[] = [];
+      const roleTypeKinds: Record<string, number> = {};
       if (targetSpGroupId) {
         const matchedRa = actionableGroupRas.find((ra: any) => ra.Member?.Id === targetSpGroupId);
         if (matchedRa) {
           rdbArray(matchedRa.RoleDefinitionBindings)
-            .map((r: any) => r.Name as string)
-            .filter((r) => !isSystemRole(r))
-            .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
+            .filter((r: any) => !isSystemRole(r))
+            .forEach((r: any) => {
+              if (roles.indexOf(r.Name) === -1) roles.push(r.Name);
+              if (typeof r.RoleTypeKind === 'number') roleTypeKinds[r.Name] = r.RoleTypeKind;
+            });
         }
       }
       debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: resolved roles=%o', roles);
-      return { roles, graphUnavailable: false };
+      return { roles, roleTypeKinds, graphUnavailable: false };
     } catch (err) {
       debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: failed', err);
-      return { roles: [], graphUnavailable: true };
+      return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
     }
   }
 
@@ -567,7 +570,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
     userLoginName: string,
     userEmail: string,
     roleAssignments: any[],
-  ): Promise<{ roles: string[]; graphUnavailable: boolean }> {
+  ): Promise<{ roles: string[]; roleTypeKinds: Record<string, number>; graphUnavailable: boolean }> {
     // Include all non-user principals: SharePoint groups (pt=8) AND AAD/M365 groups (pt=4).
     // Direct user assignments (pt=1) are already handled by extractRoles.
     // We extend beyond AAD-only because M365-connected sites often use classic SP groups
@@ -579,7 +582,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
     });
     // Skip groups whose roles are all system roles (e.g. Limited Access System Group).
     const actionableGroupRas = groupRas.filter((ra: any) =>
-      rdbArray(ra.RoleDefinitionBindings).some((r: any) => !isSystemRole(r.Name as string)),
+      rdbArray(ra.RoleDefinitionBindings).some((r: any) => !isSystemRole(r)),
     );
     debugLog('[SmartPermissions] getAadGroupSiteRoles: actionable groups=%o',
       actionableGroupRas.map((ra: any) => ({
@@ -591,7 +594,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
       })));
     if (actionableGroupRas.length === 0) {
       debugLog('[SmartPermissions] getAadGroupSiteRoles: no actionable groups — nothing to check');
-      return { roles: [], graphUnavailable: false };
+      return { roles: [], roleTypeKinds: {}, graphUnavailable: false };
     }
 
     // Helper: is this group an AAD/M365/Security group (vs a classic SP group)?
@@ -603,6 +606,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
 
     // ── Phase 1: SharePoint REST membership check ─────────────────────────
     const roles: string[] = [];
+    const roleTypeKinds: Record<string, number> = {};
     const needsGraph: any[] = [];
     const encUser = encodeURIComponent(`'${odata(userLoginName)}'`);
 
@@ -626,9 +630,11 @@ async function getAadGroupSiteRoles(client: SpApiClient,
         debugLog('[SmartPermissions] getAadGroupSiteRoles: REST "%s" (id=%s pt=%s) → found=%s', label, groupId, pt, found);
         if (found) {
           rdbArray(ra.RoleDefinitionBindings)
-            .map((r: any) => r.Name as string)
-            .filter((r) => !isSystemRole(r))
-            .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
+            .filter((r: any) => !isSystemRole(r))
+            .forEach((r: any) => {
+              if (roles.indexOf(r.Name) === -1) roles.push(r.Name);
+              if (typeof r.RoleTypeKind === 'number') roleTypeKinds[r.Name] = r.RoleTypeKind;
+            });
         } else if (isAadGroup(groupLogin)) {
           debugLog('[SmartPermissions] getAadGroupSiteRoles: "%s" → empty (AAD, ambiguous), queuing for Graph', label);
           needsGraph.push(ra);
@@ -645,7 +651,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
 
     if (roles.length > 0) {
       debugLog('[SmartPermissions] getAadGroupSiteRoles: resolved via REST=%o', roles);
-      return { roles, graphUnavailable: false };
+      return { roles, roleTypeKinds, graphUnavailable: false };
     }
     if (needsGraph.length === 0) {
       // No AAD groups need Graph, but SP group member lists only contain static entries.
@@ -662,7 +668,7 @@ async function getAadGroupSiteRoles(client: SpApiClient,
       userLoginName;
     debugLog('[SmartPermissions] getAadGroupSiteRoles: %d group(s) need Graph, identifier=%s',
       needsGraph.length, identifier);
-    if (!identifier) return { roles: [], graphUnavailable: true };
+    if (!identifier) return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
 
     try {
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
@@ -675,15 +681,17 @@ async function getAadGroupSiteRoles(client: SpApiClient,
         debugLog('[SmartPermissions] getAadGroupSiteRoles: Graph guid=%s matched=%s', guid, matched);
         if (matched) {
           rdbArray(ra.RoleDefinitionBindings)
-            .map((r: any) => r.Name as string)
-            .filter((r) => !isSystemRole(r))
-            .forEach((r) => { if (roles.indexOf(r) === -1) roles.push(r); });
+            .filter((r: any) => !isSystemRole(r))
+            .forEach((r: any) => {
+              if (roles.indexOf(r.Name) === -1) roles.push(r.Name);
+              if (typeof r.RoleTypeKind === 'number') roleTypeKinds[r.Name] = r.RoleTypeKind;
+            });
         }
       }
       debugLog('[SmartPermissions] getAadGroupSiteRoles: resolved via Graph=%o', roles);
-      return { roles, graphUnavailable: false };
+      return { roles, roleTypeKinds, graphUnavailable: false };
     } catch (err) {
       debugLog('[SmartPermissions] getAadGroupSiteRoles: Graph failed', err);
-      return { roles: [], graphUnavailable: true };
+      return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
     }
   }

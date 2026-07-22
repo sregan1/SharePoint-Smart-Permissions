@@ -3,6 +3,7 @@
 // chunk. Only types are imported statically (erased at compile time).
 import type * as ExcelJS from 'exceljs';
 import { PermissionEntry, ObjectType, UserPermissionInfo } from '../models/models';
+import { roleAccessTier } from './sp/spCore';
 
 let excelModulePromise: Promise<typeof ExcelJS> | undefined;
 function loadExcelJS(): Promise<typeof ExcelJS> {
@@ -32,23 +33,11 @@ const COLOR = {
   folderTypeFont: 'FF323130',
 };
 
-function roleColor(roles: string[]): string {
-  if (roles.some((r) => r.toLowerCase().includes('full control'))) return COLOR.roleFullControl;
-  if (
-    roles.some(
-      (r) =>
-        r.toLowerCase().includes('edit') ||
-        r.toLowerCase().includes('contribute') ||
-        r.toLowerCase().includes('design'),
-    )
-  )
-    return COLOR.roleEdit;
-  if (
-    roles.some(
-      (r) => r.toLowerCase().includes('read') || r.toLowerCase().includes('view'),
-    )
-  )
-    return COLOR.roleRead;
+function roleColor(roles: string[], roleTypeKinds?: Record<string, number>): string {
+  const tiers = roles.map((r) => roleAccessTier(r, roleTypeKinds?.[r]));
+  if (tiers.indexOf('admin') !== -1) return COLOR.roleFullControl;
+  if (tiers.indexOf('edit') !== -1) return COLOR.roleEdit;
+  if (tiers.indexOf('read') !== -1) return COLOR.roleRead;
   return COLOR.roleOther;
 }
 
@@ -146,7 +135,7 @@ export class ExcelExportService {
       const roles = entry.uniquePermissions[0]?.roles ?? [];
       const roleCell = row.getCell(4);
       roleCell.value = roles.join(', ');
-      roleCell.fill = argbFill(roleColor(roles));
+      roleCell.fill = argbFill(roleColor(roles, entry.uniquePermissions[0]?.roleTypeKinds));
       roleCell.alignment = { vertical: 'middle' };
 
       row.commit();
@@ -429,7 +418,7 @@ export class ExcelExportService {
 
       const roleCell = row.getCell(8);
       roleCell.value = user.roles.join(', ');
-      roleCell.fill = argbFill(roleColor(user.roles));
+      roleCell.fill = argbFill(roleColor(user.roles, user.roleTypeKinds));
       roleCell.alignment = { vertical: 'middle' };
     }
 

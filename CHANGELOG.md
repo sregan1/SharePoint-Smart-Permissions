@@ -4,6 +4,38 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.6.0] — 2026-07-22
+
+### Fixed
+
+- **Localized (non-English) tenant accuracy**
+  - System role filtering ("Limited Access" / "Web-Only Limited Access") now
+    checks SharePoint's language-invariant `RoleTypeKind` field first, falling
+    back to the English display name only when `RoleTypeKind` isn't
+    available. Previously the check matched only the English name, so these
+    auto-assigned, no-meaningful-permission roles weren't recognized on
+    non-English tenants and appeared as noise in every tool's results.
+  - "Full Site Access" / Owner-level detection in User Access, and
+    permission-level color-coding for badges and Excel exports across all
+    three tools, now use the same `RoleTypeKind`-first classification instead
+    of matching English words like "Full Control" or "Edit" in the role name.
+  - The provisioning script (`scripts/Provision-SmartPermissions.ps1`) now
+    resolves the pages library by its stable "SitePages" URL segment instead
+    of the localized "Site Pages" display title, so page permissions, Quick
+    Launch navigation, and audience targeting no longer silently fail to
+    apply on non-English sites.
+- **Provisioning script — Quick Launch de-duplication**
+  The existing-node check before adding the page to Quick Launch now matches
+  on URL as well as title, so an unrelated page that happens to share the
+  same title is left alone instead of having its nav node replaced.
+
+### Changed
+
+- Added a `workbench` npm script (`gulp clean && gulp serve`) as a
+  convenience alias for starting the local dev server.
+
+---
+
 ## [1.5.1] — 2026-07-14
 
 ### Changed
