@@ -3,20 +3,8 @@ import { UserPermissionInfo, PermissionEntry, ObjectType } from '../../models/mo
 import {
   SpApiClient, TaskQueue, odata, valueArray, rdbArray, isPermissionDenied, isGraphPermissionError,
   isSystemRole, isSystemLibrary, folderApi, fileApi, isLibraryTemplate, extractRoles, roleAccessTier,
+  debugLog,
 } from './spCore';
-
-// Verbose diagnostic logging for the group/role resolution logic below. This
-// includes PII about the audited user (email, login, AAD object id) and group
-// topology, which shouldn't sit in the browser console by default — opt in
-// via localStorage.setItem('smartPermissionsDebug', '1') when troubleshooting.
-function debugLog(...args: unknown[]): void {
-  try {
-    if (window.localStorage?.getItem('smartPermissionsDebug') === '1') {
-      // eslint-disable-next-line no-console
-      console.debug(...args);
-    }
-  } catch { /* localStorage unavailable (e.g. private browsing) */ }
-}
 
 // A single .top(999) page silently truncated for users in more than 999 groups,
 // turning a genuine member into a false "not a member" result. Follow

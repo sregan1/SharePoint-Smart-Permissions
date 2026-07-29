@@ -60,6 +60,28 @@ export class TaskQueue {
   }
 }
 
+// Verbose diagnostic logging, opt-in via
+// localStorage.setItem('smartPermissionsDebug', '1'). Used for output that is
+// either too noisy for normal operation or carries PII (audited users' emails,
+// logins, AAD object ids, group topology) that shouldn't sit in the console by
+// default.
+export function debugLog(...args: unknown[]): void {
+  try {
+    if (window.localStorage?.getItem('smartPermissionsDebug') === '1') {
+      // eslint-disable-next-line no-console
+      console.debug(...args);
+    }
+  } catch { /* localStorage unavailable (e.g. private browsing) */ }
+}
+
+export function isDebugEnabled(): boolean {
+  try {
+    return window.localStorage?.getItem('smartPermissionsDebug') === '1';
+  } catch {
+    return false;
+  }
+}
+
 // Detect Graph API permission errors (HTTP 401/403 or well-known message patterns).
 // Exported so views can use it without duplicating the detection logic.
 export function isGraphPermissionError(err: any): boolean {
@@ -194,6 +216,18 @@ export function isLibraryTemplate(baseTemplate: number): boolean {
   return LIBRARY_TEMPLATES.indexOf(baseTemplate) !== -1;
 }
 
+const MAX_ATTEMPTS = 4;
+// Consecutive throttled responses after which the client stops issuing requests
+// entirely. Without this, a throttled tenant-wide scan grinds through hundreds of
+// sites failing on every one, and that continued traffic is exactly what keeps
+// SharePoint's throttle applied. Better to stop and tell the user.
+const THROTTLE_CIRCUIT_LIMIT = 10;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+export const THROTTLE_ABORT_MESSAGE =
+  'SharePoint is throttling this tenant, so the scan was stopped to let it recover. ' +
+  'Wait several minutes, then retry with a lower "Concurrent requests" value in Settings.';
+
 // Shared API client: SPFx context plus the throttling-aware fetch helpers and
 // user-tunable scan settings. All sp/ modules take this as their first argument.
 export class SpApiClient {
@@ -203,35 +237,154 @@ export class SpApiClient {
   /** Max group members fetched before capping. Settable from Settings. */
   public groupMemberCap = 500;
 
+  // Tenant-wide throttle gate. SharePoint throttles per user/tenant, not per
+  // request, so a 429 on any one call means every other in-flight call is about
+  // to be throttled too. Retrying each request on its own schedule (the previous
+  // behavior) meant N concurrent workers kept hammering a server that had just
+  // asked us to stop, escalating a brief throttle into a tenant-wide lockout
+  // that takes down unrelated SharePoint traffic. Instead, one 429 parks every
+  // request behind a shared deadline.
+  private throttledUntil = 0;
+  private consecutiveThrottles = 0;
+  private circuitOpen = false;
+  /** Count of throttled responses seen this session — surfaced for diagnostics. */
+  public throttleEventCount = 0;
+
   constructor(context: WebPartContext) {
     this.context = context;
   }
 
-  // Retries on 429/503 using the Retry-After header, and on thrown/rejected
-  // errors (network blips) using capped exponential backoff with jitter —
-  // both share the same 3-attempt cap. A rejected fetch previously got no
+  /** True while the shared throttle gate is holding requests back. */
+  public get isThrottled(): boolean {
+    return Date.now() < this.throttledUntil;
+  }
+
+  /**
+   * True once sustained throttling has tripped the circuit breaker. Long-running
+   * scans should check this between items and stop early rather than queue more
+   * work that is certain to fail.
+   */
+  public get isCircuitOpen(): boolean {
+    return this.circuitOpen;
+  }
+
+  /** Clears throttle state so a new scan can start fresh after a cooldown. */
+  public resetThrottleState(): void {
+    this.throttledUntil = 0;
+    this.consecutiveThrottles = 0;
+    this.circuitOpen = false;
+    this.throttleEventCount = 0;
+  }
+
+  private async waitForThrottleGate(signal?: AbortSignal): Promise<void> {
+    // Re-check in slices rather than one long sleep so an abort stays responsive.
+    while (!signal?.aborted && Date.now() < this.throttledUntil) {
+      await sleep(Math.min(this.throttledUntil - Date.now(), 1000));
+    }
+  }
+
+  // SharePoint signals throttling in more ways than a 429. Under sustained load
+  // it redirects requests to /_layouts/15/Throttle.htm, which comes back as a
+  // 406 and/or an HTML body where JSON was expected — never as 429. Checking
+  // only the status code meant this form of throttling went entirely undetected,
+  // so the gate never engaged and the client kept hammering a tenant that had
+  // already started refusing traffic.
+  private isThrottleResponse(resp: SPHttpClientResponse): boolean {
+    if (resp.status === 429 || resp.status === 503) return true;
+    if ((resp.url ?? '').toLowerCase().includes('throttle.htm')) return true;
+    // 406 is not otherwise expected: every call here explicitly asks for JSON.
+    if (resp.status === 406) return true;
+    if (resp.status === 200 && (resp.headers.get('content-type') ?? '').includes('text/html')) {
+      return true;
+    }
+    return false;
+  }
+
+  private noteThrottled(resp: SPHttpClientResponse, attempt: number): void {
+    this.throttleEventCount++;
+    this.consecutiveThrottles++;
+    if (this.consecutiveThrottles >= THROTTLE_CIRCUIT_LIMIT) this.circuitOpen = true;
+    const header = parseInt(resp.headers.get('Retry-After') ?? '', 10);
+    // Fall back to exponential backoff when Retry-After is absent, and clamp:
+    // a missing/garbage header shouldn't mean a 1-second retry storm, nor should
+    // an outlier value stall a scan for many minutes.
+    const seconds = Number.isFinite(header) && header > 0
+      ? Math.min(header, 120)
+      : Math.min(5 * 2 ** attempt, 60);
+    const until = Date.now() + seconds * 1000;
+    if (until > this.throttledUntil) this.throttledUntil = until;
+  }
+
+  // Single retry/throttle path shared by getJson and postJson. Retries 429/503
+  // behind the shared gate, and thrown/rejected requests (network blips) with
+  // capped exponential backoff and jitter — a rejected fetch previously got no
   // retry at all, which fed spurious "permission denied"/"inherited" results
   // into callers that treat any thrown error as a permission failure.
-  public async getJson(url: string, attempt = 0, signal?: AbortSignal): Promise<any> {
+  private async send(
+    doRequest: () => Promise<SPHttpClientResponse>,
+    attempt: number,
+    signal?: AbortSignal,
+  ): Promise<any> {
+    // Once the breaker is open, fail immediately without touching the network.
+    if (this.circuitOpen) throw new Error(THROTTLE_ABORT_MESSAGE);
+    await this.waitForThrottleGate(signal);
+    if (signal?.aborted) throw new Error('Request aborted');
+
     let resp: SPHttpClientResponse;
     try {
-      resp = await this.context.spHttpClient.get(url, SPHttpClient.configurations.v1);
+      resp = await doRequest();
     } catch (err) {
-      if (signal?.aborted || attempt >= 3) throw err;
-      const backoff = Math.min(1000 * 2 ** attempt, 8000) + Math.random() * 500;
-      await new Promise((r) => setTimeout(r, backoff));
-      return this.getJson(url, attempt + 1, signal);
+      if (signal?.aborted || attempt >= MAX_ATTEMPTS) throw err;
+      await sleep(Math.min(1000 * 2 ** attempt, 8000) + Math.random() * 500);
+      return this.send(doRequest, attempt + 1, signal);
     }
-    if ((resp.status === 429 || resp.status === 503) && attempt < 3) {
-      const retryAfter = parseInt(resp.headers.get('Retry-After') ?? '10', 10);
-      await new Promise((r) => setTimeout(r, (isNaN(retryAfter) ? 10 : retryAfter) * 1000));
-      return this.getJson(url, attempt + 1, signal);
+
+    if (this.isThrottleResponse(resp)) {
+      this.noteThrottled(resp, attempt);
+      if (this.circuitOpen || attempt >= MAX_ATTEMPTS) {
+        throw new Error(THROTTLE_ABORT_MESSAGE);
+      }
+      return this.send(doRequest, attempt + 1, signal);
     }
+
+    // A clean response means the tenant is serving us again — only a *run* of
+    // throttles should trip the breaker, not throttles scattered across an
+    // otherwise healthy scan.
+    this.consecutiveThrottles = 0;
+
     if (!resp.ok) {
       const txt = await resp.text();
       throw new Error(`HTTP ${resp.status} — ${txt.substring(0, 300)}`);
     }
     return resp.json();
+  }
+
+  public getJson(url: string, attempt = 0, signal?: AbortSignal, config = SPHttpClient.configurations.v1): Promise<any> {
+    return this.send(() => this.context.spHttpClient.get(url, config), attempt, signal);
+  }
+
+  // POST counterpart to getJson. Needed for endpoints that only accept POST
+  // (notably _api/search/postquery, where the query is a structured body rather
+  // than URL parameters).
+  public postJson(
+    url: string,
+    body: unknown,
+    attempt = 0,
+    signal?: AbortSignal,
+    headers: Record<string, string> = {},
+  ): Promise<any> {
+    return this.send(
+      () => this.context.spHttpClient.post(url, SPHttpClient.configurations.v1, {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'Content-Type': 'application/json;odata=nometadata',
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      }),
+      attempt,
+      signal,
+    );
   }
 
   // Fetches a collection endpoint and follows server-side paging links so

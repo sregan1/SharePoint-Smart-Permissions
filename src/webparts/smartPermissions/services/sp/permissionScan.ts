@@ -15,37 +15,79 @@ export async function scanPermissions(client: SpApiClient,
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
-  ): Promise<{ entries: PermissionEntry[]; groupPermissionDenied: boolean; roleAssignmentsDenied: boolean }> {
+  ): Promise<{
+    entries: PermissionEntry[];
+    groupPermissionDenied: boolean;
+    roleAssignmentsDenied: boolean;
+    deniedPaths: string[];
+    throttleAborted: boolean;
+    sitesTotal: number;
+    sitesScanned: number;
+  }> {
     const entries: PermissionEntry[] = [];
-    const flags = { groupPermissionDenied: false, roleAssignmentsDenied: false };
+    const flags: ScanFlags = {
+      groupPermissionDenied: false,
+      roleAssignmentsDenied: false,
+      deniedPaths: [],
+      throttleAborted: false,
+    };
     const emit0 = (message: string): void =>
       onProgress({ message, scanned: entries.length, libsDone: 0, libsTotal: 0 });
+    let sitesTotal = 0;
+    let sitesScanned = 0;
 
     if (options.allSites) {
       emit0('Discovering site collections…');
       const sites = await getAllSites(client, options.siteUrl, signal);
+      sitesTotal = sites.length;
       for (const site of sites) {
         if (signal?.aborted) break;
+        // Sustained throttling has tripped the client's breaker: every further
+        // request would fail anyway, and continuing to send them is what keeps
+        // the tenant throttled. Stop and let the caller report partial results.
+        if (client.isCircuitOpen) {
+          flags.throttleAborted = true;
+          break;
+        }
         emit0(`Scanning: ${site.title}`);
         await scanSiteTree(client, site.url, options, entries, onProgress, signal, onEntry, flags);
+        sitesScanned++;
       }
     } else {
+      sitesTotal = 1;
       await scanSiteTree(client, options.siteUrl, options, entries, onProgress, signal, onEntry, flags);
+      sitesScanned = 1;
     }
 
-    return { entries, groupPermissionDenied: flags.groupPermissionDenied, roleAssignmentsDenied: flags.roleAssignmentsDenied };
+    return {
+      entries,
+      groupPermissionDenied: flags.groupPermissionDenied,
+      roleAssignmentsDenied: flags.roleAssignmentsDenied,
+      deniedPaths: flags.deniedPaths,
+      throttleAborted: flags.throttleAborted,
+      sitesTotal,
+      sitesScanned,
+    };
+  }
+
+  interface ScanFlags {
+    groupPermissionDenied: boolean;
+    roleAssignmentsDenied: boolean;
+    deniedPaths: string[];
+    /** Set when sustained throttling ended the scan before all sites were visited. */
+    throttleAborted: boolean;
   }
 
   // Scans a web and, when includeSubsites is set, recurses depth-first into
   // its subwebs (each subweb re-fetches its own /webs).
-async function scanSiteTree(client: SpApiClient, 
+async function scanSiteTree(client: SpApiClient,
     siteUrl: string,
     options: ReportOptions,
     entries: PermissionEntry[],
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
-    flags?: { groupPermissionDenied: boolean; roleAssignmentsDenied: boolean },
+    flags?: ScanFlags,
   ): Promise<void> {
     await scanSite(client, siteUrl, options, entries, onProgress, signal, onEntry, flags);
     if (!options.includeSubsites || signal?.aborted) return;
@@ -73,7 +115,7 @@ async function scanSite(client: SpApiClient,
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
-    flags?: { groupPermissionDenied: boolean; roleAssignmentsDenied: boolean },
+    flags?: ScanFlags,
   ): Promise<void> {
     const startIndex = entries.length;
     let libsDone = 0;
@@ -105,7 +147,10 @@ async function scanSite(client: SpApiClient,
       onEntry?.(siteEntry);
     } catch (err: any) {
       const denied = isPermissionDenied(err);
-      if (denied && flags) flags.roleAssignmentsDenied = true;
+      if (denied && flags) {
+        flags.roleAssignmentsDenied = true;
+        flags.deniedPaths.push(siteUrl);
+      }
       // Fallback: no role assignments, just record the site.
       try {
         const webData = await client.getJson(
@@ -186,7 +231,10 @@ async function scanSite(client: SpApiClient,
               libPerms = toPermissionInfoList(valueArray(raData));
             } catch (err: any) {
               if (isPermissionDenied(err)) {
-                if (flags) flags.roleAssignmentsDenied = true;
+                if (flags) {
+                  flags.roleAssignmentsDenied = true;
+                  flags.deniedPaths.push(`${siteUrl}${libUrl}`);
+                }
               } else {
                 // Transient failure, not "no access" — this item genuinely has
                 // unique permissions we couldn't read; don't silently present
@@ -215,7 +263,7 @@ async function scanSite(client: SpApiClient,
             (options.scope === ReportScope.Folder || options.scope === ReportScope.Item)
           ) {
             try {
-              await walkFolder(client, 
+              await walkFolder(client,
                 siteUrl,
                 libUrl,
                 2,
@@ -226,6 +274,7 @@ async function scanSite(client: SpApiClient,
                 emit,
                 signal,
                 onEntry,
+                flags,
               );
             } catch { /* partial results OK */ }
           }
@@ -293,6 +342,7 @@ async function walkFolder(client: SpApiClient,
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
+    flags?: ScanFlags,
   ): Promise<void> {
     if (signal?.aborted) return;
 
@@ -376,7 +426,14 @@ async function walkFolder(client: SpApiClient,
         } catch (err: any) {
           // Permission-denied means we genuinely can't read this item's ACL — not
           // the same as a transient failure that should be flagged as incomplete.
-          if (!isPermissionDenied(err)) folderIncomplete = true;
+          if (isPermissionDenied(err)) {
+            if (flags) {
+              flags.roleAssignmentsDenied = true;
+              flags.deniedPaths.push(subfolder.ServerRelativeUrl);
+            }
+          } else {
+            folderIncomplete = true;
+          }
         }
       }
 
@@ -409,6 +466,7 @@ async function walkFolder(client: SpApiClient,
             onProgress,
             signal,
             onEntry,
+            flags,
           );
         } catch { /* continue */ }
       }
@@ -433,7 +491,14 @@ async function walkFolder(client: SpApiClient,
           filePerms = toPermissionInfoList(valueArray(raData));
           hasUnique = true;
         } catch (err: any) {
-          if (!isPermissionDenied(err)) fileIncomplete = true;
+          if (isPermissionDenied(err)) {
+            if (flags) {
+              flags.roleAssignmentsDenied = true;
+              flags.deniedPaths.push(file.ServerRelativeUrl);
+            }
+          } else {
+            fileIncomplete = true;
+          }
         }
       }
 

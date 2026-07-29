@@ -35,6 +35,13 @@ export class SharePointService {
   get groupMemberCap(): number { return this.client.groupMemberCap; }
   set groupMemberCap(value: number) { this.client.groupMemberCap = value; }
 
+  /**
+   * Number of 429/503 throttling responses seen. Non-zero after a scan means
+   * SharePoint asked us to back off partway through, so some items may have
+   * failed for capacity reasons rather than genuine permission/content reasons.
+   */
+  get throttleEventCount(): number { return this.client.throttleEventCount; }
+
   runConcurrent<T>(
     tasks: (() => Promise<T | undefined>)[],
     concurrency = 5,
@@ -75,9 +82,20 @@ export class SharePointService {
     onProgress: (progress: ScanProgress) => void,
     signal?: AbortSignal,
     onEntry?: (entry: PermissionEntry) => void,
-  ): Promise<{ entries: PermissionEntry[]; groupPermissionDenied: boolean; roleAssignmentsDenied: boolean }> {
+  ): Promise<{
+    entries: PermissionEntry[];
+    groupPermissionDenied: boolean;
+    roleAssignmentsDenied: boolean;
+    deniedPaths: string[];
+    throttleAborted: boolean;
+    sitesTotal: number;
+    sitesScanned: number;
+  }> {
     return permissionScan.scanPermissions(this.client, options, onProgress, signal, onEntry);
   }
+
+  /** Clears throttle/circuit-breaker state so a new scan starts fresh. */
+  resetThrottleState(): void { this.client.resetThrottleState(); }
 
   // ── Real-time audit (Permissions Explorer) ────────────────────────────────
 

@@ -4,6 +4,53 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.6.1] — 2026-07-29
+
+### Added
+
+- **Permissions Report — site/tenant-named exports**
+  Excel and CSV exports from the Permissions Report are now prefixed with
+  the scanned site's name, or `Tenant` for an all-site-collections scan
+  (e.g. `SP_Permissions_Tenant_20260729...xlsx`), instead of a generic
+  `SP_Permissions_<timestamp>` name — exports from different scans no
+  longer look identical once several have piled up in a downloads folder.
+
+### Changed
+
+- **Permissions Report — precise throttling warning**
+  The "SharePoint throttled this scan" banner previously said only that
+  results "may be incomplete," with no way to tell whether the scan was
+  actually usable. It now states the exact number of items (if any) that
+  couldn't be confirmed after retrying, points to the existing
+  "could not be fully read" notice for exactly which ones, and confirms
+  everything else in the report was read successfully — or, if every
+  retried item ultimately succeeded, says so plainly instead of leaving
+  the scan under a cloud of doubt.
+- **Permissions Report — precise restricted-access warning**
+  Previously, a single item denied during a scan (e.g. one site collection
+  in a tenant-wide scan where the account was still Member-level rather
+  than Site Owner) triggered a blanket "results may be incomplete" banner
+  that read as if the *entire* report couldn't be trusted, even when
+  everything else scanned successfully. The warning now reports exactly
+  how many items (out of the total scanned) were denied and lists up to
+  10 of the specific site, library, folder, or file paths affected (with
+  an "…and N more" summary beyond that), so a mostly-successful scan no
+  longer reads as a failed one.
+  - Folder- and file-level permission denials, which previously weren't
+    tracked at all, are now recorded and surfaced the same way as site-
+    and library-level denials.
+
+### Documentation
+
+- Documented the Permissions Report's per-library selection picker (select
+  or exclude specific libraries before a Folders/Files & Folders scan) in
+  the User Guide, which had never described it despite it existing in the
+  UI.
+- Added a "Partial Results Due to Restricted Access" section to the User
+  Guide covering the new restricted-access warning behavior above.
+
+---
+
 ## [1.6.0] — 2026-07-22
 
 ### Fixed

@@ -41,18 +41,22 @@ Scan a site's lists, libraries, folders, and files and export a color-coded Exce
 |---|---|
 | **Configurable scan depth** | Choose Site only, Libraries, or full depth (folders and files) |
 | **Full list coverage** | Scans all visible lists — generic lists, Site Pages, calendars — not just document libraries |
+| **Libraries to scan** | Pick specific lists/libraries to include instead of scanning every one on the site |
 | **Subsite scanning** | Optionally recurse into every subsite below the selected site |
 | **In-browser results table** | Browse results directly: sortable, paginated, with expandable per-object permission details |
 | **Report compare** | Diff two saved reports to see permissions added, removed, or changed between scans |
-| **Folder depth limit** | Cap recursion at 1–5 levels to control scan time on large sites |
+| **Folder depth limit** | Cap recursion at 1–10 levels to control scan time on large sites |
 | **Group member expansion** | Expand all group types into individual user rows in the export |
 | **External user filter** | Scope the scan and export to external accounts only |
 | **Hidden-from-search flag** | NoCrawl libraries are included and badged instead of silently skipped |
 | **Excel export** | In-browser `.xlsx` workbook with color-coded permission levels and an Access Via column |
 | **CSV export** | Plain-text alternative for scripted processing |
+| **Site/tenant-named exports** | Exported filenames are prefixed with the scanned site's name, or "Tenant" for an all-site-collections scan, so results from different scans stay easy to tell apart |
 | **Progress bar and timer** | Concurrent, throttling-aware scan with elapsed timer and live item count |
+| **Throttling protection** | Detects SharePoint rate-limiting (HTTP 429/503 and other throttle signals), retries automatically, and stops the scan early with a clear message if throttling persists — rather than grinding through hundreds of doomed retries |
 | **Tenant-wide access warnings** | "Everyone" and "Everyone except external users" claims are highlighted in red as tenant-wide access instead of appearing as an ordinary group row |
-| **Scan-incomplete flag** | Items that couldn't be fully read after retries (transient network/throttling errors) are flagged instead of silently shown as inheriting their parent's permissions |
+| **Scan-incomplete flag** | Items that couldn't be fully read after retries (transient network/throttling errors) are flagged instead of silently shown as inheriting their parent's permissions. If throttling occurred, the warning banner states exactly how many items (if any) were affected, so you know whether the rest of the report can be trusted |
+| **Restricted-access warning with item list** | If your account lacks rights to read some items during a scan, a banner reports exactly how many (out of the total scanned) were affected and lists the specific paths — instead of a blanket "results may be incomplete" message that overstates the impact when the rest of the scan succeeded |
 
 ![Permissions Report configuration screen](docs/screenshots/02_report_config.png)
 
@@ -263,6 +267,8 @@ sharepoint/solution/
 **"npm install fails" or build errors about Node version** — This project requires Node 18.x exactly (`>=18.17.1 <19.0.0`). Run `node --version` to confirm. Use `nvm` or `nvm-windows` to switch versions.
 
 **"The scan takes a very long time"** — User Access and Permissions Report scan time scales with the number of unique permission assignments on the site. Use the scan depth and folder depth settings in the Permissions Report to limit scope, or run the scan against a specific library.
+
+**"SharePoint throttled this scan" / "Scan stopped early — SharePoint is throttling this tenant"** — SharePoint is rate-limiting requests, usually from a high **Concurrent requests** setting or a very large tenant-wide scan. Wait a few minutes for the throttle to clear, then lower **Concurrent requests** in Settings (2–3 for large tenants) and re-scan. The warning banner tells you exactly how many items (if any) couldn't be confirmed — everything else in the report was read successfully.
 
 **"I need more detail on a User Access result"** — Run `localStorage.setItem('smartPermissionsDebug', '1')` in the browser console, then re-run the scan and check the console for step-by-step diagnostic logging. Remove the key (or set it to any other value) to turn logging back off.
 

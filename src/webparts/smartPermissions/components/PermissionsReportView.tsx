@@ -170,6 +170,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   const [cancelled, setCancelled] = React.useState(false);
   const [groupPermissionDenied, setGroupPermissionDenied] = React.useState(false);
   const [roleAssignmentsDenied, setRoleAssignmentsDenied] = React.useState(false);
+  const [deniedPaths, setDeniedPaths] = React.useState<string[]>([]);
+  const [throttleEvents, setThrottleEvents] = React.useState(0);
+  const [throttleAborted, setThrottleAborted] = React.useState(false);
+  const [siteProgress, setSiteProgress] = React.useState<{ scanned: number; total: number } | null>(null);
   const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
   const [isExporting, setIsExporting] = React.useState(false);
   const [liveCount, setLiveCount] = React.useState(0);
@@ -387,11 +391,20 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     setFilterExternalOnly(false);
     setFilterUniqueOnly(false);
     setLiveCount(0);
+    setThrottleEvents(0);
+    setThrottleAborted(false);
+    setSiteProgress(null);
+    // A previous run may have left the circuit breaker open; a fresh scan is an
+    // explicit "try again", so clear it rather than failing every request.
+    sp.resetThrottleState();
     liveCountRef.current = 0;
     setScanProgress({ message: 'Starting scan…', scanned: 0, libsDone: 0, libsTotal: 0 });
 
     // Flush the live item count to state every 500ms so React batches renders
     const flushTimer = setInterval(() => setLiveCount(liveCountRef.current), 500);
+    // The client's throttle counter is cumulative for the session; baseline it
+    // so the banner reports throttling from this scan only.
+    const throttleAtStart = sp.throttleEventCount;
 
     try {
       const allSelected = selectedLibraryUrls.size === 0 || selectedLibraryUrls.size === availableLibraries.length;
@@ -406,7 +419,15 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         libraryUrls: allSelected ? undefined : Array.from(selectedLibraryUrls),
       };
 
-      const { entries: scannedEntries, groupPermissionDenied: permDenied, roleAssignmentsDenied: raDenied } = await sp.scanPermissions(
+      const {
+        entries: scannedEntries,
+        groupPermissionDenied: permDenied,
+        roleAssignmentsDenied: raDenied,
+        deniedPaths: raDeniedPaths,
+        throttleAborted: wasThrottleAborted,
+        sitesTotal,
+        sitesScanned,
+      } = await sp.scanPermissions(
         options,
         (progress) => setScanProgress(progress),
         abortRef.current.signal,
@@ -419,6 +440,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       setEntries(scannedEntries);
       setGroupPermissionDenied(permDenied);
       setRoleAssignmentsDenied(raDenied);
+      setDeniedPaths(raDeniedPaths);
+      setThrottleEvents(sp.throttleEventCount - throttleAtStart);
+      setThrottleAborted(wasThrottleAborted);
+      setSiteProgress(allSites ? { scanned: sitesScanned, total: sitesTotal } : null);
       const uniqueCount = scannedEntries.filter((e) => e.hasUniquePermissions).length;
       setScanProgress((prev) => ({
         ...prev,
@@ -502,11 +527,20 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     [filteredEntries, entries, filterUniqueOnly, filterExternalOnly, excludeLimitedAccess],
   );
 
+  // Count of entries whose permissions couldn't be confirmed after retries
+  // (scanIncomplete), so the throttling banner can name an exact number
+  // instead of a vague "some items" — the user needs to know how much of the
+  // report to distrust, not just that throttling happened at all.
+  const incompleteCount = React.useMemo(
+    () => (entries ?? []).filter((e) => e.scanIncomplete).length,
+    [entries],
+  );
+
   const handleExport = async (): Promise<void> => {
     if (exportableEntries.length === 0) return;
     setIsExporting(true);
     try {
-      await excel.export(exportableEntries, siteUrl.trim());
+      await excel.export(exportableEntries, siteUrl.trim(), allSites);
     } catch (err: any) {
       setError(`Export error: ${err?.message ?? String(err)}`);
     } finally {
@@ -515,13 +549,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   };
 
   const handleExportCsv = (): void => {
-    excel.exportPermissionsCsv(exportableEntries, siteUrl.trim());
+    excel.exportPermissionsCsv(exportableEntries, siteUrl.trim(), allSites);
   };
 
   const handleHistoryExport = async (item: StoredReport): Promise<void> => {
     setExportingHistoryId(item.id);
     try {
-      await excel.export(item.entries, item.siteUrl);
+      await excel.export(item.entries, item.siteUrl, item.options.allSites);
     } catch (err: any) {
       setError(`Export error: ${err?.message ?? String(err)}`);
     } finally {
@@ -1062,13 +1096,64 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               </Button>
             </div>
 
+            {throttleAborted && (
+              <MessageBar intent="error">
+                <MessageBarBody>
+                  <strong>Scan stopped early — SharePoint is throttling this tenant.</strong>{' '}
+                  {siteProgress
+                    ? `${siteProgress.scanned} of ${siteProgress.total} site collections were scanned before stopping. `
+                    : ''}
+                  The results below cover only what was scanned and are <strong>not</strong> a
+                  complete audit. The scan stops itself in this situation because continuing to send
+                  requests is what keeps the throttle applied. Wait several minutes, then re-run with{' '}
+                  <strong>Concurrent requests</strong> set to 1 or 2 in Settings.
+                </MessageBarBody>
+              </MessageBar>
+            )}
+
+            {throttleEvents > 0 && !throttleAborted && (
+              <MessageBar intent="warning">
+                <MessageBarBody>
+                  SharePoint throttled this scan ({throttleEvents} request(s) were rate-limited and
+                  retried).{' '}
+                  {incompleteCount > 0 ? (
+                    <>
+                      Of everything scanned, <strong>{incompleteCount} item{incompleteCount === 1 ? '' : 's'}</strong>{' '}
+                      couldn&apos;t be confirmed after retrying (see the &quot;could not be fully
+                      read&quot; notice below for exactly which) — that failure was capacity-related,
+                      not a reflection of their actual permissions. Every other item in this report
+                      was read successfully and can be trusted.
+                    </>
+                  ) : (
+                    <>
+                      Despite the throttling, every item was still confirmed successfully after
+                      retrying, so this report is complete.
+                    </>
+                  )}{' '}
+                  For a clean run, wait a few minutes and re-scan with a lower{' '}
+                  <strong>Concurrent requests</strong> value in Settings.
+                </MessageBarBody>
+              </MessageBar>
+            )}
+
             {roleAssignmentsDenied && (
               <MessageBar intent="warning">
                 <MessageBarBody>
-                  This scan ran with Member access — permission assignments could not be read.
-                  Only items with unique permissions are shown; who has access to each item
-                  is not visible. Run the scan as a <strong>Site Owner</strong> to see full permission details.
+                  {deniedPaths.length === 1
+                    ? '1 item'
+                    : `${deniedPaths.length} item(s)`} out of {entries.length} scanned could not be read with your
+                  current access — permission assignments for {deniedPaths.length === 1 ? 'it are' : 'those are'} not shown,
+                  but the rest of this report was read successfully.
+                  Run the scan as a <strong>Site Owner</strong> to see full details for the denied item(s) below.
                   <SiteOwnersLinks owners={siteOwners} />
+                  {deniedPaths.length > 0 && (
+                    <ul style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
+                      {deniedPaths.slice(0, 10).map((path) => (
+                        <li key={path}>{path}</li>
+                      ))}
+                      {deniedPaths.length > 10 && <li>…and {deniedPaths.length - 10} more</li>}
+                    </ul>
+                  )}
                 </MessageBarBody>
               </MessageBar>
             )}

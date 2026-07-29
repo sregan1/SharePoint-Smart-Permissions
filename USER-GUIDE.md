@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.6.0**
+**Version 1.6.1**
 **Applies to:** SharePoint Online
 
 ---
@@ -116,11 +116,12 @@ Once the scan is complete, you can browse the results directly in an **interacti
    | **Folders** | All libraries and folders (configurable depth) |
    | **Files & Folders** | Everything — libraries, folders, and individual files |
 
-3. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
-4. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership. Expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
-5. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organization.
-6. Enable **Include subsites** to recursively scan every subsite below the selected site. Subsites often break inheritance from the parent site, so include them for a complete audit. (In all-sites mode, subsites of every site collection are included.)
-7. Click **Run Report**.
+3. If you choose any scope other than **Site only**, a **Libraries to scan** picker appears listing every document library and list on the site as a checkbox, all selected by default. Use the **All** / **None** buttons to quickly select or clear everything, or uncheck individual libraries to exclude them from this particular scan.
+4. If you select **Folders**, a **Folder depth limit** field appears. Use the spin button to set how many levels deep to scan (1–10).
+5. **Expand group members in report** is checked by default. When checked, every SharePoint group, Security group, and M365 group that appears in a permission entry is expanded to list its individual members in the Excel output. Uncheck this if you only need the group names and not their membership. Expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
+6. If you are on the root site and have tenant-wide access, enable **Scan all site collections in this tenant** to audit the entire organization.
+7. Enable **Include subsites** to recursively scan every subsite below the selected site. Subsites often break inheritance from the parent site, so include them for a complete audit. (In all-sites mode, subsites of every site collection are included.)
+8. Click **Run Report**.
 
 ![Report scan in progress showing progress bar, elapsed timer, and item count](docs/screenshots/03_report_running.png)
 
@@ -153,6 +154,23 @@ The results table appears below the filter bar after every scan:
 - **"Everyone" and "Everyone except external users"** claims are highlighted in red as tenant-wide access, both in the table and in the Excel export, so a broad grant doesn't blend in as an ordinary group row.
 - If a temporary network or throttling error prevents an item from being fully read even after retries, it's flagged with a warning banner instead of being silently shown with its parent's permissions. Re-run the scan to retry those items.
 
+### Throttling Protection
+
+Large scans — especially tenant-wide ones — can trigger SharePoint's rate limiting (throttling) if too many requests are sent at once. The tool detects this automatically and responds in one of two ways:
+
+- **Retried automatically:** If SharePoint rate-limits a handful of requests, the tool retries them and continues. When this happens, a warning banner appears above the results stating exactly how many items (if any) still couldn't be confirmed after retrying — everything else in the report was read successfully and can be trusted.
+- **Scan stopped early:** If throttling persists across many consecutive requests, continuing would just keep hitting the same limit, so the scan stops itself with an error banner explaining that SharePoint is throttling the tenant and that the results cover only what was scanned before stopping.
+
+In either case, wait a few minutes for the throttle to clear, then lower **Concurrent requests** in Settings (see [Performance](#performance)) before re-scanning.
+
+### Partial Results Due to Restricted Access
+
+The Permissions Report scans using your signed-in account's access. If some items during a scan require rights your account doesn't have — for example, one site collection in a tenant-wide scan where your account is still only a Member rather than a Site Owner — the tool can't read who has access to those specific items, even though it continues reading everything else it does have rights to.
+
+When this happens, a warning banner appears above the results table stating exactly how many items (out of the total scanned) were affected, and lists up to 10 of the specific site, library, folder, or file paths that couldn't be read (with an "…and N more" summary if there were more). This is deliberately more precise than a blanket "results may be incomplete" message — a single denied item elsewhere in a large tenant-wide scan does not mean the rest of the report is untrustworthy, and the banner makes that clear.
+
+To get full detail for the listed items, either have a Site Owner of the affected site (linked directly in the banner) re-run the scan, or ask them to grant your account Site Owner access there.
+
 ### Understanding the Excel Export
 
 The Excel export contains one row per scanned object. Key columns include:
@@ -165,6 +183,8 @@ The Excel export contains one row per scanned object. Key columns include:
 - **Permission Level** — The role assigned (Full Control, Edit, Read, etc.)
 
 Rows for items with **unique permissions** are highlighted in the Excel workbook so they stand out immediately.
+
+Downloaded file names are prefixed with the scanned site's name (or **"Tenant"** for an all-site-collections scan), so exports from different scans are easy to tell apart once you have several in a downloads folder.
 
 ### Report History and Compare
 
@@ -576,6 +596,12 @@ A: Yes. The tool communicates only with your own SharePoint environment via the 
 
 - Ensure **Include system and hidden libraries** is unchecked in Settings.
 - These libraries are excluded by URL pattern as well as their metadata flags. If they still appear, check that you are running the latest version of the web part package.
+
+### "SharePoint throttled this scan" or "Scan stopped early — SharePoint is throttling this tenant"
+
+- This means SharePoint is rate-limiting the account's requests, usually because **Concurrent requests** in Settings is set too high for the site's or tenant's size. See [Throttling Protection](#throttling-protection) for what each message means.
+- Wait a few minutes for the throttle to clear, then lower **Concurrent requests** (2–3 is a safe starting point for large tenants) and re-scan.
+- If the scan stopped early rather than just retrying, the results only cover what was scanned before stopping — they are not a complete audit and should not be treated as one.
 
 ### A User Access result looks wrong and you need more detail
 

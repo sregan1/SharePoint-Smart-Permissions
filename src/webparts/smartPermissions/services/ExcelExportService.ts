@@ -71,6 +71,19 @@ function entryDisplayName(entry: PermissionEntry): string {
   return entry.noCrawl ? `${entry.name} (hidden from search)` : entry.name;
 }
 
+// Derives a filesystem-safe prefix identifying the scan's scope, used to make
+// exported filenames distinguishable when a user has run several reports:
+// "Tenant" for an all-sites scan, otherwise the site's last URL path segment.
+function scanLabel(siteUrl: string, allSites?: boolean): string {
+  if (allSites) return 'Tenant';
+  try {
+    const path = new URL(siteUrl).pathname.replace(/\/$/, '');
+    const segment = path.substring(path.lastIndexOf('/') + 1);
+    if (segment) return decodeURIComponent(segment).replace(/[^a-zA-Z0-9_-]/g, '_');
+  } catch { /* fall through to default */ }
+  return 'Site';
+}
+
 export class ExcelExportService {
   async exportUserAccess(
     entries: PermissionEntry[],
@@ -186,7 +199,7 @@ export class ExcelExportService {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
 
-  exportPermissionsCsv(entries: PermissionEntry[], siteUrl: string): void {
+  exportPermissionsCsv(entries: PermissionEntry[], siteUrl: string, allSites?: boolean): void {
     const ts = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15).replace('.', '');
     const rows: string[][] = [
       ['Type', 'Path', 'Name', 'Permission Source', 'User / Group', 'Access Via', 'Principal Type', 'Permission Level', 'Site URL'],
@@ -210,7 +223,7 @@ export class ExcelExportService {
         }
       }
     }
-    this.downloadCsv(rows, `SP_Permissions_${ts}.csv`);
+    this.downloadCsv(rows, `SP_Permissions_${scanLabel(siteUrl, allSites)}_${ts}.csv`);
   }
 
   exportUserAccessCsv(entries: PermissionEntry[], siteUrl: string, userDisplayName: string): void {
@@ -228,7 +241,7 @@ export class ExcelExportService {
     this.downloadCsv(rows, `SP_UserAccess_${safeName}_${ts}.csv`);
   }
 
-  async export(entries: PermissionEntry[], siteUrl: string): Promise<void> {
+  async export(entries: PermissionEntry[], siteUrl: string, allSites?: boolean): Promise<void> {
     const Excel = await loadExcelJS();
     const wb = new Excel.Workbook();
     this.addSummarySheet(wb, entries, siteUrl);
@@ -244,7 +257,7 @@ export class ExcelExportService {
       .replace(/[-:T]/g, '')
       .substring(0, 15)
       .replace('.', '');
-    const filename = `SP_Permissions_${ts}.xlsx`;
+    const filename = `SP_Permissions_${scanLabel(siteUrl, allSites)}_${ts}.xlsx`;
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
