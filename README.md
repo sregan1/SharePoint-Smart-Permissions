@@ -48,6 +48,7 @@ Scan a site's lists, libraries, folders, and files and export a color-coded Exce
 | **Folder depth limit** | Cap recursion at 1–10 levels to control scan time on large sites |
 | **Group member expansion** | Expand all group types into individual user rows in the export |
 | **External user filter** | Scope the scan and export to external accounts only |
+| **Report filter bar** | *Unique permissions only*, *External users only*, *Exclude Limited Access*, and *Exclude Sharing Links* checkboxes filter the on-screen results and both exports together |
 | **Hidden-from-search flag** | NoCrawl libraries are included and badged instead of silently skipped |
 | **Excel export** | In-browser `.xlsx` workbook with color-coded permission levels and an Access Via column |
 | **CSV export** | Plain-text alternative for scripted processing |

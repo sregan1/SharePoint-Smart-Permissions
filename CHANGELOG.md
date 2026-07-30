@@ -4,10 +4,19 @@ All notable changes to this project are documented here.
 
 ---
 
-## [1.6.1] — 2026-07-29
+## [1.6.1] — 2026-07-30
 
 ### Added
 
+- **Exclude Sharing Links filter**
+  New "Exclude Sharing Links" option hides the internal `SharingLinks.<guid>.*`
+  groups SharePoint auto-creates for "Anyone with the link" and "Specific
+  people" sharing links, alongside the existing "Exclude Limited Access"
+  filter. Applies everywhere the existing filter did — Permissions Report,
+  Permissions Explorer, and User Access, on-screen and in exports.
+- **Exclude Limited Access / Exclude Sharing Links now available directly from
+  the Permissions Report screen**, in the same filter bar as "Unique
+  permissions only" and "External users only," not just on the Settings page.
 - **Permissions Report — site/tenant-named exports**
   Excel and CSV exports from the Permissions Report are now prefixed with
   the scanned site's name, or `Tenant` for an all-site-collections scan
@@ -17,6 +26,10 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **Wider Permissions Report and User Access screens**
+  Both screens' maximum width was increased to 1100px (previously 760px and
+  900px respectively) to match the Permissions Explorer and Home screens,
+  giving the results tables more room.
 - **Permissions Report — precise throttling warning**
   The "SharePoint throttled this scan" banner previously said only that
   results "may be incomplete," with no way to tell whether the scan was
@@ -48,6 +61,9 @@ All notable changes to this project are documented here.
   UI.
 - Added a "Partial Results Due to Restricted Access" section to the User
   Guide covering the new restricted-access warning behavior above.
+- Documented the new "Exclude Sharing Links Entries" setting and clarified
+  that both it and "Exclude Limited Access Entries" can now be toggled from
+  the Permissions Report screen's filter bar, not just from Settings.
 
 ---
 

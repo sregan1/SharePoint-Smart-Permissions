@@ -149,7 +149,7 @@ The results table appears below the filter bar after every scan:
 - Click any row (or its chevron) to **expand it** and see the full permission assignments for that object — every user and group with their color-coded permission level.
 - A **Unique** badge marks objects with broken inheritance; **Inherited** marks the rest.
 - A **Hidden from search** badge marks libraries an admin has excluded from search indexing (NoCrawl) — worth a closer look during an audit, since that setting is sometimes used to keep sensitive content out of sight.
-- The filter box and the **Unique permissions only** / **External users only** checkboxes filter the table and the exports together.
+- The filter box and the **Unique permissions only** / **External users only** / **Exclude Limited Access** / **Exclude Sharing Links** checkboxes filter the table and the exports together. The last two are the same global settings described under [Exclude Limited Access Entries](#exclude-limited-access-entries) and [Exclude Sharing Links Entries](#exclude-sharing-links-entries) — the Report screen's filter bar is simply a second, more convenient place to toggle them without leaving the results you're looking at, alongside the Settings page.
 - Large results paginate at 200 rows — click **Load more** for the rest.
 - **"Everyone" and "Everyone except external users"** claims are highlighted in red as tenant-wide access, both in the table and in the Excel export, so a broad grant doesn't blend in as an ordinary group row.
 - If a temporary network or throttling error prevents an item from being fully read even after retries, it's flagged with a warning banner instead of being silently shown with its parent's permissions. Re-run the scan to retry those items.
@@ -413,6 +413,12 @@ This setting is useful during a thorough security audit where you need to accoun
 When this option is **checked**, users or groups that hold only **Limited Access** on an item are hidden from permission tables. Limited Access is a system-assigned permission level that SharePoint grants automatically when a user has access to a specific item but not the parent folder or library — it grants no meaningful rights on its own and creates noise in large permission sets.
 
 Enabling this option produces a cleaner view focused on permissions that were explicitly assigned.
+
+### Exclude Sharing Links Entries
+
+When this option is **checked**, the internal groups SharePoint auto-creates for **"Anyone with the link"** and **"Specific people"** sharing links (named like `SharingLinks.<guid>.OrganizationEdit`) are hidden from permission tables. These are plumbing SharePoint manages behind the scenes, not a person or named group someone consciously granted access to, so hiding them focuses the view on access that was deliberately assigned to a real user or group.
+
+Both this option and **Exclude Limited Access** apply to the Permissions Report, Permissions Explorer, and User Access, and both can also be toggled directly from the Permissions Report screen's filter bar (see [Browsing the Results](#browsing-the-results)) — Explorer and User Access have no separate on-screen toggle for these two, since they're global settings rather than per-screen filters.
 
 ### Performance
 

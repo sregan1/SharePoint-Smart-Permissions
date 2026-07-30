@@ -291,11 +291,12 @@ export interface PermissionsExplorerViewProps {
   siteUrl: string;
   includeHidden: boolean;
   excludeLimitedAccess: boolean;
+  excludeSharingLinks: boolean;
   onBack: () => void;
   onNavigateToUserAccess?: (loginName: string) => void;
 }
 
-export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, excludeLimitedAccess, onBack, onNavigateToUserAccess }) => {
+export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = ({ sp, siteUrl, includeHidden, excludeLimitedAccess, excludeSharingLinks, onBack, onNavigateToUserAccess }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -862,8 +863,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // permission panel below (each call re-filters the same, potentially large,
   // expanded-group list).
   const filteredNodePerms = React.useMemo(
-    () => applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly),
-    [nodePerms, excludeLimitedAccess, filterExternalOnly],
+    () => applyPermFilters(nodePerms, excludeLimitedAccess, filterExternalOnly, excludeSharingLinks),
+    [nodePerms, excludeLimitedAccess, filterExternalOnly, excludeSharingLinks],
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1140,7 +1141,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                             </Body1>
                           ) : (
                             <PermTable
-                              users={applyPermFilters(parentPerms, excludeLimitedAccess, filterExternalOnly)}
+                              users={applyPermFilters(parentPerms, excludeLimitedAccess, filterExternalOnly, excludeSharingLinks)}
                               onCheckAccess={onNavigateToUserAccess}
                             />
                           )}

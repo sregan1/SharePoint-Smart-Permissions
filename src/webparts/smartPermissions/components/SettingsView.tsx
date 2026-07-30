@@ -53,6 +53,8 @@ export interface SettingsViewProps {
   onIncludeHiddenChange: (val: boolean) => void;
   excludeLimitedAccess: boolean;
   onExcludeLimitedAccessChange: (val: boolean) => void;
+  excludeSharingLinks: boolean;
+  onExcludeSharingLinksChange: (val: boolean) => void;
   scanConcurrency: number;
   onScanConcurrencyChange: (val: number) => void;
   groupMemberCap: number;
@@ -65,6 +67,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onIncludeHiddenChange,
   excludeLimitedAccess,
   onExcludeLimitedAccessChange,
+  excludeSharingLinks,
+  onExcludeSharingLinksChange,
   scanConcurrency,
   onScanConcurrencyChange,
   groupMemberCap,
@@ -124,6 +128,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
                 aria-label="More info about Limited Access"
+              />
+            </Tooltip>
+          </div>
+          <div className={styles.row}>
+            <Checkbox
+              label="Exclude Sharing Links entries"
+              checked={excludeSharingLinks}
+              onChange={(_, d) => onExcludeSharingLinksChange(!!d.checked)}
+            />
+            <Tooltip
+              content='Hides the internal "SharingLinks.*" groups SharePoint auto-creates for "Anyone with the link" and "Specific people" sharing links. Applies to Permissions Report, Explorer, and User Access.'
+              relationship="description"
+              withArrow
+            >
+              <Button
+                appearance="transparent"
+                icon={<Info16Regular />}
+                size="small"
+                style={{ minWidth: 'unset', padding: '2px' }}
+                aria-label="More info about Sharing Links"
               />
             </Tooltip>
           </div>

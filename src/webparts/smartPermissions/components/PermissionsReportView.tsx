@@ -40,6 +40,7 @@ import { requestNotificationPermission, showNotification } from '../utils/notifi
 import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
 import { PermTable } from './shared/PermTable';
 import { applyPermFilters } from './shared/permFilters';
+import { isSharingLinkPrincipal } from './shared/sharingLinks';
 import { diffReports, ReportDiff } from '../utils/reportDiff';
 
 // Badge color per object type (matches the User Access view's mapping).
@@ -65,7 +66,7 @@ const TYPE_ORDER: Record<string, number> = {
 const useStyles = makeStyles({
   root: {
     padding: tokens.spacingVerticalL,
-    maxWidth: '760px',
+    maxWidth: '1100px',
     margin: '0 auto',
     minHeight: '500px',
   },
@@ -141,6 +142,9 @@ export interface PermissionsReportViewProps {
   siteUrl: string;
   includeHidden: boolean;
   excludeLimitedAccess: boolean;
+  onExcludeLimitedAccessChange: (val: boolean) => void;
+  excludeSharingLinks: boolean;
+  onExcludeSharingLinksChange: (val: boolean) => void;
   onBack: () => void;
 }
 
@@ -150,6 +154,9 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   siteUrl,
   includeHidden,
   excludeLimitedAccess,
+  onExcludeLimitedAccessChange,
+  excludeSharingLinks,
+  onExcludeSharingLinksChange,
   onBack,
 }) => {
   const styles = useStyles();
@@ -191,13 +198,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       if (filterUniqueOnly && !e.hasUniquePermissions) return false;
       if (filterExternalOnly && !e.uniquePermissions.some((u) => u.loginName.toLowerCase().indexOf('#ext#') !== -1)) return false;
       if (excludeLimitedAccess && !e.uniquePermissions.some((u) => u.roles.length > 0)) return false;
+      if (excludeSharingLinks && !e.uniquePermissions.some((u) => !isSharingLinkPrincipal(u))) return false;
       if (!lc) return true;
       if (e.name.toLowerCase().includes(lc)) return true;
       if (e.serverRelativeUrl.toLowerCase().includes(lc)) return true;
       if (e.uniquePermissions.some((u) => u.displayName.toLowerCase().includes(lc))) return true;
       return false;
     });
-  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess, excludeSharingLinks]);
 
   // ── Results table state ──
   const RESULTS_PAGE_SIZE = 200;
@@ -210,7 +218,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   React.useEffect(() => {
     setResultsVisible(RESULTS_PAGE_SIZE);
     setExpandedKeys(new Set());
-  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess]);
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess, excludeSharingLinks]);
 
   const sortedResults = React.useMemo(() => {
     if (!filteredEntries) return [];
@@ -505,12 +513,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     let result = filterUniqueOnly
       ? entriesToFilter.filter((e) => e.hasUniquePermissions)
       : entriesToFilter;
-    const trimming = filterExternalOnly || excludeLimitedAccess;
+    const trimming = filterExternalOnly || excludeLimitedAccess || excludeSharingLinks;
     if (trimming) {
       result = result
         .map((e) => ({
           ...e,
-          uniquePermissions: applyPermFilters(e.uniquePermissions, excludeLimitedAccess, filterExternalOnly),
+          uniquePermissions: applyPermFilters(e.uniquePermissions, excludeLimitedAccess, filterExternalOnly, excludeSharingLinks),
         }))
         .filter((e) => e.uniquePermissions.length > 0);
     }
@@ -524,7 +532,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   const exportableEntries = React.useMemo(
     () => applyExportFilters(filteredEntries ?? entries ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredEntries, entries, filterUniqueOnly, filterExternalOnly, excludeLimitedAccess],
+    [filteredEntries, entries, filterUniqueOnly, filterExternalOnly, excludeLimitedAccess, excludeSharingLinks],
   );
 
   // Count of entries whose permissions couldn't be confirmed after retries
@@ -1200,6 +1208,16 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 checked={filterExternalOnly}
                 onChange={(_, d) => setFilterExternalOnly(!!d.checked)}
               />
+              <Checkbox
+                label="Exclude Limited Access"
+                checked={excludeLimitedAccess}
+                onChange={(_, d) => onExcludeLimitedAccessChange(!!d.checked)}
+              />
+              <Checkbox
+                label="Exclude Sharing Links"
+                checked={excludeSharingLinks}
+                onChange={(_, d) => onExcludeSharingLinksChange(!!d.checked)}
+              />
               {(filterText || filterExternalOnly || filterUniqueOnly) && (
                 <Body1 style={{ color: tokens.colorNeutralForeground3, marginLeft: 'auto' }}>
                   Showing {filteredEntries?.length ?? 0} of {entries.length}
@@ -1245,8 +1263,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                       const isExpanded = expandedKeys.has(key);
                       // Filtered the same way as the export (shared applyPermFilters) so the
                       // "N assignments" count and the expanded table agree with what
-                      // excludeLimitedAccess/filterExternalOnly are actually showing.
-                      const rowPerms = applyPermFilters(entry.uniquePermissions, excludeLimitedAccess, filterExternalOnly);
+                      // excludeLimitedAccess/filterExternalOnly/excludeSharingLinks are actually showing.
+                      const rowPerms = applyPermFilters(entry.uniquePermissions, excludeLimitedAccess, filterExternalOnly, excludeSharingLinks);
                       const expandable = rowPerms.length > 0;
                       return (
                         <React.Fragment key={key}>

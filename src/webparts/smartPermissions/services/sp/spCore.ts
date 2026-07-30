@@ -164,9 +164,15 @@ const SYSTEM_ROLE_TYPE_KINDS = new Set([1, 7]);
 // Returns true for system-assigned pass-through roles that carry no meaningful permission
 // of their own and should be hidden from all results ("Limited Access" and its web-scoped
 // variant are both auto-assigned by SharePoint and are never explicitly granted).
+//
+// Checks RoleTypeKind AND the name, rather than only falling back to the name
+// when RoleTypeKind is missing: some tenants return a RoleTypeKind for "Web-Only
+// Limited Access" that isn't 1 or 7 (observed in production — see the report
+// row this was fixed from), which previously let it slip through untouched
+// since a numeric RoleTypeKind short-circuited the name check entirely.
 export function isSystemRole(role: { Name?: string; RoleTypeKind?: number } | string): boolean {
   const roleTypeKind = typeof role === 'string' ? undefined : role.RoleTypeKind;
-  if (typeof roleTypeKind === 'number') return SYSTEM_ROLE_TYPE_KINDS.has(roleTypeKind);
+  if (typeof roleTypeKind === 'number' && SYSTEM_ROLE_TYPE_KINDS.has(roleTypeKind)) return true;
   const name = typeof role === 'string' ? role : role.Name ?? '';
   const l = name.toLowerCase();
   return l === 'limited access' || l === 'web-only limited access' || l.startsWith('system.');
@@ -429,17 +435,20 @@ export function toPermissionInfoList(roleAssignments: any[]): UserPermissionInfo
       for (const b of bindings) {
         if (typeof b.RoleTypeKind === 'number') roleTypeKinds[b.Name] = b.RoleTypeKind;
       }
-      if (roles.length > 0) {
-        const principalType = principalTypeLabel(ra.Member?.PrincipalType ?? 1);
-        result.push({
-          loginName: ra.Member?.LoginName ?? '',
-          displayName: ra.Member?.Title ?? '',
-          principalType,
-          roles,
-          roleTypeKinds: Object.keys(roleTypeKinds).length > 0 ? roleTypeKinds : undefined,
-          groupId: principalType === 'SharePointGroup' ? (ra.Member?.Id as number | undefined) : undefined,
-        });
-      }
+      // Push the principal even when it has no non-system roles left (e.g. a
+      // user or SharingLinks group whose only binding was "Limited Access").
+      // Dropping it here would remove it before "Exclude Limited Access" /
+      // "Exclude Sharing Links" ever get applied, making those checkboxes
+      // unable to affect it either way.
+      const principalType = principalTypeLabel(ra.Member?.PrincipalType ?? 1);
+      result.push({
+        loginName: ra.Member?.LoginName ?? '',
+        displayName: ra.Member?.Title ?? '',
+        principalType,
+        roles,
+        roleTypeKinds: Object.keys(roleTypeKinds).length > 0 ? roleTypeKinds : undefined,
+        groupId: principalType === 'SharePointGroup' ? (ra.Member?.Id as number | undefined) : undefined,
+      });
     }
     return result;
   }

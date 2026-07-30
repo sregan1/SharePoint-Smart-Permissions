@@ -25,13 +25,14 @@ import { SiteUserInfo, PermissionEntry, ObjectType, StoredUserAccessReport } fro
 import { requestNotificationPermission, showNotification } from '../utils/notifications';
 import { roleBadgeColor } from './shared/roleBadge';
 import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
+import { isSharingLinkPrincipal } from './shared/sharingLinks';
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const useStyles = makeStyles({
   root: {
     padding: tokens.spacingVerticalL,
-    maxWidth: '900px',
+    maxWidth: '1100px',
     margin: '0 auto',
     minHeight: '500px',
   },
@@ -131,12 +132,13 @@ export interface UserAccessViewProps {
   siteUrl: string;
   includeHidden: boolean;
   excludeLimitedAccess: boolean;
+  excludeSharingLinks: boolean;
   prefillLogin?: string;
   onPrefillUsed?: () => void;
   onBack: () => void;
 }
 
-export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, excludeLimitedAccess, prefillLogin, onPrefillUsed, onBack }) => {
+export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, excludeLimitedAccess, excludeSharingLinks, prefillLogin, onPrefillUsed, onBack }) => {
   const styles = useStyles();
 
   // ── Connection ──
@@ -176,9 +178,11 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const [sortAsc, setSortAsc] = React.useState(true);
 
   const displayAccessItems = React.useMemo(() => {
-    if (!excludeLimitedAccess) return userAccessItems;
-    return userAccessItems.filter((e) => e.uniquePermissions.some((p) => p.roles.length > 0));
-  }, [userAccessItems, excludeLimitedAccess]);
+    let result = userAccessItems;
+    if (excludeLimitedAccess) result = result.filter((e) => e.uniquePermissions.some((p) => p.roles.length > 0));
+    if (excludeSharingLinks) result = result.filter((e) => e.uniquePermissions.some((p) => !isSharingLinkPrincipal(p)));
+    return result;
+  }, [userAccessItems, excludeLimitedAccess, excludeSharingLinks]);
 
   // Derived from the filtered list (displayAccessItems), not the raw scan
   // results — otherwise the "site-level access" banner below could reference

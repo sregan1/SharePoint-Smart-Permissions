@@ -27,6 +27,7 @@ const LS_CONCURRENCY      = 'sp-smart-perms-concurrency';
 const LS_GROUP_CAP        = 'sp-smart-perms-groupCap';
 const LS_HIDDEN           = 'sp-smart-perms-includeHidden';
 const LS_LIMITED_ACCESS   = 'sp-smart-perms-excludeLimitedAccess';
+const LS_SHARING_LINKS    = 'sp-smart-perms-excludeSharingLinks';
 
 export interface IBrandColors {
   primary: string;
@@ -167,9 +168,13 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
   const [excludeLimitedAccess, setExcludeLimitedAccess] = React.useState(
     () => localStorage.getItem(LS_LIMITED_ACCESS) === 'true',
   );
+  const [excludeSharingLinks, setExcludeSharingLinks] = React.useState(
+    () => localStorage.getItem(LS_SHARING_LINKS) === 'true',
+  );
 
   React.useEffect(() => { localStorage.setItem(LS_HIDDEN, String(includeHidden)); }, [includeHidden]);
   React.useEffect(() => { localStorage.setItem(LS_LIMITED_ACCESS, String(excludeLimitedAccess)); }, [excludeLimitedAccess]);
+  React.useEffect(() => { localStorage.setItem(LS_SHARING_LINKS, String(excludeSharingLinks)); }, [excludeSharingLinks]);
   React.useEffect(() => {
     localStorage.setItem(LS_CONCURRENCY, String(scanConcurrency));
     sp.scanConcurrency = scanConcurrency;
@@ -350,6 +355,9 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           siteUrl={siteUrl}
           includeHidden={includeHidden}
           excludeLimitedAccess={excludeLimitedAccess}
+          onExcludeLimitedAccessChange={setExcludeLimitedAccess}
+          excludeSharingLinks={excludeSharingLinks}
+          onExcludeSharingLinksChange={setExcludeSharingLinks}
           onBack={() => setView('home')}
         />
       )}
@@ -360,6 +368,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           siteUrl={siteUrl}
           includeHidden={includeHidden}
           excludeLimitedAccess={excludeLimitedAccess}
+          excludeSharingLinks={excludeSharingLinks}
           onBack={() => setView('home')}
           onNavigateToUserAccess={handleNavigateToUserAccess}
         />
@@ -372,6 +381,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           siteUrl={siteUrl}
           includeHidden={includeHidden}
           excludeLimitedAccess={excludeLimitedAccess}
+          excludeSharingLinks={excludeSharingLinks}
           prefillLogin={userAccessPrefill}
           onPrefillUsed={() => setUserAccessPrefill(undefined)}
           onBack={() => setView('home')}
@@ -383,6 +393,8 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           onIncludeHiddenChange={setIncludeHidden}
           excludeLimitedAccess={excludeLimitedAccess}
           onExcludeLimitedAccessChange={setExcludeLimitedAccess}
+          excludeSharingLinks={excludeSharingLinks}
+          onExcludeSharingLinksChange={setExcludeSharingLinks}
           scanConcurrency={scanConcurrency}
           onScanConcurrencyChange={setScanConcurrency}
           groupMemberCap={groupMemberCap}
