@@ -28,6 +28,8 @@ import {
   Filter16Regular,
 } from '@fluentui/react-icons';
 
+import * as strings from 'SmartPermissionsWebPartStrings';
+import { formatString } from '../utils/localeUtils';
 import { SharePointService } from '../services/SharePointService';
 import {
   LibraryInfo,
@@ -211,27 +213,27 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         </Text>
 
         {node.hasUniquePermissionsBelow && node.hasExternalUsersBelow && (
-          <Tooltip content="Contains items with unique permissions and external user access" relationship="label">
+          <Tooltip content={strings.ContainsUniqueAndExternalTooltip} relationship="label">
             <ArrowCircleAndTriangleDown style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
           </Tooltip>
         )}
         {node.hasUniquePermissionsBelow && !node.hasExternalUsersBelow && (
-          <Tooltip content="Contains items with unique permissions" relationship="label">
+          <Tooltip content={strings.ContainsUniqueTooltip} relationship="label">
             <ArrowCircleDown16Regular style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
           </Tooltip>
         )}
         {node.hasExternalUsersBelow && !node.hasUniquePermissionsBelow && (
-          <Tooltip content="Contains items with external user access" relationship="label">
+          <Tooltip content={strings.ContainsExternalTooltip} relationship="label">
             <ArrowTriangleDown style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
           </Tooltip>
         )}
         {node.hasUniquePermissions && (
           <Badge appearance="filled" color="warning" size="small" style={{ flexShrink: 0 }}>
-            Unique
+            {strings.UniqueBadge}
           </Badge>
         )}
         {node.hasUniquePermissions && (node.hasExternalUsers || externalAccessUrls.has(node.serverRelativeUrl)) && (
-          <Tooltip content="External user access detected" relationship="label">
+          <Tooltip content={strings.ExternalAccessDetectedTooltip} relationship="label">
             <PersonWarning16Regular
               style={{ flexShrink: 0, color: tokens.colorPaletteRedForeground1 }}
             />
@@ -363,7 +365,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
     setIsConnecting(true);
     setConnectError('');
-    setConnectStatus('Connecting…');
+    setConnectStatus(strings.ConnectingStatus);
     setIsConnected(false);
     setLibraries([]);
     setRootNodes([]);
@@ -375,7 +377,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       setLibraries(libs);
       setIsConnected(true);
       setConnectStatus(
-        `Connected — ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'} found`,
+        formatString(libs.length === 1 ? strings.ConnectedLibrarySingular : strings.ConnectedLibraryPlural, libs.length),
       );
 
       if (libs.length > 0) {
@@ -383,7 +385,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         loadLibrary(libs[0]).catch((e) => console.error('[SmartPermissions] loadLibrary failed:', e));
       }
     } catch (err: any) {
-      setConnectError(`Connection failed: ${err?.message ?? String(err)}`);
+      setConnectError(formatString(strings.ConnectionFailedError, err?.message ?? String(err)));
       setConnectStatus('');
     } finally {
       setIsConnecting(false);
@@ -421,7 +423,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       if (isStale()) return; // user switched libraries again while this fetch was in flight
       setRootNodes(nodes);
       setFocusedUrl(nodes[0]?.serverRelativeUrl ?? '');
-      if (nodes.length === 0) setTreeStatus('This library is empty.');
+      if (nodes.length === 0) setTreeStatus(strings.LibraryEmptyStatus);
 
       // Proactively check whether role-assignment reads are permitted for this library.
       sp.getItemPermissions(
@@ -464,7 +466,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       sp.runConcurrent(prefetchTasks, sp.scanConcurrency).catch(() => { /* ignore — background prefetch */ });
     } catch (err: any) {
       if (isStale()) return;
-      setTreeStatus(`Error loading library: ${err?.message ?? String(err)}`);
+      setTreeStatus(formatString(strings.ErrorLoadingLibrary, err?.message ?? String(err)));
     }
   };
 
@@ -540,7 +542,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       // Rendered as inline, non-navigable text (see FolderFileNode.loadError) —
       // a synthetic child node here previously collided on an empty-string key
       // and was reachable via arrow-key tree navigation like a real item.
-      node.loadError = 'Error loading contents';
+      node.loadError = strings.ErrorLoadingContents;
       node.children = [];
     } finally {
       node.isLoading = false;
@@ -878,11 +880,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
           icon={<ArrowLeft24Regular />}
           onClick={onBack}
           disabled={isConnecting}
-          aria-label="Back to home"
+          aria-label={strings.BackToHomeLabel}
         >
-          Back
+          {strings.BackButton}
         </Button>
-        <Title3>Permissions Explorer</Title3>
+        <Title3>{strings.ExplorerCardTitle}</Title3>
       </div>
 
       {connectError && (
@@ -907,7 +909,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         <>
           {/* Library picker */}
           <div style={{ marginBottom: tokens.spacingVerticalM }}>
-            <Field label="Library">
+            <Field label={strings.LibraryFieldLabel}>
               <Select
                 value={selectedLibrary}
                 onChange={handleLibraryChange}
@@ -915,7 +917,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
               >
                 {libraries.map((lib) => (
                   <option key={lib.serverRelativeUrl} value={lib.serverRelativeUrl}>
-                    {lib.noCrawl ? `${lib.title} (hidden from search)` : lib.title}
+                    {lib.noCrawl ? formatString(strings.HiddenFromSearchSuffix, lib.title) : lib.title}
                   </option>
                 ))}
               </Select>
@@ -931,7 +933,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                 onClick={() => setShowUniqueOnly((prev) => !prev)}
                 icon={<Filter16Regular />}
               >
-                Unique permissions only
+                {strings.UniquePermissionsOnlyToggle}
               </ToggleButton>
               <ToggleButton
                 size="small"
@@ -939,26 +941,26 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                 onClick={() => setFilterExternalOnly((prev) => !prev)}
                 icon={<PersonWarning16Regular />}
               >
-                External users only
+                {strings.ExternalUsersOnlyToggle}
               </ToggleButton>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalL, flexWrap: 'wrap' }}>
-              <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Legend:</Text>
+              <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{strings.LegendLabel}</Text>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Badge appearance="filled" color="warning" size="small">Unique</Badge>
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Item has unique permissions</Text>
+                <Badge appearance="filled" color="warning" size="small">{strings.UniqueBadge}</Badge>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{strings.LegendItemHasUnique}</Text>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ArrowCircleDown16Regular style={{ color: tokens.colorNeutralForeground3 }} />
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Contains unique permissions below</Text>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{strings.LegendContainsUniqueBelow}</Text>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <ArrowTriangleDown style={{ color: tokens.colorNeutralForeground3 }} />
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>Contains external user access below</Text>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{strings.LegendContainsExternalBelow}</Text>
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <PersonWarning16Regular style={{ color: tokens.colorPaletteRedForeground1 }} />
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>External user access on this item</Text>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{strings.LegendExternalOnItem}</Text>
               </span>
             </div>
           </div>
@@ -966,10 +968,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
           {permissionsDenied && (
             <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
-                <strong>Viewing with Member access</strong> — permission assignments are not visible.
-                Reading who has access requires the <strong>Manage Permissions</strong> right (Site
-                Owner or higher). You can still see which items have broken inheritance using the ↓
-                indicators. To see locations you can access, use the <strong>User Access</strong> tool.
+                <strong>{strings.ViewingWithMemberAccessTitle}</strong> {strings.ViewingWithMemberAccessDesc1}{' '}
+                <strong>{strings.ManagePermissionsWord}</strong> {strings.ViewingWithMemberAccessDesc2}{' '}
+                <strong>{strings.UserAccessWord}</strong> {strings.ViewingWithMemberAccessDesc3}
                 <SiteOwnersLinks owners={siteOwners} />
               </MessageBarBody>
             </MessageBar>
@@ -980,7 +981,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
             <div
               className={styles.treePanel}
               role="tree"
-              aria-label="Folders and files"
+              aria-label={strings.FoldersAndFilesLabel}
               onKeyDown={handleTreeKeyDown}
             >
               {treeStatus && (
@@ -1012,7 +1013,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
             <div className={styles.permPanel}>
               {!selectedNode && (
                 <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                  Select a folder or file to view its permissions.
+                  {strings.SelectFolderOrFilePrompt}
                 </Body1>
               )}
 
@@ -1030,9 +1031,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   >
                     <Text weight="semibold">{selectedNode.name}</Text>
                     {nodeHasUnique ? (
-                      <Badge appearance="filled" color="warning">Unique permissions</Badge>
+                      <Badge appearance="filled" color="warning">{strings.UniquePermissionsBadge}</Badge>
                     ) : !nodeLoading && !nodeError ? (
-                      <Badge appearance="filled" color="informative">Inherited</Badge>
+                      <Badge appearance="filled" color="informative">{strings.InheritedBadge}</Badge>
                     ) : null}
                   </div>
 
@@ -1040,14 +1041,14 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   <div className={styles.optionsBar}>
                     {!permissionsDenied && (
                       <Checkbox
-                        label="Expand group members"
+                        label={strings.ExpandGroupMembersLabel}
                         checked={expandGroups}
                         onChange={(_, d) => setExpandGroups(!!d.checked)}
                       />
                     )}
                     {!permissionsDenied && !nodeLoading && !nodeError && !nodeHasUnique && (
                       <Checkbox
-                        label="Show parent permissions"
+                        label={strings.ShowParentPermissionsLabel}
                         checked={showParentPerms}
                         onChange={handleParentPermsCheckbox}
                       />
@@ -1067,12 +1068,12 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     <>
                       <div className={styles.inheritedBanner}>
                         <Link16Regular style={{ flexShrink: 0, color: tokens.colorBrandForeground1 }} />
-                        <Body1>This item inherits permissions from its parent.</Body1>
+                        <Body1>{strings.InheritsFromParentText}</Body1>
                       </div>
                       {permissionsDenied && myPermLevel && (
                         <MessageBar intent="success" style={{ marginTop: tokens.spacingVerticalS }}>
                           <MessageBarBody>
-                            <strong>Your access:</strong> {myPermLevel}
+                            <strong>{strings.YourAccessLabel}</strong> {myPermLevel}
                           </MessageBarBody>
                         </MessageBar>
                       )}
@@ -1087,20 +1088,19 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                           {myPermLevel && (
                             <MessageBar intent="success" style={{ marginBottom: tokens.spacingVerticalS }}>
                               <MessageBarBody>
-                                <strong>Your access:</strong> {myPermLevel}
+                                <strong>{strings.YourAccessLabel}</strong> {myPermLevel}
                               </MessageBarBody>
                             </MessageBar>
                           )}
                           <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                            Permission assignments are not visible — the Manage Permissions right
-                            (Site Owner or higher) is required to read who has access to this item.
+                            {strings.PermissionsNotVisibleNodeText}
                           </Body1>
                         </>
                       )
                       : filteredNodePerms.length === 0 && filterExternalOnly
                         ? (
                           <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                            No external users have direct access to this item.
+                            {strings.NoExternalUsersDirectAccessText}
                           </Body1>
                         ) : (
                           <PermTable
@@ -1131,13 +1131,13 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                               display: 'block',
                             }}
                           >
-                            Inherited from: <strong>{parentPermsName}</strong>
+                            {strings.InheritedFromLabel} <strong>{parentPermsName}</strong>
                           </Text>
                           {parentPerms.length === 0 ? (
                             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
                               {permissionsDenied
-                                ? 'Parent permission assignments are not visible — requires the Manage Permissions right (Site Owner or higher).'
-                                : 'No permissions found on parent.'}
+                                ? strings.ParentPermissionsNotVisibleText
+                                : strings.NoPermissionsFoundOnParentText}
                             </Body1>
                           ) : (
                             <PermTable

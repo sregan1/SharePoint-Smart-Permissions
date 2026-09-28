@@ -32,6 +32,8 @@ import {
   ChevronDown16Regular,
 } from '@fluentui/react-icons';
 
+import * as strings from 'SmartPermissionsWebPartStrings';
+import { formatString } from '../utils/localeUtils';
 import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportHistoryService } from '../services/ReportHistoryService';
@@ -406,7 +408,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     // explicit "try again", so clear it rather than failing every request.
     sp.resetThrottleState();
     liveCountRef.current = 0;
-    setScanProgress({ message: 'Starting scan…', scanned: 0, libsDone: 0, libsTotal: 0 });
+    setScanProgress({ message: strings.StartingScanStatus, scanned: 0, libsDone: 0, libsTotal: 0 });
 
     // Flush the live item count to state every 500ms so React batches renders
     const flushTimer = setInterval(() => setLiveCount(liveCountRef.current), 500);
@@ -456,16 +458,15 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       setScanProgress((prev) => ({
         ...prev,
         message: wasCancelled
-          ? `Scan cancelled — ${scannedEntries.length} object(s) collected before cancelling.`
-          : `Scan complete — ${scannedEntries.length} object(s) found, ` +
-            `${uniqueCount} with unique permissions.`,
+          ? formatString(strings.ScanCancelledStatus, scannedEntries.length)
+          : formatString(strings.ScanCompleteStatus, scannedEntries.length, uniqueCount),
       }));
 
       if (wasCancelled) return;
 
       showNotification(
-        'Smart Permissions — Scan complete',
-        `${scannedEntries.length} objects, ${uniqueCount} with unique permissions.`,
+        strings.ScanCompleteNotificationTitle,
+        formatString(strings.ScanCompleteNotificationBody, scannedEntries.length, uniqueCount),
       );
 
       // Save to history (errors are swallowed — never block the user from seeing results)
@@ -488,9 +489,9 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         .catch(() => { /* storage unavailable */ });
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        setScanProgress((prev) => ({ ...prev, message: 'Cancelled.' }));
+        setScanProgress((prev) => ({ ...prev, message: strings.CancelledStatus }));
       } else {
-        setError(`Error: ${err?.message ?? String(err)}`);
+        setError(formatString(strings.GenericErrorPrefix, err?.message ?? String(err)));
         setScanProgress((prev) => ({ ...prev, message: '' }));
       }
     } finally {
@@ -550,7 +551,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     try {
       await excel.export(exportableEntries, siteUrl.trim(), allSites);
     } catch (err: any) {
-      setError(`Export error: ${err?.message ?? String(err)}`);
+      setError(formatString(strings.ExportErrorPrefix, err?.message ?? String(err)));
     } finally {
       setIsExporting(false);
     }
@@ -565,7 +566,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     try {
       await excel.export(item.entries, item.siteUrl, item.options.allSites);
     } catch (err: any) {
-      setError(`Export error: ${err?.message ?? String(err)}`);
+      setError(formatString(strings.ExportErrorPrefix, err?.message ?? String(err)));
     } finally {
       setExportingHistoryId(null);
     }
@@ -577,7 +578,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   };
 
   const scopeLabel = (s: string): string =>
-    ({ Site: 'Site only', Library: 'Libraries', Folder: 'Folders', Item: 'Files & Folders' } as Record<string, string>)[s] ?? s;
+    ({
+      Site: strings.ScopeSiteOnly,
+      Library: strings.ScopeLibraries,
+      Folder: strings.ScopeFolders,
+      Item: strings.ScopeFilesAndFolders,
+    } as Record<string, string>)[s] ?? s;
 
   return (
     <div className={styles.root}>
@@ -592,22 +598,22 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           appearance="subtle"
           icon={<ArrowLeft24Regular />}
           onClick={() => {
-            if (isBusy && !window.confirm('A scan is in progress. Leave and cancel?')) return;
+            if (isBusy && !window.confirm(strings.ScanInProgressConfirm)) return;
             onBack();
           }}
           disabled={false}
-          aria-label="Back to home"
+          aria-label={strings.BackToHomeLabel}
         >
-          Back
+          {strings.BackButton}
         </Button>
-        <Title3 style={{ flex: 1 }}>Permissions Report</Title3>
+        <Title3 style={{ flex: 1 }}>{strings.ReportCardTitle}</Title3>
         <Button
           appearance="subtle"
           icon={<History24Regular />}
           onClick={() => setShowHistory((v) => !v)}
           disabled={isBusy}
         >
-          History{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
+          {strings.HistoryButton}{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
         </Button>
       </div>
 
@@ -616,10 +622,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         <div>
           <div className={styles.row} style={{ marginBottom: tokens.spacingVerticalM }}>
             <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setCompareResult(null)}>
-              Back to history
+              {strings.BackToHistoryButton}
             </Button>
             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-              Comparing {new Date(compareResult.older.timestamp).toLocaleString()} →{' '}
+              {strings.ComparingLabel} {new Date(compareResult.older.timestamp).toLocaleString()} →{' '}
               {new Date(compareResult.newer.timestamp).toLocaleString()}
             </Body1>
           </div>
@@ -627,22 +633,24 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           {compareMismatch && (
             <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
-                These reports were taken with different sites or scan options — differences below
-                may reflect the changed scan settings rather than actual permission changes.
+                {strings.CompareMismatchWarning}
               </MessageBarBody>
             </MessageBar>
           )}
 
           {compareResult.diff.isEmpty ? (
             <MessageBar intent="success">
-              <MessageBarBody>No permission differences found between these two reports.</MessageBarBody>
+              <MessageBarBody>{strings.NoPermissionDifferencesFound}</MessageBarBody>
             </MessageBar>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalL }}>
               {compareResult.diff.permissionChanges.length > 0 && (
                 <div>
                   <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
-                    Permission changes ({compareResult.diff.permissionChanges.length} object{compareResult.diff.permissionChanges.length !== 1 ? 's' : ''})
+                    {formatString(
+                      compareResult.diff.permissionChanges.length === 1 ? strings.PermissionChangesHeaderSingular : strings.PermissionChangesHeaderPlural,
+                      compareResult.diff.permissionChanges.length,
+                    )}
                   </Text>
                   {compareResult.diff.permissionChanges.map((obj) => (
                     <div key={`${obj.objectType}|${obj.serverRelativeUrl}`} style={{ marginBottom: tokens.spacingVerticalM }}>
@@ -656,16 +664,16 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                       <table className={styles.historyTable}>
                         <thead>
                           <tr>
-                            <th className={styles.historyTh}>Change</th>
-                            <th className={styles.historyTh}>User / Group</th>
-                            <th className={styles.historyTh}>Before</th>
-                            <th className={styles.historyTh}>After</th>
+                            <th className={styles.historyTh}>{strings.ChangeColumnHeader}</th>
+                            <th className={styles.historyTh}>{strings.UserGroupColumnHeader}</th>
+                            <th className={styles.historyTh}>{strings.BeforeColumnHeader}</th>
+                            <th className={styles.historyTh}>{strings.AfterColumnHeader}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {obj.added.map((c, i) => (
                             <tr key={`a-${c.loginName || c.displayName}-${i}`}>
-                              <td className={styles.historyTd}><Badge appearance="filled" color="success" size="small">Added</Badge></td>
+                              <td className={styles.historyTd}><Badge appearance="filled" color="success" size="small">{strings.AddedBadge}</Badge></td>
                               <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
                               <td className={styles.historyTd}>—</td>
                               <td className={styles.historyTd}>{c.newRoles}</td>
@@ -673,7 +681,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           ))}
                           {obj.removed.map((c, i) => (
                             <tr key={`r-${c.loginName || c.displayName}-${i}`}>
-                              <td className={styles.historyTd}><Badge appearance="filled" color="danger" size="small">Removed</Badge></td>
+                              <td className={styles.historyTd}><Badge appearance="filled" color="danger" size="small">{strings.RemovedBadge}</Badge></td>
                               <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
                               <td className={styles.historyTd}>{c.oldRoles}</td>
                               <td className={styles.historyTd}>—</td>
@@ -681,7 +689,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           ))}
                           {obj.changed.map((c, i) => (
                             <tr key={`c-${c.loginName || c.displayName}-${i}`}>
-                              <td className={styles.historyTd}><Badge appearance="filled" color="warning" size="small">Changed</Badge></td>
+                              <td className={styles.historyTd}><Badge appearance="filled" color="warning" size="small">{strings.ChangedBadge}</Badge></td>
                               <td className={styles.historyTd}>{c.displayName || c.loginName}</td>
                               <td className={styles.historyTd}>{c.oldRoles}</td>
                               <td className={styles.historyTd}>{c.newRoles}</td>
@@ -697,15 +705,15 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               {compareResult.diff.inheritanceChanged.length > 0 && (
                 <div>
                   <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
-                    Inheritance changed ({compareResult.diff.inheritanceChanged.length})
+                    {formatString(strings.InheritanceChangedHeader, compareResult.diff.inheritanceChanged.length)}
                   </Text>
                   <table className={styles.historyTable}>
                     <thead>
                       <tr>
-                        <th className={styles.historyTh}>Type</th>
-                        <th className={styles.historyTh}>Name</th>
-                        <th className={styles.historyTh}>Path</th>
-                        <th className={styles.historyTh}>Now</th>
+                        <th className={styles.historyTh}>{strings.TypeColumnHeader}</th>
+                        <th className={styles.historyTh}>{strings.NameColumnHeader}</th>
+                        <th className={styles.historyTh}>{strings.PathColumnHeader}</th>
+                        <th className={styles.historyTh}>{strings.NowColumnHeader}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -722,8 +730,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           </td>
                           <td className={styles.historyTd}>
                             {nowUnique
-                              ? <Badge appearance="filled" color="warning" size="small">Unique (inheritance broken)</Badge>
-                              : <Badge appearance="outline" size="small">Inherited (restored)</Badge>}
+                              ? <Badge appearance="filled" color="warning" size="small">{strings.UniqueInheritanceBrokenBadge}</Badge>
+                              : <Badge appearance="outline" size="small">{strings.InheritedRestoredBadge}</Badge>}
                           </td>
                         </tr>
                       ))}
@@ -736,14 +744,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 compareResult.diff[bucket].length > 0 && (
                   <div key={bucket}>
                     <Text weight="semibold" style={{ display: 'block', marginBottom: tokens.spacingVerticalS }}>
-                      {bucket === 'addedObjects' ? 'New objects' : 'Removed objects'} ({compareResult.diff[bucket].length})
+                      {bucket === 'addedObjects' ? strings.NewObjectsHeader : strings.RemovedObjectsHeader} ({compareResult.diff[bucket].length})
                     </Text>
                     <table className={styles.historyTable}>
                       <thead>
                         <tr>
-                          <th className={styles.historyTh}>Type</th>
-                          <th className={styles.historyTh}>Name</th>
-                          <th className={styles.historyTh}>Path</th>
+                          <th className={styles.historyTh}>{strings.TypeColumnHeader}</th>
+                          <th className={styles.historyTh}>{strings.NameColumnHeader}</th>
+                          <th className={styles.historyTh}>{strings.PathColumnHeader}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -775,7 +783,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         <div>
           <div className={styles.row} style={{ marginBottom: tokens.spacingVerticalM }}>
             <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setShowHistory(false)}>
-              Back to scan
+              {strings.BackToScanButton}
             </Button>
             <Button
               appearance="primary"
@@ -783,24 +791,24 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               disabled={compareSelection.size !== 2}
               style={{ marginLeft: 'auto' }}
             >
-              Compare selected{compareSelection.size > 0 ? ` (${compareSelection.size}/2)` : ''}
+              {strings.CompareSelectedButton}{compareSelection.size > 0 ? ` (${compareSelection.size}/2)` : ''}
             </Button>
           </div>
 
           {historyItems.length === 0 ? (
-            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>No reports saved yet.</Body1>
+            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.NoReportsSavedYet}</Body1>
           ) : (
             <table className={styles.historyTable}>
               <thead>
                 <tr>
-                  <th className={styles.historyTh} style={{ width: '32px' }} aria-label="Select for compare" />
+                  <th className={styles.historyTh} style={{ width: '32px' }} aria-label={strings.SelectForCompareLabel} />
                   {(
                     [
-                      { col: 'timestamp', label: 'Date / Time' },
-                      { col: 'siteUrl', label: 'Site' },
-                      { col: 'scope', label: 'Scope' },
-                      { col: 'total', label: 'Objects' },
-                      { col: 'unique', label: 'Unique' },
+                      { col: 'timestamp', label: strings.DateTimeColumnHeader },
+                      { col: 'siteUrl', label: strings.SiteColumnHeader },
+                      { col: 'scope', label: strings.ScopeColumnHeader },
+                      { col: 'total', label: strings.ObjectsColumnHeader },
+                      { col: 'unique', label: strings.UniqueColumnHeader },
                     ] as { col: typeof historySortCol; label: string }[]
                   ).map(({ col, label }) => (
                     <th
@@ -829,7 +837,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                         checked={compareSelection.has(item.id)}
                         onChange={() => toggleCompareSelection(item.id)}
                         disabled={!compareSelection.has(item.id) && compareSelection.size >= 2}
-                        aria-label={`Select report from ${new Date(item.timestamp).toLocaleString()} for compare`}
+                        aria-label={formatString(strings.SelectReportForCompareLabel, new Date(item.timestamp).toLocaleString())}
                       />
                     </td>
                     <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
@@ -841,8 +849,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                       </Text>
                     </td>
                     <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
-                      {item.options.allSites ? 'All sites · ' : ''}{scopeLabel(item.options.scope)}
-                      {item.options.includeSubsites ? ' + subsites' : ''}
+                      {item.options.allSites ? strings.AllSitesPrefix : ''}{scopeLabel(item.options.scope)}
+                      {item.options.includeSubsites ? strings.PlusSubsitesSuffix : ''}
                     </td>
                     <td className={styles.historyTd}>{item.summary.totalObjects}</td>
                     <td className={styles.historyTd}>{item.summary.uniqueCount}</td>
@@ -855,14 +863,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           onClick={() => handleHistoryExport(item)}
                           disabled={exportingHistoryId === item.id}
                         >
-                          {exportingHistoryId === item.id ? 'Exporting…' : 'Export'}
+                          {exportingHistoryId === item.id ? strings.ExportingStatus : strings.ExportButton}
                         </Button>
                         <Button
                           size="small"
                           appearance="subtle"
                           icon={<Delete24Regular />}
                           onClick={() => handleHistoryDelete(item.id)}
-                          title="Delete this report"
+                          title={strings.DeleteThisReportTitle}
                         />
                       </div>
                     </td>
@@ -878,20 +886,19 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       {!showHistory && <div className={styles.form}>
         {/* All-sites toggle */}
         <Checkbox
-          label="Scan all site collections in this tenant (only available in root site)"
+          label={strings.ScanAllSiteCollectionsLabel}
           checked={allSites}
           onChange={(_, d) => setAllSites(!!d.checked)}
           disabled={!isRootSite || isBusy}
         />
         {allSites && (
           <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginLeft: '28px' }}>
-            Site list comes from search and may not include every site collection — very
-            recently created sites, or sites excluded from the search index, can be missed.
+            {strings.AllSitesSearchCaveat}
           </Text>
         )}
 
         <Checkbox
-          label="Include subsites (scans every subsite below this site)"
+          label={strings.IncludeSubsitesLabel}
           checked={includeSubsites}
           onChange={(_, d) => setIncludeSubsites(!!d.checked)}
           disabled={isBusy}
@@ -900,7 +907,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         <Divider />
 
         {/* Scope */}
-        <Field label="Scan depth">
+        <Field label={strings.ScanDepthFieldLabel}>
           <RadioGroup
             value={scope}
             onChange={(_, d) => setScope(d.value)}
@@ -909,10 +916,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             style={{ flexWrap: 'wrap', gap: tokens.spacingHorizontalS }}
           >
             {([
-              { value: 'Site', Icon: Globe24Regular, label: 'Site only' },
-              { value: 'Library', Icon: BookDatabase24Regular, label: 'Libraries' },
-              { value: 'Folder', Icon: Folder24Regular, label: 'Folders' },
-              { value: 'Item', Icon: FolderOpen24Regular, label: 'Files & Folders' },
+              { value: 'Site', Icon: Globe24Regular, label: strings.ScopeSiteOnly },
+              { value: 'Library', Icon: BookDatabase24Regular, label: strings.ScopeLibraries },
+              { value: 'Folder', Icon: Folder24Regular, label: strings.ScopeFolders },
+              { value: 'Item', Icon: FolderOpen24Regular, label: strings.ScopeFilesAndFolders },
             ] as const).map(({ value, Icon, label }) => (
               <div
                 key={value}
@@ -940,7 +947,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
         {/* Folder depth — always rendered so it doesn't shift the Run Report button */}
         <div className={styles.row} style={{ visibility: scope === 'Folder' ? 'visible' : 'hidden' }}>
-          <Label>Folder depth limit:</Label>
+          <Label>{strings.FolderDepthLimitLabel}</Label>
           <SpinButton
             value={folderDepth}
             min={1}
@@ -956,7 +963,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         </div>
 
         <Checkbox
-          label="Expand group members in report (SharePoint groups, Security groups, and M365 groups)"
+          label={strings.ExpandGroupMembersInReportLabel}
           checked={expandGroups}
           onChange={(_, d) => setExpandGroups(!!d.checked)}
           disabled={isBusy}
@@ -973,10 +980,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           >
             <div className={styles.row} style={{ marginBottom: tokens.spacingVerticalXS }}>
               <Label weight="semibold">
-                Libraries to scan
+                {strings.LibrariesToScanLabel}
                 {selectedLibraryUrls.size < availableLibraries.length && (
                   <span style={{ color: tokens.colorNeutralForeground3, fontWeight: 'normal', marginLeft: '6px' }}>
-                    ({selectedLibraryUrls.size} of {availableLibraries.length} selected)
+                    ({formatString(strings.OfSelectedCount, selectedLibraryUrls.size, availableLibraries.length)})
                   </span>
                 )}
               </Label>
@@ -986,7 +993,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 onClick={() => setSelectedLibraryUrls(new Set(availableLibraries.map((l) => l.serverRelativeUrl)))}
                 disabled={isBusy || selectedLibraryUrls.size === availableLibraries.length}
               >
-                All
+                {strings.AllButton}
               </Button>
               <Button
                 size="small"
@@ -994,7 +1001,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 onClick={() => setSelectedLibraryUrls(new Set())}
                 disabled={isBusy || selectedLibraryUrls.size === 0}
               >
-                None
+                {strings.NoneButton}
               </Button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}` }}>
@@ -1011,7 +1018,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           </div>
         )}
         {scope !== 'Site' && librariesLoading && (
-          <Body1 style={{ color: tokens.colorNeutralForeground3 }}>Loading libraries…</Body1>
+          <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.LoadingLibrariesStatus}</Body1>
         )}
 
         <Divider />
@@ -1023,11 +1030,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             onClick={handleRun}
             disabled={isBusy || (scope !== 'Site' && availableLibraries.length > 0 && selectedLibraryUrls.size === 0)}
           >
-            Run Report
+            {strings.RunReportButton}
           </Button>
           {isBusy && (
             <Button appearance="secondary" onClick={handleCancel}>
-              Cancel
+              {strings.CancelButton}
             </Button>
           )}
         </div>
@@ -1050,8 +1057,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             </div>
             {isBusy && liveCount > 0 && (
               <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                {liveCount.toLocaleString()} items found so far
-                {scanProgress.libsTotal > 0 && ` · Library ${scanProgress.libsDone} of ${scanProgress.libsTotal}`}
+                {formatString(strings.ItemsFoundSoFar, liveCount.toLocaleString())}
+                {scanProgress.libsTotal > 0 && ` · ${formatString(strings.LibraryOfProgress, scanProgress.libsDone, scanProgress.libsTotal)}`}
               </Body1>
             )}
           </div>
@@ -1068,13 +1075,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         {entries && !isBusy && (
           <div className={styles.resultArea}>
             <div className={styles.row}>
-              <Text weight="semibold">{cancelled ? 'Scan cancelled — partial results' : 'Scan complete'}</Text>
-              <Badge appearance="filled" color="success">{entries.length} objects</Badge>
+              <Text weight="semibold">{cancelled ? strings.ScanCancelledPartialResults : strings.ScanCompleteLabel}</Text>
+              <Badge appearance="filled" color="success">{formatString(strings.ObjectsCountBadge, entries.length)}</Badge>
               <Badge appearance="filled" color="warning">
-                {entries.filter((e) => e.hasUniquePermissions).length} unique
+                {formatString(strings.UniqueCountBadge, entries.filter((e) => e.hasUniquePermissions).length)}
               </Badge>
               <Badge appearance="outline">
-                {entries.filter((e) => !e.hasUniquePermissions).length} inherited
+                {formatString(strings.InheritedCountBadge, entries.filter((e) => !e.hasUniquePermissions).length)}
               </Badge>
             </div>
 
@@ -1089,10 +1096,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 disabled={isExporting || exportableEntries.length === 0}
               >
                 {isExporting
-                  ? 'Generating Excel…'
+                  ? strings.GeneratingExcelStatus
                   : exportableEntries.length < entries.length
-                  ? `Export ${exportableEntries.length} filtered rows`
-                  : 'Export to Excel'}
+                  ? formatString(strings.ExportFilteredRowsButton, exportableEntries.length)
+                  : strings.ExportToExcelButton}
               </Button>
               <Button
                 appearance="secondary"
@@ -1100,21 +1107,19 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 onClick={handleExportCsv}
                 disabled={isExporting || exportableEntries.length === 0}
               >
-                Export to CSV
+                {strings.ExportToCsvButton}
               </Button>
             </div>
 
             {throttleAborted && (
               <MessageBar intent="error">
                 <MessageBarBody>
-                  <strong>Scan stopped early — SharePoint is throttling this tenant.</strong>{' '}
+                  <strong>{strings.ScanStoppedEarlyTitle}</strong>{' '}
                   {siteProgress
-                    ? `${siteProgress.scanned} of ${siteProgress.total} site collections were scanned before stopping. `
+                    ? formatString(strings.SiteCollectionsScannedBeforeStopping, siteProgress.scanned, siteProgress.total)
                     : ''}
-                  The results below cover only what was scanned and are <strong>not</strong> a
-                  complete audit. The scan stops itself in this situation because continuing to send
-                  requests is what keeps the throttle applied. Wait several minutes, then re-run with{' '}
-                  <strong>Concurrent requests</strong> set to 1 or 2 in Settings.
+                  {strings.ResultsBelowCoverOnlyPre} <strong>{strings.NotWord}</strong> {strings.ResultsBelowCoverOnlyPost}{' '}
+                  <strong>{strings.ConcurrentRequestsWord}</strong> {strings.SetTo1Or2InSettings}
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -1122,24 +1127,19 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             {throttleEvents > 0 && !throttleAborted && (
               <MessageBar intent="warning">
                 <MessageBarBody>
-                  SharePoint throttled this scan ({throttleEvents} request(s) were rate-limited and
-                  retried).{' '}
+                  {formatString(strings.ThrottledScanMessage, throttleEvents)}{' '}
                   {incompleteCount > 0 ? (
                     <>
-                      Of everything scanned, <strong>{incompleteCount} item{incompleteCount === 1 ? '' : 's'}</strong>{' '}
-                      couldn&apos;t be confirmed after retrying (see the &quot;could not be fully
-                      read&quot; notice below for exactly which) — that failure was capacity-related,
-                      not a reflection of their actual permissions. Every other item in this report
-                      was read successfully and can be trusted.
+                      {strings.OfEverythingScannedPre} <strong>{formatString(incompleteCount === 1 ? strings.ItemCountSingular : strings.ItemCountPlural, incompleteCount)}</strong>{' '}
+                      {strings.CouldNotBeConfirmedText}
                     </>
                   ) : (
                     <>
-                      Despite the throttling, every item was still confirmed successfully after
-                      retrying, so this report is complete.
+                      {strings.DespiteThrottlingText}
                     </>
                   )}{' '}
-                  For a clean run, wait a few minutes and re-scan with a lower{' '}
-                  <strong>Concurrent requests</strong> value in Settings.
+                  {strings.ForCleanRunPre}{' '}
+                  <strong>{strings.ConcurrentRequestsWord}</strong> {strings.ValueInSettingsPost}
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -1148,18 +1148,18 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               <MessageBar intent="warning">
                 <MessageBarBody>
                   {deniedPaths.length === 1
-                    ? '1 item'
-                    : `${deniedPaths.length} item(s)`} out of {entries.length} scanned could not be read with your
-                  current access — permission assignments for {deniedPaths.length === 1 ? 'it are' : 'those are'} not shown,
-                  but the rest of this report was read successfully.
-                  Run the scan as a <strong>Site Owner</strong> to see full details for the denied item(s) below.
+                    ? strings.OneItemWord
+                    : formatString(strings.NItemsWord, deniedPaths.length)} {formatString(strings.OutOfScannedCouldNotBeRead, entries.length)}
+                  {deniedPaths.length === 1 ? strings.PermissionAssignmentsForItAreNotShown : strings.PermissionAssignmentsForThoseAreNotShown}
+                  {strings.RestOfReportReadSuccessfully}
+                  {strings.RunScanAsSiteOwnerPre} <strong>{strings.SiteOwnerWord}</strong> {strings.RunScanAsSiteOwnerPost}
                   <SiteOwnersLinks owners={siteOwners} />
                   {deniedPaths.length > 0 && (
                     <ul style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
                       {deniedPaths.slice(0, 10).map((path) => (
                         <li key={path}>{path}</li>
                       ))}
-                      {deniedPaths.length > 10 && <li>…and {deniedPaths.length - 10} more</li>}
+                      {deniedPaths.length > 10 && <li>{formatString(strings.AndNMoreText, deniedPaths.length - 10)}</li>}
                     </ul>
                   )}
                 </MessageBarBody>
@@ -1169,9 +1169,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             {groupPermissionDenied && (
               <MessageBar intent="warning">
                 <MessageBarBody>
-                  Group member expansion was skipped — the <strong>GroupMember.Read.All</strong> Graph
-                  permission has not been approved in this tenant. A SharePoint or Global Administrator
-                  can approve it in <strong>SharePoint Admin Center → Advanced → API access</strong>.
+                  {strings.GroupExpansionSkippedPre} <strong>{strings.GroupMemberReadAllWord}</strong> {strings.GroupExpansionSkippedPost}{' '}
+                  <strong>{strings.SharePointAdminCenterPath}</strong>.
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -1179,10 +1178,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             {entries.some((e) => e.scanIncomplete) && (
               <MessageBar intent="warning">
                 <MessageBarBody>
-                  {entries.filter((e) => e.scanIncomplete).length} item(s) could not be fully read due to a
-                  temporary error (not a permission issue) and are shown with their parent&apos;s permissions
-                  as a best-effort fallback — this may not reflect their actual access. Re-run the scan to
-                  retry these items.
+                  {formatString(strings.ScanIncompleteItemsMessage, entries.filter((e) => e.scanIncomplete).length)}
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -1191,36 +1187,36 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
             {/* Filter bar */}
             <Input
-              placeholder="Filter by name, path, or user/group…"
+              placeholder={strings.FilterByNamePathUserPlaceholder}
               value={filterText}
               onChange={(_, d) => setFilterText(d.value)}
               style={{ width: '100%' }}
-              aria-label="Filter results"
+              aria-label={strings.FilterResultsLabel}
             />
             <div className={styles.row}>
               <Checkbox
-                label="Unique permissions only"
+                label={strings.UniquePermissionsOnlyToggle}
                 checked={filterUniqueOnly}
                 onChange={(_, d) => setFilterUniqueOnly(!!d.checked)}
               />
               <Checkbox
-                label="External users only (#ext#)"
+                label={strings.ExternalUsersOnlyExtLabel}
                 checked={filterExternalOnly}
                 onChange={(_, d) => setFilterExternalOnly(!!d.checked)}
               />
               <Checkbox
-                label="Exclude Limited Access"
+                label={strings.ExcludeLimitedAccessLabel}
                 checked={excludeLimitedAccess}
                 onChange={(_, d) => onExcludeLimitedAccessChange(!!d.checked)}
               />
               <Checkbox
-                label="Exclude Sharing Links"
+                label={strings.ExcludeSharingLinksLabel}
                 checked={excludeSharingLinks}
                 onChange={(_, d) => onExcludeSharingLinksChange(!!d.checked)}
               />
               {(filterText || filterExternalOnly || filterUniqueOnly) && (
                 <Body1 style={{ color: tokens.colorNeutralForeground3, marginLeft: 'auto' }}>
-                  Showing {filteredEntries?.length ?? 0} of {entries.length}
+                  {formatString(strings.ShowingOfCount, filteredEntries?.length ?? 0, entries.length)}
                 </Body1>
               )}
             </div>
@@ -1228,16 +1224,16 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             {/* ── Results table ── */}
             {sortedResults.length > 0 && (
               <>
-                <table className={styles.historyTable} aria-label="Scan results">
+                <table className={styles.historyTable} aria-label={strings.ScanResultsLabel}>
                   <thead>
                     <tr>
                       <th className={styles.historyTh} style={{ width: '28px' }} />
                       {(
                         [
-                          { col: 'type', label: 'Type' },
-                          { col: 'name', label: 'Name' },
-                          { col: 'path', label: 'Path' },
-                          { col: 'source', label: 'Permissions' },
+                          { col: 'type', label: strings.TypeColumnHeader },
+                          { col: 'name', label: strings.NameColumnHeader },
+                          { col: 'path', label: strings.PathColumnHeader },
+                          { col: 'source', label: strings.PermissionsColumnHeader },
                         ] as { col: 'type' | 'name' | 'path' | 'source'; label: string }[]
                       ).map(({ col, label }) => (
                         <th
@@ -1279,7 +1275,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                                   size="small"
                                   icon={isExpanded ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
                                   aria-expanded={isExpanded}
-                                  aria-label={isExpanded ? 'Collapse permissions' : 'Expand permissions'}
+                                  aria-label={isExpanded ? strings.CollapsePermissionsLabel : strings.ExpandPermissionsLabel}
                                   onClick={(e) => { e.stopPropagation(); toggleExpanded(key); }}
                                 />
                               )}
@@ -1293,7 +1289,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                               {entry.name}
                               {entry.noCrawl && (
                                 <Badge appearance="outline" size="small" style={{ marginLeft: '6px' }}>
-                                  Hidden from search
+                                  {strings.HiddenFromSearchBadge}
                                 </Badge>
                               )}
                             </td>
@@ -1304,13 +1300,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                             </td>
                             <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
                               {entry.hasUniquePermissions ? (
-                                <Badge appearance="filled" color="warning" size="small">Unique</Badge>
+                                <Badge appearance="filled" color="warning" size="small">{strings.UniqueBadge}</Badge>
                               ) : (
-                                <Badge appearance="outline" size="small">Inherited</Badge>
+                                <Badge appearance="outline" size="small">{strings.InheritedBadge}</Badge>
                               )}
                               {expandable && (
                                 <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, marginLeft: '6px' }}>
-                                  {rowPerms.length} assignment{rowPerms.length !== 1 ? 's' : ''}
+                                  {formatString(rowPerms.length === 1 ? strings.AssignmentCountSingular : strings.AssignmentCountPlural, rowPerms.length)}
                                 </Text>
                               )}
                             </td>
@@ -1331,7 +1327,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 {resultsVisible < sortedResults.length && (
                   <div style={{ textAlign: 'center' }}>
                     <Button appearance="secondary" onClick={() => setResultsVisible((c) => c + RESULTS_PAGE_SIZE)}>
-                      Load more ({(sortedResults.length - resultsVisible).toLocaleString()} remaining)
+                      {formatString(strings.LoadMoreRemainingButton, (sortedResults.length - resultsVisible).toLocaleString())}
                     </Button>
                   </div>
                 )}

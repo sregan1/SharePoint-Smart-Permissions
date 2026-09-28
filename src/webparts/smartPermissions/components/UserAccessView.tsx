@@ -18,6 +18,8 @@ import {
 } from '@fluentui/react-components';
 import { ArrowLeft24Regular, ArrowDownload24Regular, History24Regular, Delete24Regular } from '@fluentui/react-icons';
 
+import * as strings from 'SmartPermissionsWebPartStrings';
+import { formatString } from '../utils/localeUtils';
 import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportHistoryService } from '../services/ReportHistoryService';
@@ -247,7 +249,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     try {
       await excel.exportUserAccess(item.entries, item.siteUrl, item.userDisplayName);
     } catch (err: any) {
-      setExportError(`Export error: ${err?.message ?? String(err)}`);
+      setExportError(formatString(strings.ExportErrorPrefix, err?.message ?? String(err)));
     } finally {
       setExportingHistoryId(null);
     }
@@ -270,7 +272,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     try {
       await excel.exportUserAccess(sortedAccessItems, siteUrl.trim(), user?.displayName ?? selectedUser);
     } catch (err: any) {
-      setExportError(`Export error: ${err?.message ?? String(err)}`);
+      setExportError(formatString(strings.ExportErrorPrefix, err?.message ?? String(err)));
     } finally {
       setIsExporting(false);
     }
@@ -304,7 +306,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
 
     setIsConnecting(true);
     setConnectError('');
-    setConnectStatus('Loading users…');
+    setConnectStatus(strings.LoadingUsersStatus);
     setIsConnected(false);
     setSiteUsers([]);
     setSelectedUser('');
@@ -316,7 +318,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       const users = rawUsers.filter((u) => !isSystemAccount(u));
       setSiteUsers(users);
       setIsConnected(true);
-      setConnectStatus(`Connected — ${users.length} user${users.length === 1 ? '' : 's'} found`);
+      setConnectStatus(formatString(users.length === 1 ? strings.ConnectedUserSingular : strings.ConnectedUserPlural, users.length));
 
       // Auto-scan for prefill user (from Explorer cross-navigation). The
       // display name is passed explicitly because the siteUsers state update
@@ -331,7 +333,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         );
       }
     } catch (err: any) {
-      setConnectError(`Connection failed: ${err?.message ?? String(err)}`);
+      setConnectError(formatString(strings.ConnectionFailedError, err?.message ?? String(err)));
       setConnectStatus('');
     } finally {
       setIsConnecting(false);
@@ -383,7 +385,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     setSiteOwners([]);
     const displayName =
       knownDisplayName ?? siteUsers.find((u) => u.loginName === login)?.displayName ?? login;
-    setUserAccessStatus(`Checking access for ${displayName}…`);
+    setUserAccessStatus(formatString(strings.CheckingAccessForStatus, displayName));
 
     try {
       const { fullSiteAccess, items, graphPermissionRequired: graphPerm, roleAssignmentsDenied: raDenied } = await sp.getUserAccess(
@@ -398,17 +400,17 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       setGraphPermissionRequired(graphPerm);
       setRoleAssignmentsDenied(raDenied);
       const statusMsg = fullSiteAccess
-        ? 'Full site access detected.'
+        ? strings.FullSiteAccessDetectedStatus
         : items.length > 0
-        ? `${items.length} accessible location(s) found.`
+        ? formatString(items.length === 1 ? strings.AccessibleLocationsFoundSingular : strings.AccessibleLocationsFoundPlural, items.length)
         : raDenied
         ? ''
-        : 'No accessible locations found.';
+        : strings.NoAccessibleLocationsFoundStatus;
       setUserAccessStatus(fullSiteAccess ? '' : statusMsg);
 
       showNotification(
-        'Smart Permissions — User Access scan complete',
-        `${displayName}: ${statusMsg}`,
+        strings.UserAccessScanCompleteNotificationTitle,
+        formatString(strings.UserAccessScanCompleteNotificationBody, displayName, statusMsg),
       );
 
       // Save to history (errors swallowed — never block the user)
@@ -451,15 +453,15 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           appearance="subtle"
           icon={<ArrowLeft24Regular />}
           onClick={() => {
-            if (userAccessBusy && !window.confirm('A scan is in progress. Leave and cancel?')) return;
+            if (userAccessBusy && !window.confirm(strings.ScanInProgressConfirm)) return;
             onBack();
           }}
           disabled={isConnecting}
-          aria-label="Back to home"
+          aria-label={strings.BackToHomeLabel}
         >
-          Back
+          {strings.BackButton}
         </Button>
-        <Title3 style={{ flex: 1 }}>User Access</Title3>
+        <Title3 style={{ flex: 1 }}>{strings.UserAccessCardTitle}</Title3>
         {selectedUser && !userAccessBusy && isConnected && (
           <Button
             appearance="secondary"
@@ -474,7 +476,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               setVisibleCount(PAGE_SIZE);
             }}
           >
-            New scan
+            {strings.NewScanButton}
           </Button>
         )}
         <Button
@@ -483,7 +485,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           onClick={() => setShowHistory((v) => !v)}
           disabled={isConnecting}
         >
-          History{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
+          {strings.HistoryButton}{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
         </Button>
       </div>
 
@@ -492,7 +494,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         <div>
           <div style={{ marginBottom: tokens.spacingVerticalM }}>
             <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setShowHistory(false)}>
-              Back to scan
+              {strings.BackToScanButton}
             </Button>
           </div>
           {exportError && (
@@ -501,15 +503,15 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
             </MessageBar>
           )}
           {historyItems.length === 0 ? (
-            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>No user access scans saved yet.</Body1>
+            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.NoUserAccessScansSavedYet}</Body1>
           ) : (
             <table className={styles.historyTable}>
               <thead>
                 <tr>
-                  <th className={styles.historyTh}>Date / Time</th>
-                  <th className={styles.historyTh}>User</th>
-                  <th className={styles.historyTh}>Site</th>
-                  <th className={styles.historyTh}>Locations</th>
+                  <th className={styles.historyTh}>{strings.DateTimeColumnHeader}</th>
+                  <th className={styles.historyTh}>{strings.UserColumnHeader}</th>
+                  <th className={styles.historyTh}>{strings.SiteColumnHeader}</th>
+                  <th className={styles.historyTh}>{strings.LocationsColumnHeader}</th>
                   <th className={styles.historyTh}></th>
                 </tr>
               </thead>
@@ -522,7 +524,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                     <td className={styles.historyTd}>
                       {item.userDisplayName}
                       {item.summary.fullSiteAccess && (
-                        <Badge appearance="filled" color="danger" size="small" style={{ marginLeft: '6px' }}>Full Control</Badge>
+                        <Badge appearance="filled" color="danger" size="small" style={{ marginLeft: '6px' }}>{strings.FullControlBadge}</Badge>
                       )}
                     </td>
                     <td className={styles.historyTd}>
@@ -540,14 +542,14 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                           onClick={() => handleHistoryExport(item)}
                           disabled={exportingHistoryId === item.id || item.entries.length === 0}
                         >
-                          {exportingHistoryId === item.id ? 'Exporting…' : 'Export'}
+                          {exportingHistoryId === item.id ? strings.ExportingStatus : strings.ExportButton}
                         </Button>
                         <Button
                           size="small"
                           appearance="subtle"
                           icon={<Delete24Regular />}
                           onClick={() => handleHistoryDelete(item.id)}
-                          title="Delete this record"
+                          title={strings.DeleteThisRecordTitle}
                         />
                       </div>
                     </td>
@@ -580,9 +582,9 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       {!showHistory && isConnected && (
         <>
           <div style={{ marginBottom: tokens.spacingVerticalM }}>
-            <Field label="Select a user">
+            <Field label={strings.SelectAUserFieldLabel}>
               <Combobox
-                placeholder="Search users…"
+                placeholder={strings.SearchUsersPlaceholder}
                 value={userFilter}
                 onInput={(e) => setUserFilter((e.target as HTMLInputElement).value)}
                 onOptionSelect={(_, d) => {
@@ -593,7 +595,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 }}
                 disabled={userAccessBusy}
                 style={{ maxWidth: '400px' }}
-                aria-label="Select a user to check access"
+                aria-label={strings.SelectAUserToCheckAccessLabel}
               >
                 {siteUsers
                   .filter(
@@ -608,7 +610,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                     </Option>
                   ))}
                 {tenantSuggestions.length > 0 && (
-                  <OptionGroup label="Not in this site">
+                  <OptionGroup label={strings.NotInThisSiteLabel}>
                     {tenantSuggestions.map((u) => (
                       <Option key={u.loginName} value={u.loginName} text={u.displayName}>
                         {u.email ? `${u.displayName} (${u.email})` : u.displayName}
@@ -621,8 +623,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           </div>
 
           {userAccessBusy && (
-            <div className={styles.scanArea} role="status" aria-label="Scan in progress">
-              <ProgressBar aria-label="Scanning user access" />
+            <div className={styles.scanArea} role="status" aria-label={strings.ScanInProgressLabel}>
+              <ProgressBar aria-label={strings.ScanningUserAccessLabel} />
               <div className={styles.scanRow}>
                 <Spinner size="tiny" />
                 <Text>{userAccessStatus}</Text>
@@ -632,10 +634,10 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               </div>
               <div className={styles.scanRow}>
                 <Button appearance="secondary" size="small" onClick={() => abortRef.current?.abort()}>
-                  Cancel
+                  {strings.CancelButton}
                 </Button>
                 <Body1 style={{ color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 }}>
-                  Scanning…
+                  {strings.ScanningStatus}
                 </Body1>
               </div>
             </div>
@@ -650,8 +652,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           {!userAccessBusy && isFullSiteAccess && (
             <MessageBar intent="success" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
-                This user has <strong>Full Control</strong> or Owner-level access to the
-                entire site — all libraries and folders are accessible.
+                {strings.FullControlAccessPre} <strong>{strings.FullControlWord}</strong> {strings.FullControlAccessPost}
               </MessageBarBody>
             </MessageBar>
           )}
@@ -659,9 +660,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           {!userAccessBusy && graphPermissionRequired && (
             <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
-                Site-level permission could not be determined — this site likely uses Microsoft 365 Group access.
-                To show it, a SharePoint Administrator must approve the <strong>GroupMember.Read.All</strong> permission
-                in <strong>SharePoint Admin Center → Advanced → API access</strong>.
+                {strings.SiteLevelPermissionCouldNotBeDeterminedPre} <strong>{strings.GroupMemberReadAllWord}</strong> {strings.SiteLevelPermissionCouldNotBeDeterminedMid}{' '}
+                <strong>{strings.SharePointAdminCenterPath}</strong>.
               </MessageBarBody>
             </MessageBar>
           )}
@@ -674,17 +674,12 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               <MessageBarBody>
                 {userAccessItems.length > 0 ? (
                   <>
-                    Showing <strong>site-level access only</strong>, based on default SharePoint group
-                    membership. Unique permissions on libraries, folders, and files could not be read
-                    and are not shown. For complete results, run this scan as a{' '}
-                    <strong>Site Owner</strong>.
+                    {strings.ShowingSiteLevelAccessOnlyPre} <strong>{strings.SiteLevelAccessOnlyWord}</strong> {strings.ShowingSiteLevelAccessOnlyMid}{' '}
+                    <strong>{strings.SiteOwnerWord}</strong>.
                   </>
                 ) : (
                   <>
-                    This user{"'"}s access could not be determined. Reading permission assignments
-                    requires the <strong>Manage Permissions</strong> right (Site Owner or higher),
-                    and this user does not appear to be a member of the site{"'"}s default Owner,
-                    Member, or Visitor groups.
+                    {strings.UserAccessCouldNotBeDeterminedPre} <strong>{strings.ManagePermissionsWord}</strong> {strings.UserAccessCouldNotBeDeterminedPost}
                   </>
                 )}
                 <SiteOwnersLinks owners={siteOwners} />
@@ -711,7 +706,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 onClick={() => handleExport().catch((e) => console.error('[SmartPermissions] handleExport failed:', e))}
                 disabled={isExporting}
               >
-                {isExporting ? 'Exporting…' : 'Export to Excel'}
+                {isExporting ? strings.ExportingStatus : strings.ExportToExcelButton}
               </Button>
               <Button
                 appearance="secondary"
@@ -722,7 +717,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 }}
                 disabled={isExporting}
               >
-                Export to CSV
+                {strings.ExportToCsvButton}
               </Button>
             </div>
           )}
@@ -734,23 +729,21 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           {!userAccessBusy && hasSiteEntry && !isFullSiteAccess && (
             <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
               <MessageBarBody>
-                This user has site-level access. Only locations with{' '}
-                <strong>unique permission assignments</strong> appear below — all other
-                content is accessible through the site-level permission shown at the top
-                of the list.
+                {strings.SiteLevelAccessBannerPre}{' '}
+                <strong>{strings.UniquePermissionAssignmentsWord}</strong> {strings.SiteLevelAccessBannerPost}
               </MessageBarBody>
             </MessageBar>
           )}
           {!userAccessBusy && userAccessItems.length > 0 && (
-            <table className={styles.accessTable} aria-label="User access results">
+            <table className={styles.accessTable} aria-label={strings.UserAccessResultsLabel}>
               <thead>
                 <tr>
                   {(
                     [
-                      { col: 'type', label: 'Type' },
-                      { col: 'name', label: 'Name' },
-                      { col: 'path', label: 'Path' },
-                      { col: 'permission', label: 'Permission Level' },
+                      { col: 'type', label: strings.TypeColumnHeader },
+                      { col: 'name', label: strings.NameColumnHeader },
+                      { col: 'path', label: strings.PathColumnHeader },
+                      { col: 'permission', label: strings.PermissionLevelColumnHeader },
                     ] as { col: typeof sortCol; label: string }[]
                   ).map(({ col, label }) => (
                     <th
@@ -832,7 +825,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 appearance="secondary"
                 onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
               >
-                Load more ({(sortedAccessItems.length - visibleCount).toLocaleString()} remaining)
+                {formatString(strings.LoadMoreRemainingButton, (sortedAccessItems.length - visibleCount).toLocaleString())}
               </Button>
             </div>
           )}

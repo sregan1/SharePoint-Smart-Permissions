@@ -84,6 +84,17 @@ Look up any user and see every location they can access on a site, with their ex
 
 ---
 
+### Localization
+
+The web part's interface is fully translated into 30 languages and follows the SharePoint page's UI language automatically — no configuration required.
+
+| Feature | Description |
+|---|---|
+| **30 supported languages** | Arabic, Chinese (Simplified & Traditional), Czech, Danish, Dutch, English, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Norwegian Bokmål, Polish, Portuguese (Brazil & Portugal), Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, and Vietnamese |
+| **Host-driven** | The display language follows the current SharePoint page's UI culture — there is no separate language picker to configure |
+
+---
+
 ## Screenshots
 
 | | |

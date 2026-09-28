@@ -12,5 +12,7 @@
     }
   },
   "externals": {},
-  "localizedResources": {}
+  "localizedResources": {
+    "SmartPermissionsWebPartStrings": "lib/webparts/smartPermissions/loc/{locale}.js"
+  }
 }

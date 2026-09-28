@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.7.0] — 2026-09-28
+
+### Added
+
+- **Multilingual interface — 30 languages**
+  The web part's entire user interface is now localized: Arabic, Chinese
+  (Simplified & Traditional), Czech, Danish, Dutch, English, Finnish, French,
+  German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese,
+  Korean, Norwegian Bokmål, Polish, Portuguese (Brazil & Portugal), Romanian,
+  Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, and Vietnamese. The
+  displayed language follows the SharePoint page's own UI culture
+  automatically — there is no separate language picker to configure.
+
+---
+
 ## [1.6.1] — 2026-07-30
 
 ### Added

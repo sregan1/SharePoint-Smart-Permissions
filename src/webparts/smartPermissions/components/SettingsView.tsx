@@ -12,6 +12,7 @@ import {
   makeStyles,
 } from '@fluentui/react-components';
 import { ArrowLeft24Regular, Info16Regular } from '@fluentui/react-icons';
+import * as strings from 'SmartPermissionsWebPartStrings';
 
 const useStyles = makeStyles({
   root: {
@@ -81,24 +82,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     <div className={styles.root}>
       <div className={styles.header}>
         <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={onBack}>
-          Back
+          {strings.BackButton}
         </Button>
-        <Title3>Settings</Title3>
+        <Title3>{strings.SettingsTitle}</Title3>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalXL }}>
 
         {/* ── Libraries ── */}
         <div className={styles.section}>
-          <Text weight="semibold" style={{ display: 'block' }}>Libraries</Text>
+          <Text weight="semibold" style={{ display: 'block' }}>{strings.LibrariesSectionTitle}</Text>
           <div className={styles.row}>
             <Checkbox
-              label="Include system and hidden libraries"
+              label={strings.IncludeHiddenLabel}
               checked={includeHidden}
               onChange={(_, d) => onIncludeHiddenChange(!!d.checked)}
             />
             <Tooltip
-              content="When checked, includes Style Library, Form Templates, Site Assets, and other libraries hidden from default views. Applies to all tools."
+              content={strings.IncludeHiddenTooltip}
               relationship="description"
               withArrow
             >
@@ -107,18 +108,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 icon={<Info16Regular />}
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
-                aria-label="More info about hidden libraries"
+                aria-label={strings.MoreInfoHiddenLibrariesLabel}
               />
             </Tooltip>
           </div>
           <div className={styles.row}>
             <Checkbox
-              label="Exclude Limited Access entries"
+              label={strings.ExcludeLimitedAccessLabel}
               checked={excludeLimitedAccess}
               onChange={(_, d) => onExcludeLimitedAccessChange(!!d.checked)}
             />
             <Tooltip
-              content="Hides users and groups whose only SharePoint permission is Limited Access — automatically assigned when files are shared via links. Applies to Permissions Report, Explorer, and User Access."
+              content={strings.ExcludeLimitedAccessTooltip}
               relationship="description"
               withArrow
             >
@@ -127,18 +128,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 icon={<Info16Regular />}
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
-                aria-label="More info about Limited Access"
+                aria-label={strings.MoreInfoLimitedAccessLabel}
               />
             </Tooltip>
           </div>
           <div className={styles.row}>
             <Checkbox
-              label="Exclude Sharing Links entries"
+              label={strings.ExcludeSharingLinksLabel}
               checked={excludeSharingLinks}
               onChange={(_, d) => onExcludeSharingLinksChange(!!d.checked)}
             />
             <Tooltip
-              content='Hides the internal "SharingLinks.*" groups SharePoint auto-creates for "Anyone with the link" and "Specific people" sharing links. Applies to Permissions Report, Explorer, and User Access.'
+              content={strings.ExcludeSharingLinksTooltip}
               relationship="description"
               withArrow
             >
@@ -147,7 +148,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 icon={<Info16Regular />}
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
-                aria-label="More info about Sharing Links"
+                aria-label={strings.MoreInfoSharingLinksLabel}
               />
             </Tooltip>
           </div>
@@ -157,10 +158,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* ── Performance ── */}
         <div className={styles.section}>
-          <Text weight="semibold" style={{ display: 'block' }}>Performance</Text>
+          <Text weight="semibold" style={{ display: 'block' }}>{strings.PerformanceSectionTitle}</Text>
 
           <div className={styles.row}>
-            <Label>Concurrent API requests:</Label>
+            <Label>{strings.ConcurrentRequestsLabel}</Label>
             <SpinButton
               value={scanConcurrency}
               min={1}
@@ -173,7 +174,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               style={{ width: '80px' }}
             />
             <Tooltip
-              content="How many SharePoint API requests run in parallel during Permissions Report scans, User Access scans, and Explorer background checks. Higher values are faster but more likely to trigger throttling (HTTP 429). 3–5 is recommended."
+              content={strings.ConcurrencyTooltip}
               relationship="description"
               withArrow
             >
@@ -182,16 +183,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 icon={<Info16Regular />}
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
-                aria-label="More info about concurrency"
+                aria-label={strings.MoreInfoConcurrencyLabel}
               />
             </Tooltip>
           </div>
           <Text size={200} className={styles.hint}>
-            Higher values scan faster but may trigger SharePoint throttling. Recommended: 3–5.
+            {strings.ConcurrencyHint}
           </Text>
 
           <div className={styles.row} style={{ marginTop: tokens.spacingVerticalS }}>
-            <Label>Group member display cap:</Label>
+            <Label>{strings.GroupMemberCapLabel}</Label>
             <SpinButton
               value={groupMemberCap}
               min={50}
@@ -205,7 +206,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               style={{ width: '100px' }}
             />
             <Tooltip
-              content="Maximum members shown per group when 'Expand group members' is enabled. Larger groups are capped and a notice is shown. Increasing this uses more memory."
+              content={strings.GroupMemberCapTooltip}
               relationship="description"
               withArrow
             >
@@ -214,12 +215,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 icon={<Info16Regular />}
                 size="small"
                 style={{ minWidth: 'unset', padding: '2px' }}
-                aria-label="More info about group member cap"
+                aria-label={strings.MoreInfoGroupMemberCapLabel}
               />
             </Tooltip>
           </div>
           <Text size={200} className={styles.hint}>
-            Groups larger than this limit show a truncation notice. Default: 500.
+            {strings.GroupMemberCapHint}
           </Text>
         </div>
 
@@ -227,16 +228,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* ── Default view instructions ── */}
         <div className={styles.section}>
-          <Text weight="semibold" style={{ display: 'block' }}>Default view on load</Text>
+          <Text weight="semibold" style={{ display: 'block' }}>{strings.DefaultViewSectionTitle}</Text>
           <Text size={300} style={{ display: 'block', color: tokens.colorNeutralForeground2 }}>
-            To change which screen opens when the web part first loads, edit the web part properties:
+            {strings.DefaultViewInstructionsIntro}
           </Text>
           <ol className={styles.instructionList}>
             {[
-              <>Put the SharePoint page into <strong>Edit</strong> mode.</>,
-              <>Click the <strong>pencil (edit)</strong> icon on the Smart Permissions web part.</>,
-              <>In the property panel, choose a view from the <strong>Default view on open</strong> dropdown.</>,
-              <><strong>Republish</strong> the page to save the change.</>,
+              <>{strings.DefaultViewStep1Pre} <strong>{strings.EditModeWord}</strong> {strings.DefaultViewStep1Post}</>,
+              <>{strings.DefaultViewStep2Pre} <strong>{strings.PencilEditWord}</strong> {strings.DefaultViewStep2Post}</>,
+              <>{strings.DefaultViewStep3Pre} <strong>{strings.DefaultViewOnOpenWord}</strong> {strings.DefaultViewStep3Post}</>,
+              <><strong>{strings.RepublishWord}</strong> {strings.DefaultViewStep4Post}</>,
             ].map((step, i) => (
               <li key={i}>
                 <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{step}</Text>

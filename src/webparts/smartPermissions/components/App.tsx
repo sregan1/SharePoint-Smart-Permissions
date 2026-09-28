@@ -13,6 +13,7 @@ import {
 import { Settings24Regular, ShieldLock24Regular } from '@fluentui/react-icons';
 import { WebPartContext } from '@microsoft/sp-webpart-base';
 
+import * as strings from 'SmartPermissionsWebPartStrings';
 import { SharePointService } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { HomeView } from './HomeView';
@@ -113,16 +114,16 @@ class ErrorBoundary extends React.Component<
           padding: '16px', fontFamily: 'Consolas, monospace', fontSize: '13px',
           background: '#fff3f3', border: '1px solid #c00', borderRadius: '4px', margin: '8px',
         }}>
-          <strong style={{ color: '#c00', fontSize: '14px' }}>Smart Permissions — Render Error</strong>
+          <strong style={{ color: '#c00', fontSize: '14px' }}>{strings.RenderErrorTitle}</strong>
           <br /><br />
-          <strong>Message:</strong> {error.message || String(error)}
+          <strong>{strings.RenderErrorMessageLabel}</strong> {error.message || String(error)}
           <br /><br />
-          <strong>Stack:</strong>
+          <strong>{strings.RenderErrorStackLabel}</strong>
           <pre style={{
             fontSize: '11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
             background: '#f5f5f5', padding: '8px', margin: '4px 0', borderRadius: '2px',
           }}>
-            {error.stack ?? '(no stack available)'}
+            {error.stack ?? strings.RenderErrorNoStack}
           </pre>
         </div>
       );
@@ -259,7 +260,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalS, flexShrink: 0 }}>
             <ShieldLock24Regular style={{ color: 'white', fontSize: '20px' }} />
             <Text style={{ color: 'white', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' }}>
-              SharePoint Smart Permissions
+              {strings.AppTitle}
             </Text>
           </div>
 
@@ -270,15 +271,15 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
                 <Input
                   value={editUrl}
                   onChange={(_, d) => setEditUrl(d.value)}
-                  placeholder="https://contoso.sharepoint.com/sites/mysite"
+                  placeholder={strings.SiteUrlPlaceholder}
                   style={{ minWidth: '200px', maxWidth: '400px', flexGrow: 1 }}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
                 />
                 <Button appearance="secondary" onClick={handleConnect} disabled={!editUrl.trim()}>
-                  Connect
+                  {strings.ConnectButton}
                 </Button>
                 <Button appearance="transparent" style={{ color: 'white', flexShrink: 0 }} onClick={handleCancelEdit}>
-                  Cancel
+                  {strings.CancelButton}
                 </Button>
               </>
             ) : (
@@ -309,7 +310,7 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
                   style={{ color: 'white', flexShrink: 0 }}
                   onClick={handleStartEdit}
                 >
-                  Change URL
+                  {strings.ChangeUrlButton}
                 </Button>
               </>
             )}
@@ -319,8 +320,8 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           <Button
             appearance="transparent"
             icon={<Settings24Regular style={{ color: 'white' }} />}
-            aria-label="Settings"
-            title="Settings"
+            aria-label={strings.SettingsLabel}
+            title={strings.SettingsLabel}
             onClick={handleOpenSettings}
           />
         </div>
@@ -332,8 +333,8 @@ export const App: React.FC<AppProps> = ({ context, sp, excel, defaultView, brand
           <Button
             appearance="transparent"
             icon={<Settings24Regular style={{ color: 'white' }} />}
-            aria-label="Settings"
-            title="Settings"
+            aria-label={strings.SettingsLabel}
+            title={strings.SettingsLabel}
             onClick={handleOpenSettings}
           />
         </div>

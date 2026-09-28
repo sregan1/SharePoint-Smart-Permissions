@@ -8,6 +8,7 @@ import * as ReactDom from 'react-dom';
 import { App, AppView, IBrandColors } from './components/App';
 import { SharePointService } from './services/SharePointService';
 import { ExcelExportService } from './services/ExcelExportService';
+import * as strings from 'SmartPermissionsWebPartStrings';
 
 export interface ISmartPermissionsWebPartProps {
   defaultView: AppView;
@@ -105,21 +106,21 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       type: 6,
       targetProperty: 'defaultView',
       properties: {
-        label: 'Default view on open',
+        label: strings.PropertyPane_DefaultViewLabel,
         options: [
-          { key: 'home', text: 'Home' },
-          { key: 'report', text: 'Permissions Report' },
-          { key: 'explorer', text: 'Permissions Explorer' },
-          { key: 'userAccess', text: 'User Access' },
+          { key: 'home', text: strings.PropertyPane_View_Home },
+          { key: 'report', text: strings.PropertyPane_View_Report },
+          { key: 'explorer', text: strings.PropertyPane_View_Explorer },
+          { key: 'userAccess', text: strings.PropertyPane_View_UserAccess },
         ],
         selectedKey: this.properties.defaultView ?? 'home',
       },
     };
     return {
       pages: [{
-        header: { description: 'Smart Permissions configuration' },
+        header: { description: strings.PropertyPane_HeaderDescription },
         groups: [{
-          groupName: 'General',
+          groupName: strings.PropertyPane_GroupName,
           groupFields: [dropdownField],
         }],
       }],

@@ -1,4 +1,5 @@
 import { UserPermissionInfo } from '../../models/models';
+import * as strings from 'SmartPermissionsWebPartStrings';
 
 // These two claims are the two ways a single grant hands access to
 // (effectively) everyone in the tenant — "Everyone" includes anonymous/guest
@@ -9,7 +10,7 @@ import { UserPermissionInfo } from '../../models/models';
 // most important thing to surface prominently rather than blend in.
 export function broadClaimLabel(u: UserPermissionInfo): string | null {
   const ln = u.loginName.toLowerCase();
-  if (ln.startsWith('c:0(.s|true')) return 'Everyone';
-  if (ln.startsWith('c:0-.f|rolemanager|spo-grid-all-users')) return 'Everyone except external users';
+  if (ln.startsWith('c:0(.s|true')) return strings.EveryoneClaimLabel;
+  if (ln.startsWith('c:0-.f|rolemanager|spo-grid-all-users')) return strings.EveryoneExceptExternalClaimLabel;
   return null;
 }

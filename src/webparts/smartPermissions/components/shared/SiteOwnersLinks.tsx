@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Link } from '@fluentui/react-components';
+import * as strings from 'SmartPermissionsWebPartStrings';
 
 export interface SiteOwnersLinksProps {
   owners: { title: string; email: string }[];
@@ -11,7 +12,7 @@ export const SiteOwnersLinks: React.FC<SiteOwnersLinksProps> = ({ owners }) => {
   if (owners.length === 0) return null;
   return (
     <>
-      {' '}Site Owners: {owners.map((o, i) => (
+      {' '}{strings.SiteOwnersLabel} {owners.map((o, i) => (
         <React.Fragment key={o.email || o.title}>
           {i > 0 && ', '}
           {o.email

@@ -15,6 +15,7 @@ import {
   PersonSearch24Regular,
   LockClosed16Regular,
 } from '@fluentui/react-icons';
+import * as strings from 'SmartPermissionsWebPartStrings';
 import { AppView } from './App';
 import screenshotReport from '../assets/screenshot_report.png';
 import screenshotExplorer from '../assets/screenshot_explorer.png';
@@ -116,29 +117,29 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
     {
       view: 'explorer' as AppView,
       icon: <FolderSearch24Regular style={{ flexShrink: 0 }} />,
-      title: 'Permissions Explorer',
+      title: strings.ExplorerCardTitle,
       screenshot: screenshotExplorer,
-      alt: 'Permissions Explorer with folder tree and permissions panel',
-      desc: 'Browse any folder or file and instantly see who has access — with live, real-time permission lookups.',
-      buttonLabel: 'Open Permissions Explorer',
+      alt: strings.ExplorerCardAlt,
+      desc: strings.ExplorerCardDesc,
+      buttonLabel: strings.ExplorerCardButton,
     },
     {
       view: 'report' as AppView,
       icon: <DataBarVertical24Regular style={{ flexShrink: 0 }} />,
-      title: 'Permissions Report',
+      title: strings.ReportCardTitle,
       screenshot: screenshotReport,
-      alt: 'Permissions Report configuration screen',
-      desc: 'Generate a color-coded Excel report of every unique permission assignment across your site.',
-      buttonLabel: 'Run Permissions Report',
+      alt: strings.ReportCardAlt,
+      desc: strings.ReportCardDesc,
+      buttonLabel: strings.ReportCardButton,
     },
     {
       view: 'userAccess' as AppView,
       icon: <PersonSearch24Regular style={{ flexShrink: 0 }} />,
-      title: 'User Access',
+      title: strings.UserAccessCardTitle,
       screenshot: screenshotUserAccess,
-      alt: 'User Access screen showing accessible locations for a selected user',
-      desc: 'Look up any user to see every location they can access on a site, with their exact permission level.',
-      buttonLabel: 'Check User Access',
+      alt: strings.UserAccessCardAlt,
+      desc: strings.UserAccessCardDesc,
+      buttonLabel: strings.UserAccessCardButton,
     },
   ];
 
@@ -147,7 +148,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
       <div className={styles.banner} style={{ background: primaryColor }}>
         <ShieldLock24Regular style={{ color: 'white', fontSize: '20px', flexShrink: 0 }} />
         <Text style={{ color: 'white', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' }}>
-          SharePoint Smart Permissions
+          {strings.AppTitle}
         </Text>
       </div>
 
@@ -168,15 +169,15 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
           }}>
             <span style={{ flexShrink: 0, fontSize: '16px' }}>⚠️</span>
             <span>
-              <strong>Site Owner access required — </strong>
-              These tools require Site Owner access. Contact a site owner if you have questions about permissions.
+              <strong>{strings.SiteOwnerRequiredTitle} </strong>
+              {strings.SiteOwnerRequiredDesc}
             </span>
           </div>
         )}
 
         <div className={styles.subtitle}>
           <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-            Audit and understand SharePoint permissions — no PowerShell required.
+            {strings.HomeSubtitle}
           </Body1>
         </div>
 
@@ -218,7 +219,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
               </Card>
             );
             return disabled ? (
-              <Tooltip key={view} content="Requires Site Owner access" relationship="description">
+              <Tooltip key={view} content={strings.RequiresSiteOwnerTooltip} relationship="description">
                 <div style={{ cursor: 'not-allowed' }}>{card}</div>
               </Tooltip>
             ) : card;
@@ -234,10 +235,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
           }}
         >
           <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-            <strong>Note:</strong> This web part runs as the currently signed-in
-            user. It can only see sites and items that user has permission to
-            view. For a full tenant scan, use an account with appropriate
-            read access across all sites.
+            <strong>{strings.HomeNoteLabel}</strong> {strings.HomeNoteText}
           </Body1>
         </div>
       </div>

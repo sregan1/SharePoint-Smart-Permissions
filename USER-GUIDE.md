@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.6.1**
+**Version 1.7.0**
 **Applies to:** SharePoint Online
 
 ---
@@ -16,11 +16,12 @@
 7. [User Access](#user-access)
 8. [Settings](#settings)
 9. [Web Part Configuration](#web-part-configuration)
-10. [Changing the Target Site](#changing-the-target-site)
-11. [Security & Privacy](#security--privacy)
-12. [Frequently Asked Questions](#frequently-asked-questions)
-13. [Troubleshooting](#troubleshooting)
-14. [Administrator: Tenant-Wide Provisioning](#administrator-tenant-wide-provisioning)
+10. [Language Support](#language-support)
+11. [Changing the Target Site](#changing-the-target-site)
+12. [Security & Privacy](#security--privacy)
+13. [Frequently Asked Questions](#frequently-asked-questions)
+14. [Troubleshooting](#troubleshooting)
+15. [Administrator: Tenant-Wide Provisioning](#administrator-tenant-wide-provisioning)
 
 ---
 
@@ -459,6 +460,14 @@ By default the web part opens on the **Home** screen. You can change this so it 
 6. Click **Apply** (or close the pane), then **Republish** the page to save the change.
 
 > **Tip:** If the web part is used by a team that exclusively runs permission reports, setting the default view to **Permissions Report** eliminates one click on every visit.
+
+---
+
+## Language Support
+
+The web part's interface is available in 30 languages: Arabic, Chinese (Simplified & Traditional), Czech, Danish, Dutch, English, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Norwegian Bokmål, Polish, Portuguese (Brazil & Portugal), Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, and Vietnamese.
+
+The language shown is determined automatically by the SharePoint page's own UI language setting — there is no separate language option to configure in the web part itself. If your organization's SharePoint site is set to display in French, for example, the web part's labels, buttons, and messages appear in French as well. To change the language, change the language preference for the SharePoint site or your account through SharePoint's own language settings.
 
 ---
 

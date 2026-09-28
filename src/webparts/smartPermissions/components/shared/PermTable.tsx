@@ -6,6 +6,8 @@ import { UserPermissionInfo } from '../../models/models';
 import { roleBadgeColor } from './roleBadge';
 import { isExternalUser, externalUserEmail } from './externalUsers';
 import { broadClaimLabel } from './broadClaims';
+import * as strings from 'SmartPermissionsWebPartStrings';
+import { formatString } from '../../utils/localeUtils';
 
 const useStyles = makeStyles({
   permTable: {
@@ -42,12 +44,12 @@ export interface PermTableProps {
 export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) => {
   const styles = useStyles();
   return (
-    <table className={styles.permTable} aria-label="Permission assignments">
+    <table className={styles.permTable} aria-label={strings.PermissionAssignmentsLabel}>
       <thead>
         <tr>
-          <th className={styles.permTh}>User / Group</th>
-          <th className={styles.permTh}>Type</th>
-          <th className={styles.permTh}>Permission Level</th>
+          <th className={styles.permTh}>{strings.UserGroupColumnHeader}</th>
+          <th className={styles.permTh}>{strings.TypeColumnHeader}</th>
+          <th className={styles.permTh}>{strings.PermissionLevelColumnHeader}</th>
           {onCheckAccess && <th className={styles.permTh} />}
         </tr>
       </thead>
@@ -64,7 +66,7 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
                     style={{ fontSize: '16px', flexShrink: 0, color: tokens.colorPaletteRedForeground1 }}
                   />
                   <Text weight="semibold" style={{ color: tokens.colorPaletteRedForeground1 }}>
-                    {broadLabel} — tenant-wide access
+                    {broadLabel} {strings.TenantWideAccessSuffix}
                   </Text>
                 </span>
               ) : u.isGroupMember ? (
@@ -95,10 +97,10 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
             <td className={styles.permTd}>
               <Text style={{ fontSize: tokens.fontSizeBase200 }}>
                 {u.principalType === 'SecurityGroup'
-                  ? 'Security Group'
+                  ? strings.SecurityGroupType
                   : u.principalType === 'SharePointGroup'
-                  ? 'SP Group'
-                  : 'User'}
+                  ? strings.SpGroupType
+                  : strings.UserType}
               </Text>
             </td>
             <td className={styles.permTd}>
@@ -122,8 +124,8 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
                     size="small"
                     icon={<PersonSearch16Regular />}
                     onClick={() => onCheckAccess(u.loginName)}
-                    title={`Check access for ${u.displayName || u.loginName}`}
-                    aria-label={`Check access for ${u.displayName || u.loginName}`}
+                    title={formatString(strings.CheckAccessForLabel, u.displayName || u.loginName)}
+                    aria-label={formatString(strings.CheckAccessForLabel, u.displayName || u.loginName)}
                   />
                 )}
               </td>
