@@ -249,7 +249,8 @@ docs/
 └── screenshots/                       # UI screenshots (tracked in the repo)
 
 scripts/
-└── Provision-SmartPermissions.ps1     # PnP PowerShell provisioning script
+├── Provision-SmartPermissions.ps1     # Provisioning script (no modules; sign-in + REST)
+└── Provision-SmartPermissions-PnP.ps1 # Alternative provisioning script using PnP.PowerShell
 
 sharepoint/solution/
 └── smart-permissions.sppkg            # Pre-built deployment package
@@ -294,6 +295,21 @@ sharepoint/solution/
 - Scan history (User Access) persists in **IndexedDB** in the browser. Clearing browser data removes all saved scan results.
 ---
 
+## About
+
+Originally created in May 2026 by Sean Regan.
+
+Copyright (c) 2026 Vivity, Inc.
+
+Part of SharePoint Smart Solutions, a software product brand of Vivity, Inc.
+
+## Disclaimer
+
+This software is provided "as is", without warranty of any kind, under the terms of the MIT License. To the extent
+permitted by law, Vivity, Inc. and the authors are not liable for any loss or damage arising from its use. Review
+results and any changes before you rely on them. This project is not affiliated with or endorsed by Microsoft.
+SharePoint and Microsoft 365 are trademarks of Microsoft Corporation.
+
 ## License
 
-[MIT](LICENSE) © 2026 Sean Regan
+[MIT](LICENSE) © 2026 Vivity, Inc.
