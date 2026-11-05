@@ -30,6 +30,7 @@ export async function scanPermissions(client: SpApiClient,
       roleAssignmentsDenied: false,
       deniedPaths: [],
       throttleAborted: false,
+      memberCache: new Map<string, UserPermissionInfo[]>(),
     };
     const emit0 = (message: string): void =>
       onProgress({ message, scanned: entries.length, libsDone: 0, libsTotal: 0 });
@@ -76,6 +77,11 @@ export async function scanPermissions(client: SpApiClient,
     deniedPaths: string[];
     /** Set when sustained throttling ended the scan before all sites were visited. */
     throttleAborted: boolean;
+    /**
+     * Expanded group members shared across the whole scan (all sites/subsites), so a
+     * security group that appears on hundreds of sites is fetched once, not once per site.
+     */
+    memberCache?: Map<string, UserPermissionInfo[]>;
   }
 
   // Scans a web and, when includeSubsites is set, recurses depth-first into
@@ -126,6 +132,7 @@ async function scanSite(client: SpApiClient,
     // ── Site-level permissions ────────────────────────────────────────────
     emit(`Loading site permissions: ${siteUrl}`);
     let sitePerms: UserPermissionInfo[] = [];
+    let siteEntryRef: PermissionEntry | undefined;
 
     try {
       const webData = await client.getJson(
@@ -139,11 +146,13 @@ async function scanSite(client: SpApiClient,
         name: webData.Title ?? siteUrl,
         serverRelativeUrl: webData.ServerRelativeUrl ?? '',
         siteUrl,
-        hasUniquePermissions: true,
+        // A subsite can inherit from its parent web; the root web always reports true.
+        hasUniquePermissions: webData.HasUniqueRoleAssignments !== false,
         depth: 0,
         uniquePermissions: sitePerms,
       };
       entries.push(siteEntry);
+      siteEntryRef = siteEntry;
       onEntry?.(siteEntry);
     } catch (err: any) {
       const denied = isPermissionDenied(err);
@@ -190,7 +199,15 @@ async function scanSite(client: SpApiClient,
             `&$expand=RootFolder&$top=500`,
           signal,
         );
-      } catch { /* no lists available */ }
+      } catch (err: any) {
+        // Not "this site has no lists" — the listing itself failed, so the site's
+        // results are incomplete. Flag the site entry rather than reporting it as done.
+        if (isPermissionDenied(err) && flags) {
+          flags.roleAssignmentsDenied = true;
+          flags.deniedPaths.push(siteUrl);
+        }
+        if (siteEntryRef) siteEntryRef.scanIncomplete = true;
+      }
 
       if (!options.includeHidden) {
         libs = libs.filter((l: any) => !isSystemLibrary(l));
@@ -230,16 +247,13 @@ async function scanSite(client: SpApiClient,
               );
               libPerms = toPermissionInfoList(valueArray(raData));
             } catch (err: any) {
-              if (isPermissionDenied(err)) {
-                if (flags) {
-                  flags.roleAssignmentsDenied = true;
-                  flags.deniedPaths.push(`${siteUrl}${libUrl}`);
-                }
-              } else {
-                // Transient failure, not "no access" — this item genuinely has
-                // unique permissions we couldn't read; don't silently present
-                // the parent's (site) permissions as if they were confirmed.
-                libIncomplete = true;
+              // This list genuinely has unique permissions we couldn't read (denied or
+              // transient) — don't present the site's permissions as its own.
+              libIncomplete = true;
+              libPerms = [];
+              if (isPermissionDenied(err) && flags) {
+                flags.roleAssignmentsDenied = true;
+                flags.deniedPaths.push(`${siteUrl}${libUrl}`);
               }
             }
           }
@@ -289,8 +303,10 @@ async function scanSite(client: SpApiClient,
     }
 
     if (options.expandGroups && !signal?.aborted) {
-      // memberCache: group login/name → expanded UserPermissionInfo[] (avoids re-fetching same group)
-      const memberCache = new Map<string, UserPermissionInfo[]>();
+      // memberCache: group → expanded UserPermissionInfo[] (avoids re-fetching the same group).
+      // Scan-wide; SharePoint group names ("Members", "Owners") repeat across sites, so their
+      // keys are prefixed with the site, while AAD groups are global and share one entry.
+      const memberCache = flags?.memberCache ?? new Map<string, UserPermissionInfo[]>();
       // expandedCache: original perms array reference → expanded array reference.
       // Inherited entries share the SAME parentPerms object reference, so this eliminates
       // duplicate expanded arrays for the thousands of entries that inherit from the same source.
@@ -309,7 +325,8 @@ async function scanSite(client: SpApiClient,
         for (const up of originalRef) {
           expanded.push(up);
           if (up.principalType === 'SharePointGroup' || up.principalType === 'SecurityGroup') {
-            const cacheKey = up.loginName || up.displayName;
+            const groupKey = up.loginName || up.displayName;
+            const cacheKey = up.principalType === 'SharePointGroup' ? `${siteUrl}|${groupKey}` : groupKey;
             let members: UserPermissionInfo[];
             if (memberCache.has(cacheKey)) {
               members = memberCache.get(cacheKey)!;
@@ -393,7 +410,17 @@ async function walkFolder(client: SpApiClient,
                 )
               : Promise.resolve([]),
           ]);
-        } catch { return; }
+        } catch {
+          // The whole subtree below folderUrl was skipped: mark its parent entry
+          // incomplete (it was pushed just before we recursed, so search from the end).
+          for (let i = results.length - 1; i >= 0; i--) {
+            if (results[i].serverRelativeUrl === folderUrl) {
+              results[i].scanIncomplete = true;
+              break;
+            }
+          }
+          return;
+        }
       }
     }
     // When the enriched query never succeeded, every entry below inherits the
@@ -411,6 +438,10 @@ async function walkFolder(client: SpApiClient,
       if (signal?.aborted) break;
 
       let folderPerms = parentPerms;
+      // What this entry displays. Differs from folderPerms (what children inherit
+      // from) only when the ACL is unreadable: showing the parent's permissions as
+      // this folder's own would be wrong.
+      let entryPerms = parentPerms;
       let hasUnique = false;
       let folderIncomplete = branchIncomplete;
 
@@ -422,17 +453,18 @@ async function walkFolder(client: SpApiClient,
               `&$select=Member/LoginName,Member/Title,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
           );
           folderPerms = toPermissionInfoList(valueArray(raData));
+          entryPerms = folderPerms;
           hasUnique = true;
         } catch (err: any) {
-          // Permission-denied means we genuinely can't read this item's ACL — not
-          // the same as a transient failure that should be flagged as incomplete.
-          if (isPermissionDenied(err)) {
-            if (flags) {
-              flags.roleAssignmentsDenied = true;
-              flags.deniedPaths.push(subfolder.ServerRelativeUrl);
-            }
-          } else {
-            folderIncomplete = true;
+          // The listing already told us this folder has unique permissions; we just
+          // can't read them. Report it as unique-but-unreadable instead of as
+          // inherited with the parent's permissions.
+          hasUnique = true;
+          entryPerms = [];
+          folderIncomplete = true;
+          if (isPermissionDenied(err) && flags) {
+            flags.roleAssignmentsDenied = true;
+            flags.deniedPaths.push(subfolder.ServerRelativeUrl);
           }
         }
       }
@@ -444,7 +476,7 @@ async function walkFolder(client: SpApiClient,
         siteUrl,
         hasUniquePermissions: hasUnique,
         depth,
-        uniquePermissions: folderPerms,
+        uniquePermissions: entryPerms,
         scanIncomplete: folderIncomplete || undefined,
       };
       results.push(folderEntry);
@@ -491,13 +523,13 @@ async function walkFolder(client: SpApiClient,
           filePerms = toPermissionInfoList(valueArray(raData));
           hasUnique = true;
         } catch (err: any) {
-          if (isPermissionDenied(err)) {
-            if (flags) {
-              flags.roleAssignmentsDenied = true;
-              flags.deniedPaths.push(file.ServerRelativeUrl);
-            }
-          } else {
-            fileIncomplete = true;
+          // Known-unique but unreadable (see the folder case above).
+          hasUnique = true;
+          filePerms = [];
+          fileIncomplete = true;
+          if (isPermissionDenied(err) && flags) {
+            flags.roleAssignmentsDenied = true;
+            flags.deniedPaths.push(file.ServerRelativeUrl);
           }
         }
       }

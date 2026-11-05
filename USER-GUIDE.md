@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.7.0**
+**Version 1.7.1**
 **Applies to:** SharePoint Online
 
 ---
@@ -68,11 +68,28 @@ The SharePoint Smart Permissions web part is added to a SharePoint page by a sit
 
 When you first open the web part, you will see the **Home Screen** with the three main feature cards. The web part automatically connects to the current SharePoint site — no configuration is needed to get started.
 
+### Approving Optional Graph Permissions
+
+Two optional Microsoft Graph permissions unlock extra capabilities. Nothing breaks without them, and a **SharePoint Administrator or Global Administrator** must approve them once for the whole tenant.
+
+| Permission | What it adds |
+|---|---|
+| `GroupMember.Read.All` | Lists the individual members of Security groups and Microsoft 365 groups (including nested groups) instead of showing a warning |
+| `Sites.Read.All` | Finds every site collection reliably when you scan **All site collections**; without it the tool falls back to search, which can miss new sites |
+
+To approve them:
+
+1. Open the **SharePoint Admin Center** and go to **Advanced → API access**.
+2. Find the pending requests for **Smart Permissions** under **Microsoft Graph**.
+3. Select each request you want and click **Approve**.
+
+Approved requests appear in the list with a blank app name and no date. This is normal. Changes can take a few minutes to take effect; reload the page afterward.
+
 ---
 
 ## The Home Screen
 
-The home screen is your starting point. A blue brand banner runs across the top, followed by three feature cards displayed side by side — one for each tool — each with a brief description and a launch button.
+The home screen is your starting point. A blue brand banner runs across the top — it shows the site you are connected to, a **Change URL** link, and the Settings gear — followed by three feature cards displayed side by side — one for each tool — each with a brief description and a launch button.
 
 ![Home screen showing the three feature cards with the brand banner at the top](docs/screenshots/01_home.png)
 
@@ -135,7 +152,7 @@ Once the scan is complete, you can browse the results directly in an **interacti
 
 9. When the scan finishes, a green result panel appears showing the total object count, the number with unique permissions, a **results table**, and export buttons.
 
-![Completed report with result summary and Export to Excel button](docs/screenshots/04_report_complete.png)
+![Completed report with result summary, Risk summary buttons, and Export to Excel button](docs/screenshots/04_report_complete.png)
 
 10. Browse the results directly in the table, or click **Export to Excel** to download a color-coded workbook.
 
@@ -152,6 +169,8 @@ The results table appears below the filter bar after every scan:
 - A **Hidden from search** badge marks libraries an admin has excluded from search indexing (NoCrawl) — worth a closer look during an audit, since that setting is sometimes used to keep sensitive content out of sight.
 - The filter box and the **Unique permissions only** / **External users only** / **Exclude Limited Access** / **Exclude Sharing Links** checkboxes filter the table and the exports together. The last two are the same global settings described under [Exclude Limited Access Entries](#exclude-limited-access-entries) and [Exclude Sharing Links Entries](#exclude-sharing-links-entries) — the Report screen's filter bar is simply a second, more convenient place to toggle them without leaving the results you're looking at, alongside the Settings page.
 - Large results paginate at 200 rows — click **Load more** for the rest.
+- A **Risk summary** row of buttons above the table shows how many entries fall into each risk category: **Everyone access**, **External users**, **Full Control, non-owners**, and **Unconfirmed** (items the scan could not fully read). Click a button to filter the table to just those entries, and click it again to clear it. You can select several buttons at once to see entries matching any of them, and the export includes exactly what is shown.
+- Each row has an **Open in SharePoint** link that opens the item in a new tab and a **Copy path** button that copies its full address.
 - **"Everyone" and "Everyone except external users"** claims are highlighted in red as tenant-wide access, both in the table and in the Excel export, so a broad grant doesn't blend in as an ordinary group row.
 - If a temporary network or throttling error prevents an item from being fully read even after retries, it's flagged with a warning banner instead of being silently shown with its parent's permissions. Re-run the scan to retry those items.
 
@@ -189,7 +208,7 @@ Downloaded file names are prefixed with the scanned site's name (or **"Tenant"**
 
 ### Report History and Compare
 
-Every completed scan is saved automatically to a local history log in your browser. Click the **History** button in the header to see past reports with their date, site, scope, and object counts. From there you can **Export** any past report without re-scanning, or **Delete** records.
+Every completed scan is saved automatically to a local history log in your browser. Click the **History** button in the header to see past reports with their date, site, scope, and object counts. From there you can **View** a past report in the web part (a banner marks it as a saved report), **Export** it without re-scanning, or **Delete** records (you are asked to confirm). **Clear history** removes every saved report from your browser after a confirmation. History is kept separately for each site.
 
 ![Report History panel showing past scans with date, site, scope, and object counts, and two reports selected for Compare](docs/screenshots/10_report_history.png)
 
@@ -219,7 +238,7 @@ The Permissions Explorer lets you browse a document library interactively — fo
 
 1. Click **Open Permissions Explorer** from the home screen.
 2. The web part automatically connects to the site and loads the available document libraries (including Site Pages and picture libraries). Libraries an admin has excluded from search indexing are marked **"(hidden from search)"** in the dropdown.
-3. Use the **Library** dropdown to select the library you want to browse.
+3. Use the **Library** dropdown to select the library you want to browse. The Explorer opens on **Shared Documents** the first time. After that, it reopens on the last library you picked for that site (stored in your browser).
 4. The **left panel** shows the folder and file tree. Click any item to select it.
 5. The **right panel** shows the permissions for the selected item.
 
@@ -245,6 +264,8 @@ Color-coded permission badges: **red** for Full Control, **amber** for Edit/Cont
 ### Expand Group Members
 
 Check **Expand group members** in the options bar to expand each SharePoint group, Security group, or M365 group and show the individual users inside it. This is useful when you need to see exactly which people are covered by a group assignment. Note: expanding Security groups and M365 groups requires the optional `GroupMember.Read.All` Graph permission to be approved in your tenant — SharePoint groups expand without it.
+
+When an Entra (Azure AD) group contains other groups, each nested group is listed as a **Security Group** row with its own members indented beneath it, down to five levels, so you can drill down to the individual users.
 
 Toggling this option refreshes the permissions panel in place — if you were already showing parent permissions, those are refreshed too.
 
@@ -360,6 +381,7 @@ The results table shows one row per accessible location:
 | **Name** | Display name of the location (indented to reflect hierarchy) |
 | **Path** | Server-relative URL |
 | **Permission Level** | The user's effective role at this location |
+| **Access via** | Where the access comes from: the SharePoint group, Microsoft 365 group, Security group, or direct assignment that grants it. This column is also included in the Excel export. |
 
 Click any column header to sort the table by that column; click again to reverse the order. On very large sites the table paginates at 200 rows — click **Load more** to show additional results.
 
@@ -461,6 +483,17 @@ By default the web part opens on the **Home** screen. You can change this so it 
 
 > **Tip:** If the web part is used by a team that exclusively runs permission reports, setting the default view to **Permissions Report** eliminates one click on every visit.
 
+### Hiding Tools
+
+The property pane's **Tools** group has a toggle for each tool: **Hide Permissions Report**, **Hide Permissions Explorer**, and **Hide User Access**. A hidden tool's card is removed from the home screen. If the default view is set to a tool you have hidden, the web part opens on the home screen instead.
+
+### Setting a Default Site and Locking It
+
+The property pane's **Site** group controls which site the web part audits:
+
+- **Default site URL** — the site the web part connects to when it opens. Leave it empty to use the site the page is on.
+- **Prevent viewers from changing the site** — when on, the **Change URL** link is removed, so viewers can only audit the default site.
+
 ---
 
 ## Language Support
@@ -473,11 +506,11 @@ The language shown is determined automatically by the SharePoint page's own UI l
 
 ## Changing the Target Site
 
-By default, the web part connects to the SharePoint site where it is installed. The connected site URL is always visible in the blue banner at the top of every tool screen.
+By default, the web part connects to the SharePoint site where it is installed. The connected site URL is always visible in the blue banner at the top of every screen, including the home screen.
 
 To audit a **different site**:
 
-1. Click **Change URL** in the banner at the top of any tool screen.
+1. Click **Change URL** in the banner at the top of any screen. (If an administrator has locked the site in the web part's settings, this link is not shown.)
 2. Type or paste the full URL of the target site (e.g., `https://contoso.sharepoint.com/sites/finance`).
 3. Press **Enter** or click **Connect**.
 
@@ -632,29 +665,28 @@ For organizations that want to make Smart Permissions available on every site co
 ### Prerequisites
 
 - The **Smart Permissions** app must already be deployed to the tenant App Catalog **and available on each site you plan to provision** — either by ticking *"Make this solution available to all sites automatically"* during upload (recommended for tenant-wide runs), or by installing it on each site collection beforehand. The script does not install the app itself; a site where the web part component isn't available is logged as a warning and skipped, and the rest of the run continues.
-- The **PnP.PowerShell** module must be installed on the machine running the script:
-  ```powershell
-  Install-Module PnP.PowerShell
-  ```
-- The account used must have **SharePoint Administrator** or **Global Administrator** permissions.
+- The account you sign in with must be a **site collection administrator on every site** you run the script against. Being a SharePoint Administrator is not enough on its own. Sites where it isn't are logged as warnings and skipped.
+- No modules and no Azure app registration are needed. The script signs in with a device code and calls the SharePoint REST API directly.
 
 ### Script Location
 
-The script is located at `scripts/Provision-SmartPermissions.ps1` in the solution repository.
+The standard script is `scripts/Provision-SmartPermissions.ps1` in the solution repository. An alternative that uses the **PnP.PowerShell** module (`Install-Module PnP.PowerShell`) is `scripts/Provision-SmartPermissions-PnP.ps1`; its settings are `$adminUrl` and `$targetSiteUrl` instead of the ones below.
 
 ### Configuration
 
 Open the script and set the variables at the top:
 
 ```powershell
-$adminUrl      = "https://contoso-admin.sharepoint.com"
-$targetSiteUrl = ""   # leave empty to run across all sites
+$tenantName    = "contoso"   # the part before .sharepoint.com
+$targetSiteUrl = ""          # one site, or leave empty and use $siteListPath
+$siteListPath  = ""          # optional text file with one site URL per line
 ```
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `$adminUrl` | *(empty)* | Your SharePoint admin center URL. Required by the script even in single-site mode, though it's only actually used to connect to the admin center for tenant-wide enumeration. |
-| `$targetSiteUrl` | *(empty)* | Set to a single site URL to provision only that site. Leave empty to provision all sites in the tenant. |
+| `$tenantName` | *(empty)* | Your tenant name, for example `contoso`. A full SharePoint or admin center URL is also accepted. |
+| `$targetSiteUrl` | *(empty)* | Set to a single site URL to provision only that site. |
+| `$siteListPath` | *(empty)* | Text file with one site URL per line. If both this and `$targetSiteUrl` are empty, the script uses SharePoint search to find sites the signed-in account can see, which can miss sites. For a full tenant run, prefer a list exported from the admin center. |
 | `$componentId` | Pre-filled | The Smart Permissions web part ID |
 | `$pageName` | `Permissions` | File name of the created page (without `.aspx`) |
 | `$pageTitle` | `Permissions` | Display title shown at the top of the page |
@@ -663,29 +695,28 @@ $targetSiteUrl = ""   # leave empty to run across all sites
 ### Running the Script
 
 **To provision a single site:**
-1. Set `$adminUrl` and `$targetSiteUrl` in the script.
+1. Set `$tenantName` and `$targetSiteUrl` in the script.
 2. Run the script:
    ```powershell
    .\scripts\Provision-SmartPermissions.ps1
    ```
 
 **To provision all sites tenant-wide:**
-1. Set `$adminUrl` and leave `$targetSiteUrl` empty.
-2. Run the script. You will be prompted to sign in to the admin center, then once per site.
+1. Set `$tenantName`, and either `$siteListPath` or leave both site settings empty to use search.
+2. Run the script. You sign in once with a device code.
 3. Sites that fail (e.g. locked, no-script sites) are logged as warnings and skipped.
 
 ### What the Script Does
 
 For each site collection:
-1. Connects to the site
+1. Connects to the site (using the one sign-in)
 2. Checks whether `Permissions.aspx` already exists — if so, skips page creation and adds the web part to the existing page
 3. Adds the Smart Permissions web part with default properties (skipped if it's already on the page — see Re-Running Safely below)
 4. Publishes the page
 5. Breaks permission inheritance on the page and grants Full Control to the site Owners group only — Members and Visitors cannot access the page
-6. Adds the page to the site's Quick Launch navigation (scoped to the Owners group on Microsoft 365 Group-connected sites)
-7. On M365-connected sites: enables audience targeting on the Site Pages library and sets the Owners group as the page audience
-8. Clears the page's author byline so it doesn't show whichever account ran the script
-9. Re-publishes the page to ensure the final state is saved
+6. Adds the page to the site's Quick Launch navigation
+7. Clears the page's author byline so it doesn't show whichever account ran the script
+8. Re-publishes the page to ensure the final state is saved
 
 ### Re-Running Safely
 
@@ -693,7 +724,7 @@ The script is idempotent — running it again on a site it has already provision
 - If `Permissions.aspx` already exists, page creation is skipped and the existing page is reused.
 - If the Smart Permissions web part is already on the page, it isn't added again.
 - The Quick Launch navigation node is matched by both title and URL before being replaced, so it isn't duplicated either.
-- Audience targeting and the Owners-only permission grant are re-applied each run, which is harmless (they simply reset to the same state).
+- The Owners-only permission grant is re-applied each run, which is harmless (it simply resets to the same state).
 
 This means you can safely re-run the script tenant-wide at any time — for example, after creating new sites — without needing to filter `$sites` down to only the new ones first.
 

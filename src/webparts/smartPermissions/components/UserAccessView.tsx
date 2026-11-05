@@ -19,9 +19,12 @@ import {
 import { ArrowLeft24Regular, ArrowDownload24Regular, History24Regular, Delete24Regular } from '@fluentui/react-icons';
 
 import * as strings from 'SmartPermissionsWebPartStrings';
-import { formatString } from '../utils/localeUtils';
-import { SharePointService } from '../services/SharePointService';
+import { formatString, formatDateTime, formatNumber } from '../utils/localeUtils';
+import { SharePointService, isAbortError } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
+import { SortableHeader } from './shared/SortableHeader';
+import { useConfirmDialog } from './shared/ConfirmDialog';
+import { objectTypeLabel } from './shared/objectTypeLabel';
 import { ReportHistoryService } from '../services/ReportHistoryService';
 import { SiteUserInfo, PermissionEntry, ObjectType, StoredUserAccessReport } from '../models/models';
 import { requestNotificationPermission, showNotification } from '../utils/notifications';
@@ -128,6 +131,8 @@ function formatElapsed(seconds: number): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const MAX_USER_OPTIONS = 100;
+
 export interface UserAccessViewProps {
   sp: SharePointService;
   excel: ExcelExportService;
@@ -138,10 +143,13 @@ export interface UserAccessViewProps {
   prefillLogin?: string;
   onPrefillUsed?: () => void;
   onBack: () => void;
+  /** Reports whether a scan is running so the host can confirm before navigating away. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
-export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, excludeLimitedAccess, excludeSharingLinks, prefillLogin, onPrefillUsed, onBack }) => {
+export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteUrl, includeHidden, excludeLimitedAccess, excludeSharingLinks, prefillLogin, onPrefillUsed, onBack, onBusyChange }) => {
   const styles = useStyles();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   // ── Connection ──
   const [isConnecting, setIsConnecting] = React.useState(false);
@@ -161,6 +169,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const [isFullSiteAccess, setIsFullSiteAccess] = React.useState(false);
   const [userAccessError, setUserAccessError] = React.useState('');
   const [roleAssignmentsDenied, setRoleAssignmentsDenied] = React.useState(false);
+  const [userAccessIncomplete, setUserAccessIncomplete] = React.useState(false);
   const [siteOwners, setSiteOwners] = React.useState<{ title: string; email: string }[]>([]);
 
   // ── Pagination ──
@@ -176,7 +185,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   }, [roleAssignmentsDenied, siteUrl]);
 
   // ── Sort ──
-  const [sortCol, setSortCol] = React.useState<'type' | 'name' | 'path' | 'permission'>('type');
+  const [sortCol, setSortCol] = React.useState<'type' | 'name' | 'path' | 'permission' | 'via'>('type');
   const [sortAsc, setSortAsc] = React.useState(true);
 
   const displayAccessItems = React.useMemo(() => {
@@ -199,6 +208,20 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     [ObjectType.File]: 4,
   };
 
+  // Sites with tens of thousands of users would otherwise mount one DOM option each
+  // every time the filter changes; show the first batch and ask the user to narrow it.
+  const matchingUsers = React.useMemo(() => {
+    const q = userFilter.toLowerCase();
+    if (!q) return siteUsers;
+    return siteUsers.filter(
+      (u) =>
+        u.displayName.toLowerCase().includes(q) ||
+        u.loginName.toLowerCase().includes(q) ||
+        (u.email != null && u.email.toLowerCase().includes(q)),
+    );
+  }, [siteUsers, userFilter]);
+  const visibleUsers = React.useMemo(() => matchingUsers.slice(0, MAX_USER_OPTIONS), [matchingUsers]);
+
   const sortedAccessItems = React.useMemo(() => {
     return [...displayAccessItems].sort((a, b) => {
       let diff = 0;
@@ -210,6 +233,10 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       } else if (sortCol === 'path') {
         const va = a.serverRelativeUrl, vb = b.serverRelativeUrl;
         diff = va < vb ? -1 : va > vb ? 1 : 0;
+      } else if (sortCol === 'via') {
+        const va = (a.uniquePermissions[0]?.accessVia ?? []).join(', ');
+        const vb = (b.uniquePermissions[0]?.accessVia ?? []).join(', ');
+        diff = va.localeCompare(vb);
       } else {
         const va = (a.uniquePermissions[0]?.roles ?? []).join(',');
         const vb = (b.uniquePermissions[0]?.roles ?? []).join(',');
@@ -231,7 +258,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     sortCol !== col ? '' : sortAsc ? ' ▲' : ' ▼';
 
   // ── History ──
-  const historyService = React.useRef(new ReportHistoryService());
+  const historyService = React.useRef(new ReportHistoryService(sp.currentUserKey));
   const [showHistory, setShowHistory] = React.useState(false);
   const [historyItems, setHistoryItems] = React.useState<StoredUserAccessReport[]>([]);
   const [exportingHistoryId, setExportingHistoryId] = React.useState<string | null>(null);
@@ -283,7 +310,22 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
+  const mountedRef = React.useRef(true);
   const prefillHandledRef = React.useRef(false);
+
+  // Leaving the view must stop any in-flight scan instead of letting it run on unseen.
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    onBusyChange?.(userAccessBusy);
+    return () => onBusyChange?.(false);
+  }, [userAccessBusy]);
 
   React.useEffect(() => {
     if (userAccessBusy) {
@@ -303,6 +345,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
   const handleConnect = async (): Promise<void> => {
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    // The aborted scan no longer owns the busy flag (see handleUserSelect's finally).
+    setUserAccessBusy(false);
 
     setIsConnecting(true);
     setConnectError('');
@@ -373,7 +417,8 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
 
     requestNotificationPermission();
     abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    const controller = new AbortController();
+    abortRef.current = controller;
     scanStartRef.current = Date.now();
 
     setUserAccessBusy(true);
@@ -382,23 +427,38 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
     setUserAccessError('');
     setGraphPermissionRequired(false);
     setRoleAssignmentsDenied(false);
+    setUserAccessIncomplete(false);
     setSiteOwners([]);
     const displayName =
       knownDisplayName ?? siteUsers.find((u) => u.loginName === login)?.displayName ?? login;
     setUserAccessStatus(formatString(strings.CheckingAccessForStatus, displayName));
 
     try {
-      const { fullSiteAccess, items, graphPermissionRequired: graphPerm, roleAssignmentsDenied: raDenied } = await sp.getUserAccess(
+      const { fullSiteAccess, items, graphPermissionRequired: graphPerm, roleAssignmentsDenied: raDenied, incomplete } = await sp.getUserAccess(
         siteUrl.trim(),
         login,
-        (msg) => setUserAccessStatus(msg),
-        abortRef.current.signal,
+        (msg) => { if (mountedRef.current) setUserAccessStatus(msg); },
+        controller.signal,
         includeHidden,
       );
+      if (!mountedRef.current) return;
+
+      // Cancelled (by the user, or superseded by a newer scan): the service returns
+      // whatever it had gathered, which is incomplete. Don't present it as a finished
+      // result, announce it, or save it to history.
+      if (controller.signal.aborted) {
+        if (abortRef.current === controller) {
+          setUserAccessItems([]);
+          setUserAccessStatus(strings.CancelledStatus);
+        }
+        return;
+      }
+
       setIsFullSiteAccess(fullSiteAccess);
       setUserAccessItems(items);
       setGraphPermissionRequired(graphPerm);
       setRoleAssignmentsDenied(raDenied);
+      setUserAccessIncomplete(!!incomplete);
       const statusMsg = fullSiteAccess
         ? strings.FullSiteAccessDetectedStatus
         : items.length > 0
@@ -432,9 +492,15 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
         .then(setHistoryItems)
         .catch(() => { /* storage unavailable */ });
     } catch (err: any) {
-      setUserAccessError(err?.message ?? String(err));
+      if (!mountedRef.current) return;
+      if (isAbortError(err)) {
+        if (abortRef.current === controller) setUserAccessStatus(strings.CancelledStatus);
+      } else {
+        setUserAccessError(err?.message ?? String(err));
+      }
     } finally {
-      setUserAccessBusy(false);
+      // A newer scan owns the busy flag once it has replaced this controller.
+      if (mountedRef.current && abortRef.current === controller) setUserAccessBusy(false);
     }
   };
 
@@ -442,6 +508,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
 
   return (
     <div className={styles.root}>
+      {confirmDialog}
       {/* Screen reader announcements */}
       <div role="status" aria-live="polite" style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>
         {!userAccessBusy && userAccessStatus ? userAccessStatus : ''}
@@ -453,8 +520,14 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           appearance="subtle"
           icon={<ArrowLeft24Regular />}
           onClick={() => {
-            if (userAccessBusy && !window.confirm(strings.ScanInProgressConfirm)) return;
-            onBack();
+            if (!userAccessBusy) { onBack(); return; }
+            confirm({
+              title: strings.ScanInProgressLabel,
+              body: strings.ScanInProgressConfirm,
+              confirmLabel: strings.LeaveButton,
+              cancelLabel: strings.StayButton,
+              onConfirm: onBack,
+            });
           }}
           disabled={isConnecting}
           aria-label={strings.BackToHomeLabel}
@@ -492,10 +565,30 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
       {/* ── History panel ── */}
       {showHistory && (
         <div>
-          <div style={{ marginBottom: tokens.spacingVerticalM }}>
+          <div style={{ marginBottom: tokens.spacingVerticalM, display: 'flex', alignItems: 'center' }}>
             <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setShowHistory(false)}>
               {strings.BackToScanButton}
             </Button>
+            {historyItems.length > 0 && (
+              <Button
+                appearance="subtle"
+                icon={<Delete24Regular />}
+                style={{ marginLeft: 'auto' }}
+                onClick={() => confirm({
+                  title: strings.ClearHistoryButton,
+                  body: strings.ClearHistoryConfirmBody,
+                  confirmLabel: strings.DeleteButton,
+                  cancelLabel: strings.CancelButton,
+                  onConfirm: () => {
+                    historyService.current.clearUserAccessReports()
+                      .then(() => setHistoryItems([]))
+                      .catch(() => { /* storage unavailable */ });
+                  },
+                })}
+              >
+                {strings.ClearHistoryButton}
+              </Button>
+            )}
           </div>
           {exportError && (
             <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
@@ -505,21 +598,21 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           {historyItems.length === 0 ? (
             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.NoUserAccessScansSavedYet}</Body1>
           ) : (
-            <table className={styles.historyTable}>
+            <table className={styles.historyTable} aria-label={strings.HistoryButton}>
               <thead>
                 <tr>
                   <th className={styles.historyTh}>{strings.DateTimeColumnHeader}</th>
                   <th className={styles.historyTh}>{strings.UserColumnHeader}</th>
                   <th className={styles.historyTh}>{strings.SiteColumnHeader}</th>
                   <th className={styles.historyTh}>{strings.LocationsColumnHeader}</th>
-                  <th className={styles.historyTh}></th>
+                  <th className={styles.historyTh} aria-label={strings.ExportButton} />
                 </tr>
               </thead>
               <tbody>
                 {historyItems.map((item) => (
                   <tr key={item.id}>
                     <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
-                      {new Date(item.timestamp).toLocaleString()}
+                      {formatDateTime(item.timestamp)}
                     </td>
                     <td className={styles.historyTd}>
                       {item.userDisplayName}
@@ -548,8 +641,15 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                           size="small"
                           appearance="subtle"
                           icon={<Delete24Regular />}
-                          onClick={() => handleHistoryDelete(item.id)}
+                          onClick={() => confirm({
+                            title: strings.DeleteThisRecordTitle,
+                            body: strings.ConfirmDeleteReportBody,
+                            confirmLabel: strings.DeleteButton,
+                            cancelLabel: strings.CancelButton,
+                            onConfirm: () => { handleHistoryDelete(item.id).catch(() => { /* storage unavailable */ }); },
+                          })}
                           title={strings.DeleteThisRecordTitle}
+                          aria-label={strings.DeleteThisRecordTitle}
                         />
                       </div>
                     </td>
@@ -597,18 +697,16 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 style={{ maxWidth: '400px' }}
                 aria-label={strings.SelectAUserToCheckAccessLabel}
               >
-                {siteUsers
-                  .filter(
-                    (u) =>
-                      u.displayName.toLowerCase().includes(userFilter.toLowerCase()) ||
-                      u.loginName.toLowerCase().includes(userFilter.toLowerCase()) ||
-                      (u.email != null && u.email.toLowerCase().includes(userFilter.toLowerCase())),
-                  )
-                  .map((u) => (
-                    <Option key={u.loginName} value={u.loginName} text={u.displayName}>
-                      {u.email ? `${u.displayName} (${u.email})` : u.displayName}
-                    </Option>
-                  ))}
+                {visibleUsers.map((u) => (
+                  <Option key={u.loginName} value={u.loginName} text={u.displayName}>
+                    {u.email ? `${u.displayName} (${u.email})` : u.displayName}
+                  </Option>
+                ))}
+                {matchingUsers.length > visibleUsers.length && (
+                  <Option disabled value="" text="">
+                    {formatString(strings.RefineUserSearchHint, visibleUsers.length, formatNumber(matchingUsers.length))}
+                  </Option>
+                )}
                 {tenantSuggestions.length > 0 && (
                   <OptionGroup label={strings.NotInThisSiteLabel}>
                     {tenantSuggestions.map((u) => (
@@ -623,10 +721,10 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
           </div>
 
           {userAccessBusy && (
-            <div className={styles.scanArea} role="status" aria-label={strings.ScanInProgressLabel}>
+            <div className={styles.scanArea} role="group" aria-label={strings.ScanInProgressLabel}>
               <ProgressBar aria-label={strings.ScanningUserAccessLabel} />
               <div className={styles.scanRow}>
-                <Spinner size="tiny" />
+                <Spinner size="tiny" aria-label={strings.ScanningStatus} />
                 <Text>{userAccessStatus}</Text>
                 <Text style={{ color: tokens.colorNeutralForeground3, marginLeft: 'auto' }}>
                   {formatElapsed(scanElapsed)}
@@ -734,7 +832,15 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
               </MessageBarBody>
             </MessageBar>
           )}
-          {!userAccessBusy && userAccessItems.length > 0 && (
+          {!userAccessBusy && userAccessIncomplete && (
+            <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalS }}>
+              <MessageBarBody>{strings.UserAccessIncompleteMessage}</MessageBarBody>
+            </MessageBar>
+          )}
+          {!userAccessBusy && userAccessItems.length > 0 && sortedAccessItems.length === 0 && (
+            <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.NoResultsMatchFilters}</Body1>
+          )}
+          {!userAccessBusy && sortedAccessItems.length > 0 && (
             <table className={styles.accessTable} aria-label={strings.UserAccessResultsLabel}>
               <thead>
                 <tr>
@@ -744,22 +850,17 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                       { col: 'name', label: strings.NameColumnHeader },
                       { col: 'path', label: strings.PathColumnHeader },
                       { col: 'permission', label: strings.PermissionLevelColumnHeader },
+                      { col: 'via', label: strings.AccessViaColumnHeader },
                     ] as { col: typeof sortCol; label: string }[]
                   ).map(({ col, label }) => (
-                    <th
+                    <SortableHeader
                       key={col}
                       className={styles.accessTh}
-                      onClick={() => handleSort(col)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(col); }
-                      }}
-                      tabIndex={0}
-                      role="columnheader"
-                      aria-sort={sortCol !== col ? 'none' : sortAsc ? 'ascending' : 'descending'}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                    >
-                      {label}{sortInd(col)}
-                    </th>
+                      label={label}
+                      active={sortCol === col}
+                      ascending={sortAsc}
+                      onSort={() => handleSort(col)}
+                    />
                   ))}
                 </tr>
               </thead>
@@ -782,7 +883,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                         }
                         size="small"
                       >
-                        {item.objectType}
+                        {objectTypeLabel(item.objectType)}
                       </Badge>
                     </td>
                     <td
@@ -814,6 +915,18 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                         </Badge>
                       ))}
                     </td>
+                    <td className={styles.accessTd}>
+                      {item.uniquePermissions[0]?.accessVia?.map((v) => (
+                        <Badge
+                          key={v}
+                          appearance="outline"
+                          size="small"
+                          style={{ marginRight: '4px', marginBottom: '2px' }}
+                        >
+                          {v}
+                        </Badge>
+                      ))}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -825,7 +938,7 @@ export const UserAccessView: React.FC<UserAccessViewProps> = ({ sp, excel, siteU
                 appearance="secondary"
                 onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
               >
-                {formatString(strings.LoadMoreRemainingButton, (sortedAccessItems.length - visibleCount).toLocaleString())}
+                {formatString(strings.LoadMoreRemainingButton, formatNumber(sortedAccessItems.length - visibleCount))}
               </Button>
             </div>
           )}

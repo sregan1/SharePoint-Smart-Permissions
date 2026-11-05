@@ -69,6 +69,10 @@ export function diffReports(older: StoredReport, newer: StoredReport): ReportDif
       return;
     }
 
+    // An entry whose permissions couldn't be fully read in either scan has unreliable
+    // inheritance and assignment data; comparing it would report phantom changes.
+    if (oldEntry.scanIncomplete || newEntry.scanIncomplete) return;
+
     if (oldEntry.hasUniquePermissions !== newEntry.hasUniquePermissions) {
       inheritanceChanged.push({ entry: newEntry, nowUnique: newEntry.hasUniquePermissions });
     }

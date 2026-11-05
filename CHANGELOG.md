@@ -4,6 +4,75 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.7.1] — 2026-11-05
+
+### Added
+
+- **Permissions Report — risk summary**
+  A row of one-click filter buttons above the results shows counts for
+  Everyone access, External users, Full Control (non-owners), and
+  Unconfirmed items, and filters the table to just those entries.
+- **Permissions Report — open and copy links**
+  Each result row has an "Open in SharePoint" link and a "Copy path" button.
+- **Permissions Report — view saved reports**
+  A "View" button on each History row opens a saved report in the web part,
+  with a banner marking it as a saved report. History is now kept separately
+  for each site, and a "Clear history" button removes everything after a
+  confirmation.
+- **User Access — "Access via" column**
+  Shows the group or assignment that grants the access at each location,
+  sortable on screen and included in the Excel export.
+- **Permissions Explorer — nested Entra groups**
+  A group inside an Entra group is now shown as a Security Group row with
+  its members indented beneath it, down to five levels, instead of appearing
+  as a user. Groups that contain each other are expanded only once. The same
+  expansion applies in the Permissions Report.
+- **Permissions Explorer — remembers the library**
+  Opens on Shared Documents the first time, then on the last library picked
+  for that site.
+- **Property pane options**
+  Toggles to hide the Permissions Report, Permissions Explorer, or User
+  Access card, plus a default site URL and a lock that removes the Change URL
+  link for viewers.
+- **Home screen shows the connected site**
+  The brand banner with the site URL, Change URL, and Settings now appears on
+  the home screen as well as the tool screens.
+
+### Changed
+
+- **Confirmations before losing work**
+  Leaving a screen during a scan, deleting a saved report, and clearing
+  history now ask first, using a dialog instead of a browser prompt.
+- **User Access — accuracy**
+  Access through Entra and Microsoft 365 groups, including groups inside
+  SharePoint groups, is now resolved from the user's group memberships, and
+  locations that could not be fully checked are flagged as possibly incomplete.
+- **Clearer states**
+  Added a "no results match the current filters" message, a notice when scan
+  options change after results were produced, a retry button when a library
+  fails to load, and a hint when the user list is truncated.
+- **Export safety**
+  CSV cells that begin with `=`, `+`, `-`, or `@` are prefixed so spreadsheet
+  apps open them as text rather than running them as formulas.
+- **Input handling**
+  Site URLs pasted with a trailing slash or a page path are cleaned up, and
+  invalid numeric settings fall back to their defaults instead of stalling a
+  scan.
+- **Provisioning scripts**
+  `scripts/Provision-SmartPermissions.ps1` no longer needs PnP.PowerShell or
+  an app registration: it signs in with a device code, remembers the sign-in,
+  and uses SharePoint REST. The PnP version is now
+  `scripts/Provision-SmartPermissions-PnP.ps1`. Both remove duplicate
+  Permissions navigation links on re-run and no longer set page audience
+  targeting (the page is limited to Site Owners by permissions alone).
+
+### Documentation
+
+- Updated the User Guide and README for all of the above.
+- Refreshed the home screen screenshot.
+
+---
+
 ## [1.7.0] — 2026-09-28
 
 ### Added

@@ -23,6 +23,8 @@ Interactively browse a document library tree and inspect live permissions on any
 | **Live permission lookup** | Click any folder or file to see its full role assignment list in real time |
 | **Inherited vs. unique** | Clearly labels whether permissions are inherited or uniquely assigned |
 | **Group member expansion** | Expand SharePoint groups, Security groups, and M365 groups to see individual members |
+| **Nested Entra groups** | Groups inside Entra groups are shown as group rows with their members indented beneath them, down to five levels |
+| **Remembers your library** | Opens on Shared Documents the first time, then on the last library you picked for that site |
 | **Automatic external user detection** | Background scan flags items where external (#EXT#) accounts have explicit access — no clicking required |
 | **Three folder indicators** | Circle arrow = unique permissions below; triangle arrow = external access below; both together = both |
 | **External user email decoding** | Decoded email shown beneath the display name in the permissions panel |
@@ -44,6 +46,9 @@ Scan a site's lists, libraries, folders, and files and export a color-coded Exce
 | **Libraries to scan** | Pick specific lists/libraries to include instead of scanning every one on the site |
 | **Subsite scanning** | Optionally recurse into every subsite below the selected site |
 | **In-browser results table** | Browse results directly: sortable, paginated, with expandable per-object permission details |
+| **Risk summary** | One-click filter buttons with counts for Everyone access, External users, Full Control non-owners, and Unconfirmed items |
+| **Open and copy links** | Each result row has an *Open in SharePoint* link and a *Copy path* button |
+| **Report history** | View, export, or delete saved reports (history is kept per site), or clear it all, with confirmation |
 | **Report compare** | Diff two saved reports to see permissions added, removed, or changed between scans |
 | **Folder depth limit** | Cap recursion at 1–10 levels to control scan time on large sites |
 | **Group member expansion** | Expand all group types into individual user rows in the export |
@@ -76,11 +81,24 @@ Look up any user and see every location they can access on a site, with their ex
 | **Site-level detection** | Immediately identifies when a user has full-site access via M365 Group or SP group membership |
 | **M365 Group support** | Detects membership via SharePoint REST, site GroupId, and Graph `transitiveMemberOf` |
 | **Sortable results table** | Click any column header to sort |
+| **Access via** | A column showing which group or assignment grants the access at each location (also in the Excel export) |
 | **Export to Excel / CSV** | Download the results for any user |
 | **Scan history** | Past scans persist in IndexedDB — re-export without re-scanning |
 | **Honest M365 group ownership checks** | If a Graph permission error prevents confirming M365 Group ownership, the result is shown as "Graph permission required" rather than a false Member/Owner result |
 
 ![User Access results showing accessible locations for a selected user](docs/screenshots/07_user_access_complete.png)
+
+---
+
+### Web Part Settings
+
+Site administrators can tailor the web part in the SharePoint property pane.
+
+| Feature | Description |
+|---|---|
+| **Default view on open** | Start on Home, Permissions Report, Permissions Explorer, or User Access |
+| **Hide tools** | Remove the Permissions Report, Permissions Explorer, or User Access card from the home screen |
+| **Default site URL and lock** | Point the web part at a specific site and optionally stop viewers from changing it |
 
 ---
 
@@ -115,7 +133,7 @@ The web part's interface is fully translated into 30 languages and follows the S
 3. Upload `smart-permissions.sppkg` to the **Apps for SharePoint** library.
 4. When prompted, click **Deploy**. The *"Make this solution available to all sites"* checkbox controls where the web part can be placed — tick it for a tenant-wide deployment.
 5. Navigate to the SharePoint page where you want to add the web part, click **Edit**, and add **Smart Permissions** from the web part picker.
-6. *(Optional)* Approve the Graph API permissions in **SharePoint Admin Center → Advanced → API access** to enable group member expansion (see [Graph API Permissions](#graph-api-permissions) below).
+6. *(Optional)* Approve the Graph API permissions in **SharePoint Admin Center → Advanced → API access** to enable group member expansion and tenant-wide site discovery (see [Graph API Permissions](#graph-api-permissions) below).
 
 ---
 
@@ -188,18 +206,19 @@ To change web part settings, put the page in **Edit** mode, click the web part p
 
 ## Graph API Permissions
 
-The package declares one optional `webApiPermissionRequests` entry. The core tools work without it, but the following feature requires approval:
+The package declares two optional `webApiPermissionRequests` entries, so two pending requests appear in the admin center. The core tools work without either; each one unlocks one capability:
 
 | Permission | Enables | Required? |
 |---|---|---|
-| `GroupMember.Read.All` | Expanding Security group and M365 group members in the Permissions Report and Explorer | Optional |
+| `GroupMember.Read.All` | Expanding Security group and M365 group members in the Permissions Report, Explorer and User Access, including nested groups | Optional |
+| `Sites.Read.All` | Reliable discovery of every site collection when scanning **All site collections** (reads the tenant site directory from Microsoft Graph) | Optional |
 
 **To approve (SharePoint Admin Center):**
 
 1. Go to **SharePoint Admin Center → Advanced → API access** (or navigate directly to `https://<tenant>-admin.sharepoint.com/_layouts/15/online/ManageApiPermissions.aspx`).
-2. Find the pending request for Smart Permissions and click **Approve**.
+2. Find the pending requests for Smart Permissions and click **Approve** on each one you want (approve both for full functionality).
 
-> **What approved SPFx permissions look like:** Once approved, `GroupMember.Read.All` appears in the list under **Microsoft Graph** with a blank app name (`—`) and no date. This is normal for SPFx permissions. If you see the entry with consent granted, the permission is active.
+> **What approved SPFx permissions look like:** Once approved, each permission (`GroupMember.Read.All`, `Sites.Read.All`) appears in the list under **Microsoft Graph** with a blank app name (`—`) and no date. This is normal for SPFx permissions. If you see the entry with consent granted, the permission is active.
 
 **To approve via PnP PowerShell:**
 
@@ -214,6 +233,8 @@ Approve-PnPTenantServicePrincipalPermissionRequest -RequestId "<guid>"
 ```
 
 **Without `GroupMember.Read.All`:** SharePoint group members expand normally. Security groups and M365 groups show a warning banner instead of member lists.
+
+**Without `Sites.Read.All`:** The **All site collections** scan falls back to SharePoint search to find sites. Search can miss recently created sites or depend on your tenant's search configuration, so for a complete tenant-wide scan approve this permission. Scanning a single site is unaffected.
 
 ---
 

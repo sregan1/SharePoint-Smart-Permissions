@@ -2,18 +2,33 @@ import { MSGraphClientV3 } from '@microsoft/sp-http';
 import { UserPermissionInfo, PermissionEntry, ObjectType } from '../../models/models';
 import {
   SpApiClient, TaskQueue, odata, valueArray, rdbArray, isPermissionDenied, isGraphPermissionError,
-  isSystemRole, isSystemLibrary, folderApi, fileApi, isLibraryTemplate, extractRoles, roleAccessTier,
-  debugLog,
+  isSystemRole, isSystemLibrary, folderApi, fileApi, listApi, isLibraryTemplate, roleAccessTier,
+  extractAadGroupInfo, isAbortError, debugLog,
 } from './spCore';
 
-// A single .top(999) page silently truncated for users in more than 999 groups,
-// turning a genuine member into a false "not a member" result. Follow
-// @odata.nextLink so the membership check is exhaustive.
-async function fetchAllTransitiveGroupIds(graph: MSGraphClientV3, identifier: string): Promise<Set<string>> {
+export interface UserAccessResult {
+  fullSiteAccess: boolean;
+  items: PermissionEntry[];
+  graphPermissionRequired: boolean;
+  roleAssignmentsDenied: boolean;
+  /**
+   * True when part of the scan failed for a reason other than "access denied" (transient
+   * errors, an unreadable group, a listing that fell back to less data). The result may
+   * under-report access and is never reported as full site access.
+   */
+  incomplete?: boolean;
+  /** Server-relative URLs (or site URLs) whose role assignments could not be read. */
+  failedPaths?: string[];
+}
+
+// Follows @odata.nextLink so a membership check is exhaustive — a single .top(999)
+// page silently truncated for users in more than 999 groups, turning a genuine member
+// into a false "not a member" result.
+async function fetchAllGraphIds(graph: MSGraphClientV3, path: string): Promise<Set<string>> {
   const ids = new Set<string>();
-  let resp = await graph.api(`/users/${encodeURIComponent(identifier)}/transitiveMemberOf`).select('id').top(999).get();
+  let resp = await graph.api(path).select('id').top(999).get();
   for (;;) {
-    (resp?.value ?? []).forEach((g: any) => ids.add((g.id as string).toLowerCase()));
+    (resp?.value ?? []).forEach((g: any) => { if (g?.id) ids.add((g.id as string).toLowerCase()); });
     const nextLink: string | undefined = resp?.['@odata.nextLink'];
     if (!nextLink) break;
     // nextLink is an absolute URL; the Graph client's .api() expects a path
@@ -23,25 +38,254 @@ async function fetchAllTransitiveGroupIds(graph: MSGraphClientV3, identifier: st
   return ids;
 }
 
+async function fetchAllTransitiveGroupIds(graph: MSGraphClientV3, identifier: string): Promise<Set<string>> {
+  return fetchAllGraphIds(graph, `/users/${encodeURIComponent(identifier)}/transitiveMemberOf`);
+}
+
+// Candidate Graph identifiers for a user, best first. The UPN embedded in the claims
+// login (i:0#.f|membership|user@contoso.com) is what /users/{id} resolves reliably; the
+// SharePoint Email property is the *mail* attribute, which can differ from the UPN.
+function graphIdentifiers(userLoginName: string, userEmail: string): string[] {
+  const out: string[] = [];
+  const loginPart = userLoginName.includes('|') ? (userLoginName.split('|').pop() ?? '') : userLoginName;
+  if (loginPart.includes('@')) out.push(loginPart);
+  if (userEmail && !out.some((x) => x.toLowerCase() === userEmail.toLowerCase())) out.push(userEmail);
+  return out;
+}
+
+// ── Access context ───────────────────────────────────────────────────────────
+// Everything needed to decide whether a role assignment's principal covers the user,
+// resolved once per scan and shared by the site, library, folder and file levels.
+
+interface GraphGroups {
+  /** Lowercased ids of every group the user belongs to (transitive). */
+  member: Set<string>;
+  /** Lowercased ids of every group the user owns. */
+  owned: Set<string>;
+}
+
+interface AccessFlags {
+  graphPermissionRequired: boolean;
+  incomplete: boolean;
+  roleAssignmentsDenied: boolean;
+  failedPaths: string[];
+  /** Libraries/folders/files seen with broken inheritance (whether or not they cover the user). */
+  uniqueBelow: number;
+}
+
+interface AccessContext {
+  userLogin: string;
+  userLower: string;
+  displayName: string;
+  /** False for guests; "Everyone except external users" does not cover them. */
+  isInternal: boolean;
+  /** Lowercased login names of the SharePoint groups the user is a direct member of. */
+  groupLogins: Set<string>;
+  spGroupIds: Set<number>;
+  flags: AccessFlags;
+  getGraphGroups: () => Promise<GraphGroups | null>;
+  getSpGroupMembers: (groupId: number) => Promise<any[]>;
+}
+
+const RA_SELECT =
+  'Member/Id,Member/LoginName,Member/Title,Member/PrincipalType,' +
+  'RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind';
+
+function recordFailure(ctx: AccessContext, err: unknown, path: string): void {
+  if (isAbortError(err)) return;
+  if (isPermissionDenied(err)) ctx.flags.roleAssignmentsDenied = true;
+  else ctx.flags.incomplete = true;
+  ctx.flags.failedPaths.push(path);
+}
+
+function createAccessContext(
+  client: SpApiClient,
+  siteUrl: string,
+  userLogin: string,
+  userEmail: string,
+  displayName: string,
+  groupLogins: Set<string>,
+  spGroupIds: Set<number>,
+): AccessContext {
+  const flags: AccessFlags = {
+    graphPermissionRequired: false,
+    incomplete: false,
+    roleAssignmentsDenied: false,
+    failedPaths: [],
+    uniqueBelow: 0,
+  };
+
+  // Graph is only queried when a role assignment actually needs it, and at most once.
+  let graphPromise: Promise<GraphGroups | null> | undefined;
+  const loadGraphGroups = async (): Promise<GraphGroups | null> => {
+    try {
+      const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
+      let userId = '';
+      let sawOtherError = false;
+      for (const identifier of graphIdentifiers(userLogin, userEmail)) {
+        try {
+          const profile = await graph.api(`/users/${encodeURIComponent(identifier)}`).select('id').get();
+          userId = profile?.id ?? '';
+          if (userId) break;
+        } catch (err) {
+          if (isGraphPermissionError(err)) throw err;
+          // 404 just means this identifier isn't the AAD user; try the next one.
+          if ((err as any)?.statusCode !== 404) sawOtherError = true;
+        }
+      }
+      if (!userId) {
+        // A SharePoint-only account has no AAD object and legitimately belongs to no AAD
+        // group. Only an unexplained lookup failure makes the result uncertain.
+        if (sawOtherError) flags.incomplete = true;
+        return null;
+      }
+      const member = await fetchAllTransitiveGroupIds(graph, userId);
+      let owned = new Set<string>();
+      try {
+        owned = await fetchAllGraphIds(graph, `/users/${encodeURIComponent(userId)}/ownedObjects/microsoft.graph.group`);
+      } catch (err) {
+        // Owner claims (…_o) can't be verified without this; treat them as not matching.
+        debugLog('[SmartPermissions] ownedObjects lookup failed', err);
+      }
+      debugLog('[SmartPermissions] access context: in %d group(s), owns %d', member.size, owned.size);
+      return { member, owned };
+    } catch (err) {
+      if (isGraphPermissionError(err)) flags.graphPermissionRequired = true;
+      else flags.incomplete = true;
+      debugLog('[SmartPermissions] access context: Graph group lookup failed', err);
+      return null;
+    }
+  };
+
+  const spMemberCache = new Map<number, Promise<any[]>>();
+  const getSpGroupMembers = (groupId: number): Promise<any[]> => {
+    let p = spMemberCache.get(groupId);
+    if (!p) {
+      p = client
+        .getJson(`${siteUrl}/_api/web/sitegroups/getbyid(${groupId})/users?$select=LoginName,PrincipalType&$top=5000`)
+        .then((data) => valueArray(data))
+        .catch((err) => {
+          // Can't see who is in this group, so we can't rule it out.
+          if (!isAbortError(err)) flags.incomplete = true;
+          return [];
+        });
+      spMemberCache.set(groupId, p);
+    }
+    return p;
+  };
+
+  return {
+    userLogin,
+    userLower: userLogin.toLowerCase(),
+    displayName,
+    isInternal: !/#ext#/i.test(userLogin),
+    groupLogins,
+    spGroupIds,
+    flags,
+    getGraphGroups: () => {
+      if (!graphPromise) graphPromise = loadGraphGroups();
+      return graphPromise;
+    },
+    getSpGroupMembers,
+  };
+}
+
+// Does a non-SharePoint-group principal (identified by claims login) cover the user?
+async function claimCoversUser(ctx: AccessContext, login: string): Promise<boolean> {
+  const l = login.toLowerCase();
+  if (!l) return false;
+  if (l === ctx.userLower) return true;
+  // "Everyone": every authenticated user. "Everyone except external users": members only.
+  if (l.startsWith('c:0(.s|true')) return true;
+  if (l.startsWith('c:0-.f|rolemanager|spo-grid-all-users')) return ctx.isInternal;
+  // AAD security group / M365 group (…|guid) or the group's owners (…|guid_o)
+  if (l.startsWith('c:0t.c|') || l.startsWith('c:0o.c|') || l.startsWith('c:0p.c|')) {
+    const aad = extractAadGroupInfo(login);
+    if (!aad) return false;
+    const groups = await ctx.getGraphGroups();
+    if (!groups) return false;
+    return (aad.isOwners ? groups.owned : groups.member).has(aad.id.toLowerCase());
+  }
+  return false;
+}
+
+async function memberCoversUser(ctx: AccessContext, member: any): Promise<boolean> {
+  const login: string = member?.LoginName ?? '';
+  const l = login.toLowerCase();
+  if (!l) return false;
+  if (ctx.groupLogins.has(l)) return true;
+  const groupId: number | undefined = typeof member?.Id === 'number' ? member.Id : undefined;
+  const isSpGroup = (member?.PrincipalType ?? 1) === 8;
+  if (isSpGroup && groupId !== undefined && ctx.spGroupIds.has(groupId)) return true;
+  if (await claimCoversUser(ctx, login)) return true;
+
+  // A SharePoint group can contain AAD/M365 groups (the usual shape on M365-connected
+  // sites) that the user's own siteusers Groups expansion never reports.
+  if (isSpGroup && groupId !== undefined) {
+    for (const m of await ctx.getSpGroupMembers(groupId)) {
+      if (await claimCoversUser(ctx, m?.LoginName ?? '')) return true;
+    }
+  }
+  return false;
+}
+
+// Merges every role-assignment source that covers the user into one role set.
+async function resolveRoles(
+  ctx: AccessContext,
+  roleAssignments: any[],
+): Promise<{ roles: string[]; roleTypeKinds: Record<string, number>; via: string[] }> {
+  const roles = new Set<string>();
+  const roleTypeKinds: Record<string, number> = {};
+  const via: string[] = [];
+  for (const ra of roleAssignments) {
+    const bindings = rdbArray(ra.RoleDefinitionBindings).filter((r: any) => !isSystemRole(r));
+    if (bindings.length === 0) continue; // e.g. Limited Access only — skip the lookups
+    if (!(await memberCoversUser(ctx, ra.Member))) continue;
+    for (const rb of bindings) {
+      roles.add(rb.Name);
+      if (typeof rb.RoleTypeKind === 'number') roleTypeKinds[rb.Name] = rb.RoleTypeKind;
+    }
+    const label: string = ra.Member?.Title || ra.Member?.LoginName || '';
+    if (label && via.indexOf(label) === -1) via.push(label);
+  }
+  return { roles: Array.from(roles), roleTypeKinds, via };
+}
+
+function accessEntryPerms(
+  ctx: AccessContext,
+  resolved: { roles: string[]; roleTypeKinds: Record<string, number>; via: string[] },
+): UserPermissionInfo[] {
+  return [{
+    loginName: ctx.userLogin,
+    displayName: ctx.displayName,
+    principalType: 'User',
+    roles: resolved.roles,
+    roleTypeKinds: resolved.roleTypeKinds,
+    accessVia: resolved.via.length > 0 ? resolved.via : undefined,
+  }];
+}
+
 // ── User Access scan ─────────────────────────────────────────────────────────
 
-export async function getUserAccess(client: SpApiClient, 
+export async function getUserAccess(client: SpApiClient,
     siteUrl: string,
     userLoginName: string,
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
     includeHidden = false,
-  ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[]; graphPermissionRequired: boolean; roleAssignmentsDenied: boolean }> {
+  ): Promise<UserAccessResult> {
     onProgress('Loading user info…');
 
     let userTitle = userLoginName;
     let userEmail = '';
     let groupLogins = new Set<string>();
+    let spGroupIds = new Set<number>();
+    let userInfoFailed = false;
 
     try {
       const userData = await client.getJson(
         `${siteUrl}/_api/web/siteusers/getbyloginname('${encodeURIComponent(odata(userLoginName))}')` +
-          `?$expand=Groups&$select=Title,LoginName,Email,Groups/LoginName`,
+          `?$expand=Groups&$select=Title,LoginName,Email,Groups/LoginName,Groups/Id`,
       );
       userTitle = userData.Title ?? userLoginName;
       userEmail = userData.Email ?? '';
@@ -49,16 +293,24 @@ export async function getUserAccess(client: SpApiClient,
       // Normalize to lowercase — role-assignment member logins can differ in case
       // from user-groups logins depending on the SharePoint REST endpoint used.
       groupLogins = new Set(groups.map((g: any) => (g.LoginName as string).toLowerCase()));
+      spGroupIds = new Set(groups.filter((g: any) => typeof g.Id === 'number').map((g: any) => g.Id as number));
       debugLog('[SmartPermissions] getUserAccess: user=%s email=%s SP-groups=%o',
         userLoginName, userEmail, Array.from(groupLogins));
     } catch (err) {
+      // A user who has never visited the site has no siteusers entry; that is not a
+      // failure. Anything else leaves us unable to see their SharePoint group memberships.
+      if (isPermissionDenied(err) || /HTTP 5\d\d/.test(String((err as any)?.message ?? ''))) userInfoFailed = true;
       debugLog('[SmartPermissions] getUserAccess: siteusers fetch failed', err);
     }
+
+    const ctx = createAccessContext(client, siteUrl, userLoginName, userEmail, userTitle, groupLogins, spGroupIds);
+    if (userInfoFailed) ctx.flags.incomplete = true;
 
     // ── Site roles ──
     onProgress('Loading site permissions…');
     let siteRoles: string[] = [];
     let siteRoleTypeKinds: Record<string, number> = {};
+    let siteVia: string[] = [];
     let webData: any = null;
     let roleAssignmentsDenied = false;
 
@@ -75,13 +327,15 @@ export async function getUserAccess(client: SpApiClient,
           principalType: ra.Member?.PrincipalType,
           roles: rdbArray(ra.RoleDefinitionBindings).map((r: any) => r.Name),
         })));
-      const siteExtract = extractRoles(allRa, userLoginName, groupLogins);
-      siteRoles = siteExtract.roles;
-      siteRoleTypeKinds = siteExtract.roleTypeKinds;
-      debugLog('[SmartPermissions] getUserAccess: siteRoles after extractRoles=%o', siteRoles);
+      const siteResolved = await resolveRoles(ctx, allRa);
+      siteRoles = siteResolved.roles;
+      siteRoleTypeKinds = siteResolved.roleTypeKinds;
+      siteVia = siteResolved.via;
+      debugLog('[SmartPermissions] getUserAccess: siteRoles after resolveRoles=%o', siteRoles);
     } catch (err) {
       debugLog('[SmartPermissions] getUserAccess: web RoleAssignments fetch failed', err);
       if (isPermissionDenied(err)) roleAssignmentsDenied = true;
+      else if (!isAbortError(err)) ctx.flags.incomplete = true;
     }
 
     // Member-access fallback: RoleAssignments are not readable, but the user's SP group
@@ -93,21 +347,27 @@ export async function getUserAccess(client: SpApiClient,
       try {
         const [web, ownerGrp, memberGrp, visitorGrp] = await Promise.all([
           client.getJson(`${siteUrl}/_api/web?$select=Title,Url,ServerRelativeUrl`).catch(() => null),
-          client.getJson(`${siteUrl}/_api/web/AssociatedOwnerGroup?$select=LoginName,Title`).catch(() => null),
-          client.getJson(`${siteUrl}/_api/web/AssociatedMemberGroup?$select=LoginName,Title`).catch(() => null),
-          client.getJson(`${siteUrl}/_api/web/AssociatedVisitorGroup?$select=LoginName,Title`).catch(() => null),
+          client.getJson(`${siteUrl}/_api/web/AssociatedOwnerGroup?$select=Id,LoginName,Title`).catch(() => null),
+          client.getJson(`${siteUrl}/_api/web/AssociatedMemberGroup?$select=Id,LoginName,Title`).catch(() => null),
+          client.getJson(`${siteUrl}/_api/web/AssociatedVisitorGroup?$select=Id,LoginName,Title`).catch(() => null),
         ]);
 
         const matchedRoles: string[] = [];
-        if (ownerGrp?.LoginName && groupLogins.has((ownerGrp.LoginName as string).toLowerCase())) {
-          matchedRoles.push('Full Control');
-        }
-        if (memberGrp?.LoginName && groupLogins.has((memberGrp.LoginName as string).toLowerCase())) {
-          matchedRoles.push('Edit');
-        }
-        if (visitorGrp?.LoginName && groupLogins.has((visitorGrp.LoginName as string).toLowerCase())) {
-          matchedRoles.push('Read');
-        }
+        const via: string[] = [];
+        // Same coverage rules as the full scan, so nested AAD/M365 membership counts here too.
+        const check = async (grp: any, role: string): Promise<void> => {
+          if (!grp?.LoginName) return;
+          const covers = await memberCoversUser(ctx, {
+            Id: grp.Id, LoginName: grp.LoginName, Title: grp.Title, PrincipalType: 8,
+          });
+          if (covers) {
+            matchedRoles.push(role);
+            via.push(grp.Title || grp.LoginName);
+          }
+        };
+        await check(ownerGrp, 'Full Control');
+        await check(memberGrp, 'Edit');
+        await check(visitorGrp, 'Read');
 
         if (matchedRoles.length > 0) {
           const siteEntry: PermissionEntry = {
@@ -117,23 +377,30 @@ export async function getUserAccess(client: SpApiClient,
             siteUrl,
             hasUniquePermissions: true,
             depth: 0,
-            uniquePermissions: [{ loginName: userLoginName, displayName: userTitle, principalType: 'User', roles: matchedRoles }],
+            uniquePermissions: accessEntryPerms(ctx, { roles: matchedRoles, roleTypeKinds: {}, via }),
           };
-          return { fullSiteAccess: false, items: [siteEntry], graphPermissionRequired: false, roleAssignmentsDenied: true };
+          return {
+            fullSiteAccess: false, items: [siteEntry],
+            graphPermissionRequired: ctx.flags.graphPermissionRequired, roleAssignmentsDenied: true,
+            incomplete: ctx.flags.incomplete || undefined,
+          };
         }
       } catch { /* ignore fallback errors */ }
 
-      return { fullSiteAccess: false, items: [], graphPermissionRequired: false, roleAssignmentsDenied: true };
+      return {
+        fullSiteAccess: false, items: [],
+        graphPermissionRequired: ctx.flags.graphPermissionRequired, roleAssignmentsDenied: true,
+        incomplete: ctx.flags.incomplete || undefined,
+      };
     }
 
-    // Fallback for M365 Group-connected sites: extractRoles only matches SP group logins.
-    // M365 Groups and AAD Security Groups appear directly in RoleAssignments but their
-    // members are not returned by the siteusers Groups expansion. Use Graph to check
-    // transitive membership in any such groups found in the site's role assignments.
-    let graphPermissionRequired = false;
+    // Last-resort fallback for M365 Group-connected sites: the SP groups only hold static
+    // members, and the resolver above already follows nested AAD/M365 groups, but keep the
+    // older Graph-based check for shapes it can't see (e.g. a site-level owners lookup).
+    let graphPermissionRequired = ctx.flags.graphPermissionRequired;
     if (siteRoles.length === 0 && webData) {
-      debugLog('[SmartPermissions] getUserAccess: extractRoles returned empty — trying AAD group fallback');
-      const aadResult = await getAadGroupSiteRoles(client, 
+      debugLog('[SmartPermissions] getUserAccess: resolver returned empty — trying AAD group fallback');
+      const aadResult = await getAadGroupSiteRoles(client,
         siteUrl,
         userLoginName,
         userEmail,
@@ -141,7 +408,7 @@ export async function getUserAccess(client: SpApiClient,
       );
       siteRoles = aadResult.roles;
       siteRoleTypeKinds = aadResult.roleTypeKinds;
-      graphPermissionRequired = aadResult.graphUnavailable;
+      graphPermissionRequired = graphPermissionRequired || aadResult.graphUnavailable;
       debugLog('[SmartPermissions] getUserAccess: siteRoles after AAD fallback=%o graphPermissionRequired=%s',
         siteRoles, graphPermissionRequired);
     }
@@ -150,6 +417,7 @@ export async function getUserAccess(client: SpApiClient,
     onProgress('Loading lists and libraries…');
     let libs: any[] = [];
     let libsHaveRoles = false;
+    let libsLoaded = false;
     const libFilterClause = includeHidden
       ? ''
       : `$filter=${encodeURIComponent('Hidden eq false')}&`;
@@ -159,13 +427,14 @@ export async function getUserAccess(client: SpApiClient,
         `${siteUrl}/_api/web/lists` +
           `?${libFilterClause}` +
           `$select=Title,BaseTemplate,HasUniqueRoleAssignments,NoCrawl,IsSiteAssetsLibrary,RootFolder/ServerRelativeUrl` +
-          `,RoleAssignments/Member/LoginName,RoleAssignments/Member/PrincipalType` +
+          `,RoleAssignments/Member/Id,RoleAssignments/Member/LoginName,RoleAssignments/Member/Title,RoleAssignments/Member/PrincipalType` +
           `,RoleAssignments/RoleDefinitionBindings/Name,RoleAssignments/RoleDefinitionBindings/RoleTypeKind` +
           `&$expand=RootFolder,RoleAssignments/Member,RoleAssignments/RoleDefinitionBindings` +
           `&$top=500`,
         signal,
       );
       libsHaveRoles = true;
+      libsLoaded = true;
     } catch {
       try {
         libs = await client.getJsonPaged(
@@ -175,7 +444,11 @@ export async function getUserAccess(client: SpApiClient,
             `&$expand=RootFolder&$top=500`,
           signal,
         );
-      } catch { /* no lists */ }
+        libsLoaded = true;
+      } catch {
+        // No list data at all: nothing below the site level could be checked.
+        ctx.flags.incomplete = true;
+      }
     }
 
     if (!includeHidden) {
@@ -189,39 +462,22 @@ export async function getUserAccess(client: SpApiClient,
         name: webData.Title ?? siteUrl,
         serverRelativeUrl: webData.ServerRelativeUrl ?? '',
         siteUrl,
-        hasUniquePermissions: true,
+        // A subsite can inherit from its parent web; the root web always reports true.
+        hasUniquePermissions: webData.HasUniqueRoleAssignments !== false,
         depth: 0,
-        uniquePermissions: [
-          {
-            loginName: userLoginName,
-            displayName: userTitle,
-            principalType: 'User',
-            roles: siteRoles,
-            roleTypeKinds: siteRoleTypeKinds,
-          },
-        ],
+        uniquePermissions: accessEntryPerms(ctx, { roles: siteRoles, roleTypeKinds: siteRoleTypeKinds, via: siteVia }),
       };
     }
 
     const isOwner = siteRoles.some((r) => roleAccessTier(r, siteRoleTypeKinds[r]) === 'admin');
 
-    // Full Site Access banner — owners have Full Control everywhere when no
-    // library breaks inheritance. If some do, scan to verify actual access.
-    if (isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
-      return { fullSiteAccess: true, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false, roleAssignmentsDenied: false };
-    }
-
-    // Member/Visitor with site-level access and no broken-inheritance libraries —
-    // all content is accessible via site inheritance; no scan needed.
-    const hasSiteAccess = siteRoles.length > 0;
-    if (hasSiteAccess && !isOwner && libs.every((l) => !l.HasUniqueRoleAssignments)) {
-      return { fullSiteAccess: false, items: siteEntry ? [siteEntry] : [], graphPermissionRequired: false, roleAssignmentsDenied: false };
-    }
-
     const items: PermissionEntry[] = siteEntry ? [siteEntry] : [];
 
     // One shared queue caps total concurrent requests across all libraries
-    // and all recursion levels at scanConcurrency.
+    // and all recursion levels at scanConcurrency. There is deliberately no early
+    // "owner/member of the site, so all content is accessible" shortcut: a single folder
+    // or file with broken inheritance anywhere below can remove that access, and the only
+    // way to know is to look.
     const queue = new TaskQueue(client.scanConcurrency);
 
     for (const lib of libs) {
@@ -229,65 +485,72 @@ export async function getUserAccess(client: SpApiClient,
         if (signal?.aborted) return;
         onProgress(`Scanning: ${lib.Title}`);
         const isLib = isLibraryTemplate(lib.BaseTemplate ?? 0);
+        const libUrl: string = lib.RootFolder?.ServerRelativeUrl ?? '';
 
-        if (lib.HasUniqueRoleAssignments && libsHaveRoles) {
-          const libExtract = extractRoles(
-            valueArray(lib.RoleAssignments),
-            userLoginName,
-            groupLogins,
-          );
-          const libRoles = libExtract.roles;
-
-          if (libRoles.length > 0) {
-            items.push({
-              objectType: isLib ? ObjectType.Library : ObjectType.List,
-              name: lib.Title,
-              serverRelativeUrl: lib.RootFolder?.ServerRelativeUrl ?? '',
-              siteUrl,
-              hasUniquePermissions: true,
-              depth: 1,
-              uniquePermissions: [
-                {
-                  loginName: userLoginName,
-                  displayName: userTitle,
-                  principalType: 'User',
-                  roles: libRoles,
-                  roleTypeKinds: libExtract.roleTypeKinds,
-                },
-              ],
-              noCrawl: lib.NoCrawl ? true : undefined,
-            });
+        try {
+          if (lib.HasUniqueRoleAssignments) {
+            ctx.flags.uniqueBelow++;
+            let libRas: any[];
+            if (libsHaveRoles) {
+              libRas = valueArray(lib.RoleAssignments);
+            } else if (libUrl) {
+              // The expanded list query fell back, so this list's assignments weren't
+              // loaded — fetch them directly instead of skipping the list.
+              const raData = await client.getJson(
+                `${listApi(siteUrl, libUrl)}/RoleAssignments?$expand=Member,RoleDefinitionBindings&$select=${RA_SELECT}`,
+              );
+              libRas = valueArray(raData);
+            } else {
+              libRas = [];
+              ctx.flags.incomplete = true;
+            }
+            const resolved = await resolveRoles(ctx, libRas);
+            if (resolved.roles.length > 0) {
+              items.push({
+                objectType: isLib ? ObjectType.Library : ObjectType.List,
+                name: lib.Title,
+                serverRelativeUrl: libUrl,
+                siteUrl,
+                hasUniquePermissions: true,
+                depth: 1,
+                uniquePermissions: accessEntryPerms(ctx, resolved),
+                noCrawl: lib.NoCrawl ? true : undefined,
+              });
+            }
           }
+        } catch (err) {
+          recordFailure(ctx, err, `${siteUrl}${libUrl}`);
         }
 
         // Only library-like templates have Files/Folders to walk.
-        if (isLib && lib.RootFolder?.ServerRelativeUrl) {
-          await walkFoldersForUser(client, 
-            siteUrl,
-            lib.RootFolder.ServerRelativeUrl,
-            userLoginName,
-            userTitle,
-            groupLogins,
-            items,
-            2,
-            onProgress,
-            queue,
-            signal,
-          );
+        if (isLib && libUrl) {
+          await walkFoldersForUser(client, siteUrl, libUrl, ctx, items, 2, onProgress, queue, signal);
         }
       });
     }
     await queue.drain();
 
-    return { fullSiteAccess: false, items, graphPermissionRequired, roleAssignmentsDenied };
+    // Full site access is only a safe claim when every check above completed cleanly and
+    // nothing below the site breaks inheritance.
+    const aborted = !!signal?.aborted;
+    const clean = !aborted && libsLoaded && !ctx.flags.incomplete && !ctx.flags.roleAssignmentsDenied;
+    const noUniqueBelow = ctx.flags.uniqueBelow === 0;
+    if (siteEntry && ctx.flags.incomplete) siteEntry.scanIncomplete = true;
+
+    return {
+      fullSiteAccess: isOwner && clean && noUniqueBelow,
+      items,
+      graphPermissionRequired,
+      roleAssignmentsDenied: roleAssignmentsDenied || ctx.flags.roleAssignmentsDenied,
+      incomplete: ctx.flags.incomplete || undefined,
+      failedPaths: ctx.flags.failedPaths.length > 0 ? ctx.flags.failedPaths : undefined,
+    };
   }
 
-async function walkFoldersForUser(client: SpApiClient, 
+async function walkFoldersForUser(client: SpApiClient,
     siteUrl: string,
     folderUrl: string,
-    userLogin: string,
-    userDisplayName: string,
-    groupLogins: Set<string>,
+    ctx: AccessContext,
     results: PermissionEntry[],
     depth: number,
     onProgress: (msg: string) => void,
@@ -318,12 +581,18 @@ async function walkFoldersForUser(client: SpApiClient,
       ]);
       uniquePermsLoaded = true;
     } catch {
+      // Without the unique-permission flags we can't tell which children break
+      // inheritance, and the files weren't listed at all — the result is incomplete.
+      ctx.flags.incomplete = true;
       try {
         subFolders = await client.getJsonPaged(
           `${apiBase}/Folders?$select=Name,ServerRelativeUrl,ItemCount&$top=2000`,
           signal,
         );
-      } catch { return; }
+      } catch (err) {
+        recordFailure(ctx, err, folderUrl);
+        return;
+      }
     }
 
     const visibleFolders = subFolders.filter(
@@ -337,57 +606,43 @@ async function walkFoldersForUser(client: SpApiClient,
       const uniqueFiles = files.filter(
         (f: any) => f.ListItemAllFields?.HasUniqueRoleAssignments,
       );
+      ctx.flags.uniqueBelow += uniqueFolders.length + uniqueFiles.length;
+
+      const addUniqueItem = (
+        objectType: ObjectType, name: string, serverRelativeUrl: string, api: string,
+      ): void => {
+        queue.add(async () => {
+          if (signal?.aborted) return;
+          try {
+            const raData = await client.getJson(
+              `${api}/ListItemAllFields/RoleAssignments?$expand=Member,RoleDefinitionBindings&$select=${RA_SELECT}`,
+            );
+            const resolved = await resolveRoles(ctx, valueArray(raData));
+            if (resolved.roles.length > 0) {
+              results.push({
+                objectType,
+                name,
+                serverRelativeUrl,
+                siteUrl,
+                hasUniquePermissions: true,
+                depth,
+                uniquePermissions: accessEntryPerms(ctx, resolved),
+              });
+            }
+          } catch (err) {
+            // Previously swallowed by the queue, leaving a clean-looking but incomplete result.
+            recordFailure(ctx, err, serverRelativeUrl);
+          }
+        });
+      };
 
       for (const subfolder of uniqueFolders) {
-        queue.add(async () => {
-          if (signal?.aborted) return;
-          const raData = await client.getJson(
-            `${folderApi(siteUrl, subfolder.ServerRelativeUrl)}/ListItemAllFields/RoleAssignments` +
-              `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
-          );
-          const extracted = extractRoles(valueArray(raData), userLogin, groupLogins);
-          const roles = extracted.roles;
-          if (roles.length > 0) {
-            results.push({
-              objectType: ObjectType.Folder,
-              name: subfolder.Name,
-              serverRelativeUrl: subfolder.ServerRelativeUrl,
-              siteUrl,
-              hasUniquePermissions: true,
-              depth,
-              uniquePermissions: [
-                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles, roleTypeKinds: extracted.roleTypeKinds },
-              ],
-            });
-          }
-        });
+        addUniqueItem(ObjectType.Folder, subfolder.Name, subfolder.ServerRelativeUrl,
+          folderApi(siteUrl, subfolder.ServerRelativeUrl));
       }
-
       for (const file of uniqueFiles) {
-        queue.add(async () => {
-          if (signal?.aborted) return;
-          const raData = await client.getJson(
-            `${fileApi(siteUrl, file.ServerRelativeUrl)}/ListItemAllFields/RoleAssignments` +
-              `?$expand=Member,RoleDefinitionBindings` +
-              `&$select=Member/LoginName,Member/PrincipalType,RoleDefinitionBindings/Name,RoleDefinitionBindings/RoleTypeKind`,
-          );
-          const extracted = extractRoles(valueArray(raData), userLogin, groupLogins);
-          const roles = extracted.roles;
-          if (roles.length > 0) {
-            results.push({
-              objectType: ObjectType.File,
-              name: file.Name,
-              serverRelativeUrl: file.ServerRelativeUrl,
-              siteUrl,
-              hasUniquePermissions: true,
-              depth,
-              uniquePermissions: [
-                { loginName: userLogin, displayName: userDisplayName, principalType: 'User', roles, roleTypeKinds: extracted.roleTypeKinds },
-              ],
-            });
-          }
-        });
+        addUniqueItem(ObjectType.File, file.Name, file.ServerRelativeUrl,
+          fileApi(siteUrl, file.ServerRelativeUrl));
       }
     }
 
@@ -396,12 +651,10 @@ async function walkFoldersForUser(client: SpApiClient,
       if (signal?.aborted) break;
       if ((subfolder.ItemCount ?? 0) === 0) continue;
       queue.add(() =>
-        walkFoldersForUser(client, 
+        walkFoldersForUser(client,
           siteUrl,
           subfolder.ServerRelativeUrl,
-          userLogin,
-          userDisplayName,
-          groupLogins,
+          ctx,
           results,
           depth + 1,
           onProgress,
@@ -444,10 +697,8 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
         return { roles: [], roleTypeKinds: {}, graphUnavailable: false };
       }
 
-      const identifier = userEmail ||
-        (userLoginName.includes('|') ? userLoginName.split('|').pop() : null) ||
-        userLoginName;
-      if (!identifier) return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
+      const identifier = graphIdentifiers(userLoginName, userEmail)[0] ?? userLoginName;
+      if (!identifier) return { roles: [], roleTypeKinds: {}, graphUnavailable: false };
 
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
 
@@ -488,7 +739,7 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
             .api(`/groups/${m365GroupId}/owners`)
             .header('ConsistencyLevel', 'eventual')
             .count(true)
-            .filter(`userPrincipalName eq '${identifier}'`)
+            .filter(`userPrincipalName eq '${identifier.replace(/'/g, "''")}'`)
             .select('id').top(1).get();
           isOwner = (ownersResp?.value?.length ?? 0) > 0;
         }
@@ -535,7 +786,9 @@ async function checkM365ConnectedSiteRoles(client: SpApiClient,
       return { roles, roleTypeKinds, graphUnavailable: false };
     } catch (err) {
       debugLog('[SmartPermissions] checkM365ConnectedSiteRoles: failed', err);
-      return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
+      // Only a permission failure means "ask the admin to approve Graph access"; a
+      // missing user or a transient error is not that.
+      return { roles: [], roleTypeKinds: {}, graphUnavailable: isGraphPermissionError(err) };
     }
   }
 
@@ -651,12 +904,10 @@ async function getAadGroupSiteRoles(client: SpApiClient,
     }
 
     // ── Phase 2: Graph fallback for groups REST couldn't resolve ──────────
-    const identifier = userEmail ||
-      (userLoginName.includes('|') ? userLoginName.split('|').pop() : null) ||
-      userLoginName;
+    const identifier = graphIdentifiers(userLoginName, userEmail)[0] ?? userLoginName;
     debugLog('[SmartPermissions] getAadGroupSiteRoles: %d group(s) need Graph, identifier=%s',
       needsGraph.length, identifier);
-    if (!identifier) return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
+    if (!identifier) return { roles: [], roleTypeKinds: {}, graphUnavailable: false };
 
     try {
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
@@ -680,6 +931,6 @@ async function getAadGroupSiteRoles(client: SpApiClient,
       return { roles, roleTypeKinds, graphUnavailable: false };
     } catch (err) {
       debugLog('[SmartPermissions] getAadGroupSiteRoles: Graph failed', err);
-      return { roles: [], roleTypeKinds: {}, graphUnavailable: true };
+      return { roles: [], roleTypeKinds: {}, graphUnavailable: isGraphPermissionError(err) };
     }
   }

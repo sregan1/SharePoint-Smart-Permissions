@@ -30,19 +30,26 @@ import {
   Delete24Regular,
   ChevronRight16Regular,
   ChevronDown16Regular,
+  Open16Regular,
+  Copy16Regular,
+  Eye16Regular,
 } from '@fluentui/react-icons';
 
 import * as strings from 'SmartPermissionsWebPartStrings';
-import { formatString } from '../utils/localeUtils';
-import { SharePointService } from '../services/SharePointService';
+import { formatString, formatDateTime, formatNumber } from '../utils/localeUtils';
+import { SharePointService, isAbortError } from '../services/SharePointService';
 import { ExcelExportService } from '../services/ExcelExportService';
 import { ReportHistoryService } from '../services/ReportHistoryService';
 import { ReportOptions, ReportScope, PermissionEntry, ObjectType, ScanProgress, StoredReport, LibraryInfo } from '../models/models';
 import { requestNotificationPermission, showNotification } from '../utils/notifications';
 import { SiteOwnersLinks } from './shared/SiteOwnersLinks';
 import { PermTable } from './shared/PermTable';
+import { SortableHeader } from './shared/SortableHeader';
+import { useConfirmDialog } from './shared/ConfirmDialog';
+import { objectTypeLabel } from './shared/objectTypeLabel';
 import { applyPermFilters } from './shared/permFilters';
 import { isSharingLinkPrincipal } from './shared/sharingLinks';
+import { RiskKind, entryHasRisk, isExternalPrincipal, entryAbsoluteUrl } from './shared/riskFlags';
 import { diffReports, ReportDiff } from '../utils/reportDiff';
 
 // Badge color per object type (matches the User Access view's mapping).
@@ -102,7 +109,7 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     gap: tokens.spacingVerticalS,
     padding: tokens.spacingVerticalM,
-    background: tokens.colorStatusSuccessBackground1,
+    background: tokens.colorNeutralBackground3,
     borderRadius: tokens.borderRadiusMedium,
   },
   radioBox: {
@@ -143,11 +150,12 @@ export interface PermissionsReportViewProps {
   excel: ExcelExportService;
   siteUrl: string;
   includeHidden: boolean;
+  /** Defaults from Settings; the checkboxes on this screen are local to the current view. */
   excludeLimitedAccess: boolean;
-  onExcludeLimitedAccessChange: (val: boolean) => void;
   excludeSharingLinks: boolean;
-  onExcludeSharingLinksChange: (val: boolean) => void;
   onBack: () => void;
+  /** Reports whether a scan is running so the host can confirm before navigating away. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
@@ -155,12 +163,18 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   excel,
   siteUrl,
   includeHidden,
-  excludeLimitedAccess,
-  onExcludeLimitedAccessChange,
-  excludeSharingLinks,
-  onExcludeSharingLinksChange,
+  excludeLimitedAccess: defaultExcludeLimitedAccess,
+  excludeSharingLinks: defaultExcludeSharingLinks,
   onBack,
+  onBusyChange,
 }) => {
+  // Ticking these here only filters this view; it must not silently rewrite the persisted
+  // Settings that every other screen also reads. They follow Settings when it changes.
+  const [excludeLimitedAccess, setExcludeLimitedAccess] = React.useState(defaultExcludeLimitedAccess);
+  const [excludeSharingLinks, setExcludeSharingLinks] = React.useState(defaultExcludeSharingLinks);
+  React.useEffect(() => setExcludeLimitedAccess(defaultExcludeLimitedAccess), [defaultExcludeLimitedAccess]);
+  React.useEffect(() => setExcludeSharingLinks(defaultExcludeSharingLinks), [defaultExcludeSharingLinks]);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const styles = useStyles();
 
   // ── Form state ──
@@ -192,13 +206,27 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   const [filterText, setFilterText] = React.useState('');
   const [filterExternalOnly, setFilterExternalOnly] = React.useState(false);
   const [filterUniqueOnly, setFilterUniqueOnly] = React.useState(false);
+  const [filterRisk, setFilterRisk] = React.useState<Set<RiskKind>>(new Set());
+  // A report opened from history instead of a fresh scan (null for a live scan).
+  const [viewingSaved, setViewingSaved] = React.useState<StoredReport | null>(null);
+  const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
+
+  // Risk buttons combine with OR: an entry matches if it has any selected risk.
+  const toggleRisk = (k: RiskKind): void => {
+    setFilterRisk((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(k)) next.add(k);
+      return next;
+    });
+  };
 
   const filteredEntries = React.useMemo(() => {
     if (!entries) return null;
     const lc = filterText.toLowerCase();
     return entries.filter((e) => {
       if (filterUniqueOnly && !e.hasUniquePermissions) return false;
-      if (filterExternalOnly && !e.uniquePermissions.some((u) => u.loginName.toLowerCase().indexOf('#ext#') !== -1)) return false;
+      if (filterExternalOnly && !e.uniquePermissions.some(isExternalPrincipal)) return false;
+      if (filterRisk.size > 0 && !Array.from(filterRisk).some((k) => entryHasRisk(e, k))) return false;
       if (excludeLimitedAccess && !e.uniquePermissions.some((u) => u.roles.length > 0)) return false;
       if (excludeSharingLinks && !e.uniquePermissions.some((u) => !isSharingLinkPrincipal(u))) return false;
       if (!lc) return true;
@@ -207,7 +235,20 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       if (e.uniquePermissions.some((u) => u.displayName.toLowerCase().includes(lc))) return true;
       return false;
     });
-  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess, excludeSharingLinks]);
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, filterRisk, excludeLimitedAccess, excludeSharingLinks]);
+
+  // Counts for the risk summary, over the whole result (not the filtered view) so the
+  // chips stay stable while the user drills in.
+  const riskCounts = React.useMemo(() => {
+    const c = { broad: 0, external: 0, fullControl: 0, incomplete: 0 };
+    for (const e of entries ?? []) {
+      if (entryHasRisk(e, 'broad')) c.broad++;
+      if (e.uniquePermissions.some(isExternalPrincipal)) c.external++;
+      if (entryHasRisk(e, 'fullControl')) c.fullControl++;
+      if (e.scanIncomplete) c.incomplete++;
+    }
+    return c;
+  }, [entries]);
 
   // ── Results table state ──
   const RESULTS_PAGE_SIZE = 200;
@@ -220,7 +261,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   React.useEffect(() => {
     setResultsVisible(RESULTS_PAGE_SIZE);
     setExpandedKeys(new Set());
-  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, excludeLimitedAccess, excludeSharingLinks]);
+  }, [entries, filterText, filterExternalOnly, filterUniqueOnly, filterRisk, excludeLimitedAccess, excludeSharingLinks]);
 
   const sortedResults = React.useMemo(() => {
     if (!filteredEntries) return [];
@@ -343,8 +384,24 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     historySortCol !== col ? '' : historySortAsc ? ' ▲' : ' ▼';
 
   const abortRef = React.useRef<AbortController | null>(null);
+  const mountedRef = React.useRef(true);
   const scanStartRef = React.useRef<number>(0);
-  const historyService = React.useRef(new ReportHistoryService());
+  const historyService = React.useRef(new ReportHistoryService(sp.currentUserKey));
+
+  // Leaving the view (Back, Settings, URL change) must stop the scan — otherwise it
+  // keeps hitting SharePoint at full concurrency with nowhere to show its results.
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    onBusyChange?.(isBusy);
+    return () => onBusyChange?.(false);
+  }, [isBusy]);
 
   React.useEffect(() => {
     if (!isBusy) { setElapsed(0); return; }
@@ -360,12 +417,10 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       .catch(() => { /* IndexedDB unavailable — history simply won't show */ });
   }, []);
 
-  // Clear stale results when any option that affects output changes
-  React.useEffect(() => {
-    setEntries(null);
-    setRoleAssignmentsDenied(false);
-    setSiteOwners([]);
-  }, [allSites, includeSubsites, scope, folderDepth, expandGroups]);
+  // Results are kept when an option changes (a stray radio click used to discard a
+  // finished scan); the banner below tells the user they no longer match the form.
+  const optionsKey = JSON.stringify([allSites, includeSubsites, scope, folderDepth, expandGroups]);
+  const [scannedOptionsKey, setScannedOptionsKey] = React.useState('');
 
   React.useEffect(() => {
     if (!roleAssignmentsDenied || !siteUrl) return;
@@ -400,6 +455,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
     setFilterText('');
     setFilterExternalOnly(false);
     setFilterUniqueOnly(false);
+    setFilterRisk(new Set());
+    setViewingSaved(null);
     setLiveCount(0);
     setThrottleEvents(0);
     setThrottleAborted(false);
@@ -444,10 +501,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         () => { liveCountRef.current += 1; },
       );
 
+      if (!mountedRef.current) return;
+
       // On cancel, keep whatever was collected so it can be reviewed/exported.
       const wasCancelled = abortRef.current.signal.aborted;
       setCancelled(wasCancelled);
       setEntries(scannedEntries);
+      setScannedOptionsKey(optionsKey);
       setGroupPermissionDenied(permDenied);
       setRoleAssignmentsDenied(raDenied);
       setDeniedPaths(raDeniedPaths);
@@ -488,7 +548,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         .then(setHistoryItems)
         .catch(() => { /* storage unavailable */ });
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
+      if (!mountedRef.current) return;
+      if (isAbortError(err)) {
         setScanProgress((prev) => ({ ...prev, message: strings.CancelledStatus }));
       } else {
         setError(formatString(strings.GenericErrorPrefix, err?.message ?? String(err)));
@@ -496,7 +557,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
       }
     } finally {
       clearInterval(flushTimer);
-      setIsBusy(false);
+      if (mountedRef.current) setIsBusy(false);
     }
   };
 
@@ -558,7 +619,42 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
   };
 
   const handleExportCsv = (): void => {
-    excel.exportPermissionsCsv(exportableEntries, siteUrl.trim(), allSites);
+    try {
+      excel.exportPermissionsCsv(exportableEntries, siteUrl.trim(), allSites);
+    } catch (err: any) {
+      setError(formatString(strings.ExportErrorPrefix, err?.message ?? String(err)));
+    }
+  };
+
+  // Opens a saved report in the results area so it can be filtered and inspected without
+  // re-scanning. Flags that only describe a live run (denied counts, throttling) don't apply.
+  const handleHistoryView = (item: StoredReport): void => {
+    setViewingSaved(item);
+    setEntries(item.entries);
+    setScannedOptionsKey(optionsKey);
+    setCancelled(false);
+    setError('');
+    setGroupPermissionDenied(false);
+    setRoleAssignmentsDenied(false);
+    setDeniedPaths([]);
+    setThrottleEvents(0);
+    setThrottleAborted(false);
+    setSiteProgress(null);
+    setFilterText('');
+    setFilterExternalOnly(false);
+    setFilterUniqueOnly(false);
+    setFilterRisk(new Set());
+    setShowHistory(false);
+  };
+
+  const handleCopyPath = (key: string, text: string): void => {
+    const done = (): void => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
+    };
+    try {
+      navigator.clipboard.writeText(text).then(done).catch(() => { /* clipboard blocked */ });
+    } catch { /* clipboard unavailable */ }
   };
 
   const handleHistoryExport = async (item: StoredReport): Promise<void> => {
@@ -587,6 +683,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
   return (
     <div className={styles.root}>
+      {confirmDialog}
       {/* Screen reader announcements */}
       <div role="status" aria-live="polite" style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>
         {!isBusy && scanProgress.message ? scanProgress.message : ''}
@@ -598,10 +695,15 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           appearance="subtle"
           icon={<ArrowLeft24Regular />}
           onClick={() => {
-            if (isBusy && !window.confirm(strings.ScanInProgressConfirm)) return;
-            onBack();
+            if (!isBusy) { onBack(); return; }
+            confirm({
+              title: strings.ScanInProgressLabel,
+              body: strings.ScanInProgressConfirm,
+              confirmLabel: strings.LeaveButton,
+              cancelLabel: strings.StayButton,
+              onConfirm: onBack,
+            });
           }}
-          disabled={false}
           aria-label={strings.BackToHomeLabel}
         >
           {strings.BackButton}
@@ -625,8 +727,8 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               {strings.BackToHistoryButton}
             </Button>
             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-              {strings.ComparingLabel} {new Date(compareResult.older.timestamp).toLocaleString()} →{' '}
-              {new Date(compareResult.newer.timestamp).toLocaleString()}
+              {strings.ComparingLabel} {formatDateTime(compareResult.older.timestamp)} →{' '}
+              {formatDateTime(compareResult.newer.timestamp)}
             </Body1>
           </div>
 
@@ -655,13 +757,13 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                   {compareResult.diff.permissionChanges.map((obj) => (
                     <div key={`${obj.objectType}|${obj.serverRelativeUrl}`} style={{ marginBottom: tokens.spacingVerticalM }}>
                       <div className={styles.row}>
-                        <Badge appearance="filled" color={typeBadgeColor(obj.objectType as ObjectType)} size="small">{obj.objectType}</Badge>
+                        <Badge appearance="filled" color={typeBadgeColor(obj.objectType as ObjectType)} size="small">{objectTypeLabel(obj.objectType)}</Badge>
                         <Text weight="semibold">{obj.name}</Text>
                         <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
                           {obj.serverRelativeUrl}
                         </Text>
                       </div>
-                      <table className={styles.historyTable}>
+                      <table className={styles.historyTable} aria-label={obj.name}>
                         <thead>
                           <tr>
                             <th className={styles.historyTh}>{strings.ChangeColumnHeader}</th>
@@ -785,11 +887,31 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             <Button appearance="subtle" icon={<ArrowLeft24Regular />} onClick={() => setShowHistory(false)}>
               {strings.BackToScanButton}
             </Button>
+            {historyItems.length > 0 && (
+              <Button
+                appearance="subtle"
+                icon={<Delete24Regular />}
+                style={{ marginLeft: 'auto' }}
+                onClick={() => confirm({
+                  title: strings.ClearHistoryButton,
+                  body: strings.ClearHistoryConfirmBody,
+                  confirmLabel: strings.DeleteButton,
+                  cancelLabel: strings.CancelButton,
+                  onConfirm: () => {
+                    historyService.current.clearReports()
+                      .then(() => { setHistoryItems([]); setCompareSelection(new Set()); })
+                      .catch(() => { /* storage unavailable */ });
+                  },
+                })}
+              >
+                {strings.ClearHistoryButton}
+              </Button>
+            )}
             <Button
               appearance="primary"
               onClick={handleCompare}
               disabled={compareSelection.size !== 2}
-              style={{ marginLeft: 'auto' }}
+              style={historyItems.length > 0 ? undefined : { marginLeft: 'auto' }}
             >
               {strings.CompareSelectedButton}{compareSelection.size > 0 ? ` (${compareSelection.size}/2)` : ''}
             </Button>
@@ -798,7 +920,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           {historyItems.length === 0 ? (
             <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.NoReportsSavedYet}</Body1>
           ) : (
-            <table className={styles.historyTable}>
+            <table className={styles.historyTable} aria-label={strings.HistoryButton}>
               <thead>
                 <tr>
                   <th className={styles.historyTh} style={{ width: '32px' }} aria-label={strings.SelectForCompareLabel} />
@@ -811,22 +933,16 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                       { col: 'unique', label: strings.UniqueColumnHeader },
                     ] as { col: typeof historySortCol; label: string }[]
                   ).map(({ col, label }) => (
-                    <th
+                    <SortableHeader
                       key={col}
                       className={styles.historyTh}
-                      onClick={() => handleHistorySort(col)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleHistorySort(col); }
-                      }}
-                      tabIndex={0}
-                      role="columnheader"
-                      aria-sort={historySortCol !== col ? 'none' : historySortAsc ? 'ascending' : 'descending'}
-                      style={{ cursor: 'pointer', userSelect: 'none' }}
-                    >
-                      {label}{sortIndicator(col)}
-                    </th>
+                      label={label}
+                      active={historySortCol === col}
+                      ascending={historySortAsc}
+                      onSort={() => handleHistorySort(col)}
+                    />
                   ))}
-                  <th className={styles.historyTh} />
+                  <th className={styles.historyTh} aria-label={strings.ExportButton} />
                 </tr>
               </thead>
               <tbody>
@@ -837,11 +953,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                         checked={compareSelection.has(item.id)}
                         onChange={() => toggleCompareSelection(item.id)}
                         disabled={!compareSelection.has(item.id) && compareSelection.size >= 2}
-                        aria-label={formatString(strings.SelectReportForCompareLabel, new Date(item.timestamp).toLocaleString())}
+                        aria-label={formatString(strings.SelectReportForCompareLabel, formatDateTime(item.timestamp))}
                       />
                     </td>
                     <td className={styles.historyTd} style={{ whiteSpace: 'nowrap' }}>
-                      {new Date(item.timestamp).toLocaleString()}
+                      {formatDateTime(item.timestamp)}
                     </td>
                     <td className={styles.historyTd}>
                       <Text style={{ fontSize: tokens.fontSizeBase200, wordBreak: 'break-all' }}>
@@ -858,6 +974,15 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                       <div style={{ display: 'flex', gap: tokens.spacingHorizontalS }}>
                         <Button
                           size="small"
+                          appearance="secondary"
+                          icon={<Eye16Regular />}
+                          onClick={() => handleHistoryView(item)}
+                          aria-label={formatString(strings.ViewReportLabel, formatDateTime(item.timestamp))}
+                        >
+                          {strings.ViewReportButton}
+                        </Button>
+                        <Button
+                          size="small"
                           appearance="primary"
                           icon={<DocumentArrowDown24Regular />}
                           onClick={() => handleHistoryExport(item)}
@@ -869,8 +994,15 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           size="small"
                           appearance="subtle"
                           icon={<Delete24Regular />}
-                          onClick={() => handleHistoryDelete(item.id)}
+                          onClick={() => confirm({
+                            title: strings.DeleteThisReportTitle,
+                            body: strings.ConfirmDeleteReportBody,
+                            confirmLabel: strings.DeleteButton,
+                            cancelLabel: strings.CancelButton,
+                            onConfirm: () => { handleHistoryDelete(item.id).catch(() => { /* storage unavailable */ }); },
+                          })}
                           title={strings.DeleteThisReportTitle}
+                          aria-label={strings.DeleteThisReportTitle}
                         />
                       </div>
                     </td>
@@ -891,6 +1023,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           onChange={(_, d) => setAllSites(!!d.checked)}
           disabled={!isRootSite || isBusy}
         />
+        {!isRootSite && (
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginLeft: '28px' }}>
+            {strings.AllSitesRootOnlyHint}
+          </Text>
+        )}
         {allSites && (
           <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginLeft: '28px' }}>
             {strings.AllSitesSearchCaveat}
@@ -947,8 +1084,9 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
 
         {/* Folder depth — always rendered so it doesn't shift the Run Report button */}
         <div className={styles.row} style={{ visibility: scope === 'Folder' ? 'visible' : 'hidden' }}>
-          <Label>{strings.FolderDepthLimitLabel}</Label>
+          <Label htmlFor="report-folder-depth">{strings.FolderDepthLimitLabel}</Label>
           <SpinButton
+            id="report-folder-depth"
             value={folderDepth}
             min={1}
             max={10}
@@ -1044,6 +1182,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
           <div className={styles.progressArea}>
             {isBusy && (
               <ProgressBar
+                aria-label={strings.ScanProgressLabel}
                 value={scanProgress.libsTotal > 0 ? scanProgress.libsDone / scanProgress.libsTotal : undefined}
               />
             )}
@@ -1057,7 +1196,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             </div>
             {isBusy && liveCount > 0 && (
               <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
-                {formatString(strings.ItemsFoundSoFar, liveCount.toLocaleString())}
+                {formatString(strings.ItemsFoundSoFar, formatNumber(liveCount))}
                 {scanProgress.libsTotal > 0 && ` · ${formatString(strings.LibraryOfProgress, scanProgress.libsDone, scanProgress.libsTotal)}`}
               </Body1>
             )}
@@ -1075,7 +1214,11 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
         {entries && !isBusy && (
           <div className={styles.resultArea}>
             <div className={styles.row}>
-              <Text weight="semibold">{cancelled ? strings.ScanCancelledPartialResults : strings.ScanCompleteLabel}</Text>
+              <Text weight="semibold">
+                {viewingSaved
+                  ? formatString(strings.SavedReportHeading, formatDateTime(viewingSaved.timestamp))
+                  : cancelled ? strings.ScanCancelledPartialResults : strings.ScanCompleteLabel}
+              </Text>
               <Badge appearance="filled" color="success">{formatString(strings.ObjectsCountBadge, entries.length)}</Badge>
               <Badge appearance="filled" color="warning">
                 {formatString(strings.UniqueCountBadge, entries.filter((e) => e.hasUniquePermissions).length)}
@@ -1110,6 +1253,12 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 {strings.ExportToCsvButton}
               </Button>
             </div>
+
+            {viewingSaved && (
+              <MessageBar intent="info">
+                <MessageBarBody>{strings.SavedReportBanner}</MessageBarBody>
+              </MessageBar>
+            )}
 
             {throttleAborted && (
               <MessageBar intent="error">
@@ -1183,6 +1332,36 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               </MessageBar>
             )}
 
+            {scannedOptionsKey !== optionsKey && (
+              <MessageBar intent="info">
+                <MessageBarBody>{strings.OptionsChangedSinceScan}</MessageBarBody>
+              </MessageBar>
+            )}
+
+            {(riskCounts.broad > 0 || riskCounts.external > 0 || riskCounts.fullControl > 0 || riskCounts.incomplete > 0) && (
+              <div role="group" aria-label={strings.RiskSummaryTitle}>
+                <Text weight="semibold">{strings.RiskSummaryTitle}</Text>
+                <div className={styles.row} style={{ marginTop: tokens.spacingVerticalXS }}>
+                  {([
+                    { key: 'broad', count: riskCounts.broad, label: strings.RiskBroadAccess, active: filterRisk.has('broad'), toggle: () => toggleRisk('broad') },
+                    { key: 'external', count: riskCounts.external, label: strings.RiskExternalUsers, active: filterRisk.has('external'), toggle: () => toggleRisk('external') },
+                    { key: 'fullControl', count: riskCounts.fullControl, label: strings.RiskFullControl, active: filterRisk.has('fullControl'), toggle: () => toggleRisk('fullControl') },
+                    { key: 'incomplete', count: riskCounts.incomplete, label: strings.RiskIncomplete, active: filterRisk.has('incomplete'), toggle: () => toggleRisk('incomplete') },
+                  ]).filter((c) => c.count > 0).map((c) => (
+                    <Button
+                      key={c.key}
+                      size="small"
+                      appearance={c.active ? 'primary' : 'outline'}
+                      aria-pressed={c.active}
+                      onClick={c.toggle}
+                    >
+                      {formatString(c.label, formatNumber(c.count))}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <Divider />
 
             {/* Filter bar */}
@@ -1207,14 +1386,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
               <Checkbox
                 label={strings.ExcludeLimitedAccessLabel}
                 checked={excludeLimitedAccess}
-                onChange={(_, d) => onExcludeLimitedAccessChange(!!d.checked)}
+                onChange={(_, d) => setExcludeLimitedAccess(!!d.checked)}
               />
               <Checkbox
                 label={strings.ExcludeSharingLinksLabel}
                 checked={excludeSharingLinks}
-                onChange={(_, d) => onExcludeSharingLinksChange(!!d.checked)}
+                onChange={(_, d) => setExcludeSharingLinks(!!d.checked)}
               />
-              {(filterText || filterExternalOnly || filterUniqueOnly) && (
+              {(filterText || filterExternalOnly || filterUniqueOnly || filterRisk.size > 0 || excludeLimitedAccess || excludeSharingLinks) && (
                 <Body1 style={{ color: tokens.colorNeutralForeground3, marginLeft: 'auto' }}>
                   {formatString(strings.ShowingOfCount, filteredEntries?.length ?? 0, entries.length)}
                 </Body1>
@@ -1222,6 +1401,9 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
             </div>
 
             {/* ── Results table ── */}
+            {entries.length > 0 && sortedResults.length === 0 && (
+              <Body1 style={{ color: tokens.colorNeutralForeground3 }}>{strings.NoResultsMatchFilters}</Body1>
+            )}
             {sortedResults.length > 0 && (
               <>
                 <table className={styles.historyTable} aria-label={strings.ScanResultsLabel}>
@@ -1236,20 +1418,14 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                           { col: 'source', label: strings.PermissionsColumnHeader },
                         ] as { col: 'type' | 'name' | 'path' | 'source'; label: string }[]
                       ).map(({ col, label }) => (
-                        <th
+                        <SortableHeader
                           key={col}
                           className={styles.historyTh}
-                          onClick={() => handleResultSort(col)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleResultSort(col); }
-                          }}
-                          tabIndex={0}
-                          role="columnheader"
-                          aria-sort={resultSortCol !== col ? 'none' : resultSortAsc ? 'ascending' : 'descending'}
-                          style={{ cursor: 'pointer', userSelect: 'none' }}
-                        >
-                          {label}{resultSortInd(col)}
-                        </th>
+                          label={label}
+                          active={resultSortCol === col}
+                          ascending={resultSortAsc}
+                          onSort={() => handleResultSort(col)}
+                        />
                       ))}
                     </tr>
                   </thead>
@@ -1282,7 +1458,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                             </td>
                             <td className={styles.historyTd}>
                               <Badge appearance="filled" color={typeBadgeColor(entry.objectType)} size="small">
-                                {entry.objectType}
+                                {objectTypeLabel(entry.objectType)}
                               </Badge>
                             </td>
                             <td className={styles.historyTd} style={{ paddingLeft: `${8 + entry.depth * 12}px` }}>
@@ -1292,6 +1468,28 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                                   {strings.HiddenFromSearchBadge}
                                 </Badge>
                               )}
+                              <span style={{ whiteSpace: 'nowrap', marginLeft: '4px' }}>
+                                <Button
+                                  as="a"
+                                  href={entryAbsoluteUrl(entry)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  appearance="transparent"
+                                  size="small"
+                                  icon={<Open16Regular />}
+                                  title={strings.OpenInSharePointLabel}
+                                  aria-label={`${strings.OpenInSharePointLabel}: ${entry.name}`}
+                                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                />
+                                <Button
+                                  appearance="transparent"
+                                  size="small"
+                                  icon={<Copy16Regular />}
+                                  title={copiedKey === key ? strings.CopiedLabel : strings.CopyPathLabel}
+                                  aria-label={`${copiedKey === key ? strings.CopiedLabel : strings.CopyPathLabel}: ${entry.name}`}
+                                  onClick={(e) => { e.stopPropagation(); handleCopyPath(key, entry.serverRelativeUrl); }}
+                                />
+                              </span>
                             </td>
                             <td className={styles.historyTd}>
                               <Text style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, wordBreak: 'break-all' }}>
@@ -1327,7 +1525,7 @@ export const PermissionsReportView: React.FC<PermissionsReportViewProps> = ({
                 {resultsVisible < sortedResults.length && (
                   <div style={{ textAlign: 'center' }}>
                     <Button appearance="secondary" onClick={() => setResultsVisible((c) => c + RESULTS_PAGE_SIZE)}>
-                      {formatString(strings.LoadMoreRemainingButton, (sortedResults.length - resultsVisible).toLocaleString())}
+                      {formatString(strings.LoadMoreRemainingButton, formatNumber(sortedResults.length - resultsVisible))}
                     </Button>
                   </div>
                 )}

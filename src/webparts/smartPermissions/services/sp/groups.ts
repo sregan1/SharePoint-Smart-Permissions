@@ -27,7 +27,10 @@ export async function getGroupMembers(client: SpApiClient,
             // Fetch one extra to detect truncation without a separate count call
             `?$select=LoginName,Title,IsHiddenInUI,PrincipalType&$top=${client.groupMemberCap + 1}`,
         );
-        const rawMembers: any[] = valueArray(data).filter((u: any) => !u.IsHiddenInUI);
+        // Sorted before expanding (not after) so a nested group's members stay under it.
+        const rawMembers: any[] = valueArray(data)
+          .filter((u: any) => !u.IsHiddenInUI)
+          .sort((a: any, b: any) => String(a.Title ?? '').localeCompare(String(b.Title ?? '')));
         const expanded: UserPermissionInfo[] = [];
         for (const u of rawMembers) {
           const pt: number = u.PrincipalType ?? 1;
@@ -60,7 +63,6 @@ export async function getGroupMembers(client: SpApiClient,
             });
           }
         }
-        expanded.sort((a, b) => a.displayName.localeCompare(b.displayName));
         if (expanded.length > client.groupMemberCap) {
           const capped = expanded.slice(0, client.groupMemberCap);
           capped.push({
@@ -96,41 +98,78 @@ export async function getGroupMembers(client: SpApiClient,
     return [];
   }
 
+// Deepest level of nested groups that is expanded; deeper groups are listed unexpanded.
+const MAX_NESTED_GROUP_DEPTH = 5;
+
 async function getAadGroupMembers(client: SpApiClient, groupId: string, endpoint: 'members' | 'owners' = 'members'): Promise<UserPermissionInfo[] | null> {
     try {
       const graph: MSGraphClientV3 = await client.context.msGraphClientFactory.getClient('3');
-      // Graph rejects $top > 999, but the Settings UI allows a cap up to 5000 — clamp
-      // the request and instead rely on @odata.nextLink to detect true truncation.
-      const topCount = Math.min(client.groupMemberCap + 1, 999);
-      const result = await graph
-        .api(`/groups/${groupId}/${endpoint}`)
-        .select('displayName,userPrincipalName,mail,id')
-        .top(topCount)
-        .get();
-      const all = (result?.value ?? [])
-        .map((m: any): UserPermissionInfo => ({
-          loginName: m.userPrincipalName ?? m.mail ?? m.id ?? '',
-          displayName: m.displayName ?? m.userPrincipalName ?? m.id ?? '',
-          principalType: 'User',
-          roles: [],
-          isGroupMember: true,
-        }))
-        .sort((a: UserPermissionInfo, b: UserPermissionInfo) =>
-          a.displayName.localeCompare(b.displayName),
+      const cap = client.groupMemberCap;
+      const out: UserPermissionInfo[] = [];
+      // Groups already expanded in this call — guards against groups that contain each other.
+      const visited = new Set<string>([groupId.toLowerCase()]);
+      let truncated = false;
+
+      // Lists one group's direct members. A member that is itself a group is added as a
+      // group row, followed by its own members one level deeper.
+      const collect = async (id: string, kind: 'members' | 'owners', depth: number): Promise<void> => {
+        // Graph rejects $top > 999, but the Settings UI allows a cap up to 5000 — clamp
+        // the request and instead rely on @odata.nextLink to detect true truncation.
+        const result = await graph
+          .api(`/groups/${id}/${kind}`)
+          .select('displayName,userPrincipalName,mail,id')
+          .top(Math.min(cap + 1, 999))
+          .get();
+        if (result?.['@odata.nextLink']) truncated = true;
+        const members: any[] = (result?.value ?? []).slice().sort((a: any, b: any) =>
+          String(a.displayName ?? '').localeCompare(String(b.displayName ?? '')),
         );
-      const truncated = all.length > client.groupMemberCap || !!result?.['@odata.nextLink'];
+        for (const m of members) {
+          if (out.length >= cap) { truncated = true; return; }
+          const displayName = m.displayName ?? m.userPrincipalName ?? m.id ?? '';
+          if (m['@odata.type'] === '#microsoft.graph.group') {
+            out.push({
+              loginName: m.id ?? '',
+              displayName,
+              principalType: 'SecurityGroup',
+              roles: [],
+              isGroupMember: true,
+              depth,
+            });
+            const key = String(m.id ?? '').toLowerCase();
+            if (key && !visited.has(key) && depth < MAX_NESTED_GROUP_DEPTH) {
+              visited.add(key);
+              try {
+                await collect(m.id, 'members', depth + 1);
+              } catch (err: any) {
+                // Leave this one group unexpanded; a missing Graph permission still fails the whole call.
+                if (isGraphPermissionError(err)) throw err;
+              }
+            }
+          } else {
+            out.push({
+              loginName: m.userPrincipalName ?? m.mail ?? m.id ?? '',
+              displayName,
+              principalType: 'User',
+              roles: [],
+              isGroupMember: true,
+              depth,
+            });
+          }
+        }
+      };
+
+      await collect(groupId, endpoint, 0);
       if (truncated) {
-        const capped = all.slice(0, client.groupMemberCap);
-        capped.push({
+        out.push({
           loginName: '',
-          displayName: `(group has more than ${client.groupMemberCap} members — only first ${client.groupMemberCap} shown)`,
+          displayName: `(group has more than ${cap} members — only first ${cap} shown)`,
           principalType: 'User',
           roles: [],
           isGroupMember: true,
         });
-        return capped;
       }
-      return all;
+      return out;
     } catch (err: any) {
       if (isGraphPermissionError(err)) return null;
       return [];

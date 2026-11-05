@@ -16,7 +16,7 @@ export const SiteOwnersLinks: React.FC<SiteOwnersLinksProps> = ({ owners }) => {
         <React.Fragment key={o.email || o.title}>
           {i > 0 && ', '}
           {o.email
-            ? <Link href={`mailto:${o.email}`}>{o.title}</Link>
+            ? <Link href={`mailto:${encodeURIComponent(o.email)}`}>{o.title}</Link>
             : o.title}
         </React.Fragment>
       ))}.

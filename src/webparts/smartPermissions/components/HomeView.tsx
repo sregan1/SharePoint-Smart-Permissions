@@ -9,7 +9,6 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import {
-  ShieldLock24Regular,
   DataBarVertical24Regular,
   FolderSearch24Regular,
   PersonSearch24Regular,
@@ -22,15 +21,6 @@ import screenshotExplorer from '../assets/screenshot_explorer.png';
 import screenshotUserAccess from '../assets/screenshot_user_access.png';
 
 const useStyles = makeStyles({
-  banner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: tokens.spacingHorizontalS,
-    paddingTop: tokens.spacingVerticalS,
-    paddingBottom: tokens.spacingVerticalS,
-    paddingLeft: tokens.spacingHorizontalM,
-    paddingRight: tokens.spacingHorizontalM,
-  },
   root: {
     padding: tokens.spacingVerticalXL,
     maxWidth: '1100px',
@@ -98,19 +88,19 @@ const useStyles = makeStyles({
     minHeight: '36px',
   },
   cardDisabled: {
-    opacity: '0.15',
-    pointerEvents: 'none',
+    // Dimmed but still legible: the description and the lock explain why it's unavailable.
+    opacity: '0.6',
+    cursor: 'not-allowed',
   },
 });
 
 export interface HomeViewProps {
   onNavigate: (view: AppView) => void;
-  primaryColor: string;
   canManagePermissions: boolean | null;
-  siteOwners: { title: string; email: string }[];
+  hiddenViews?: AppView[];
 }
 
-export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, canManagePermissions, siteOwners }) => {
+export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, canManagePermissions, hiddenViews }) => {
   const styles = useStyles();
 
   const cards = [
@@ -141,17 +131,10 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
       desc: strings.UserAccessCardDesc,
       buttonLabel: strings.UserAccessCardButton,
     },
-  ];
+  ].filter((c) => !hiddenViews || hiddenViews.indexOf(c.view) === -1);
 
   return (
     <div>
-      <div className={styles.banner} style={{ background: primaryColor }}>
-        <ShieldLock24Regular style={{ color: 'white', fontSize: '20px', flexShrink: 0 }} />
-        <Text style={{ color: 'white', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' }}>
-          {strings.AppTitle}
-        </Text>
-      </div>
-
       <div className={styles.root}>
         {canManagePermissions === false && (
           <div style={{
@@ -167,7 +150,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
             fontSize: tokens.fontSizeBase300,
             lineHeight: tokens.lineHeightBase300,
           }}>
-            <span style={{ flexShrink: 0, fontSize: '16px' }}>⚠️</span>
+            <span aria-hidden="true" style={{ flexShrink: 0, fontSize: '16px' }}>⚠️</span>
             <span>
               <strong>{strings.SiteOwnerRequiredTitle} </strong>
               {strings.SiteOwnerRequiredDesc}
@@ -184,45 +167,45 @@ export const HomeView: React.FC<HomeViewProps> = ({ onNavigate, primaryColor, ca
         <div className={styles.grid}>
           {cards.map(({ view, icon, title, screenshot, alt, desc, buttonLabel }) => {
             const disabled = canManagePermissions === false;
-            const card = (
+            // The inner Button is the one real control (focusable, announced with its own
+            // label); the card itself is only a larger mouse target, so it carries no
+            // role/tabIndex. A disabled card keeps a focusable button so keyboard and
+            // screen-reader users can reach the "Site Owner required" explanation.
+            const button = (
+              <Button
+                appearance="primary"
+                className={styles.navButton}
+                disabledFocusable={disabled}
+                icon={disabled ? <LockClosed16Regular /> : undefined}
+                iconPosition="after"
+                onClick={disabled ? undefined : (e) => { e.stopPropagation(); onNavigate(view); }}
+              >
+                {buttonLabel}
+              </Button>
+            );
+            return (
               <Card
                 key={view}
                 className={`${styles.card}${disabled ? ` ${styles.cardDisabled}` : ''}`}
-                style={disabled ? { filter: 'grayscale(1)' } : undefined}
                 onClick={disabled ? undefined : () => onNavigate(view)}
-                role="button"
-                tabIndex={disabled ? -1 : 0}
-                aria-disabled={disabled}
-                aria-label={buttonLabel}
-                onKeyDown={disabled ? undefined : (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(view); } }}
               >
                 <div className={styles.cardBody}>
                   <div className={styles.cardTitleRow}>
                     {icon}
-                    <Text className={styles.cardTitle}>{title}</Text>
+                    <Text as="h2" className={styles.cardTitle}>{title}</Text>
                   </div>
                   <Body1 className={styles.cardDesc}>{desc}</Body1>
                 </div>
                 <img src={screenshot} alt={alt} className={styles.cardImage} />
                 <div className={styles.cardFooter}>
-                  <Button
-                    appearance="primary"
-                    className={styles.navButton}
-                    tabIndex={-1}
-                    disabled={disabled}
-                    icon={disabled ? <LockClosed16Regular /> : undefined}
-                    iconPosition="after"
-                  >
-                    {buttonLabel}
-                  </Button>
+                  {disabled ? (
+                    <Tooltip content={strings.RequiresSiteOwnerTooltip} relationship="description">
+                      {button}
+                    </Tooltip>
+                  ) : button}
                 </div>
               </Card>
             );
-            return disabled ? (
-              <Tooltip key={view} content={strings.RequiresSiteOwnerTooltip} relationship="description">
-                <div style={{ cursor: 'not-allowed' }}>{card}</div>
-              </Tooltip>
-            ) : card;
           })}
         </div>
 

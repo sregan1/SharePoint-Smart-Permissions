@@ -161,8 +161,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <Text weight="semibold" style={{ display: 'block' }}>{strings.PerformanceSectionTitle}</Text>
 
           <div className={styles.row}>
-            <Label>{strings.ConcurrentRequestsLabel}</Label>
+            <Label htmlFor="settings-concurrency">{strings.ConcurrentRequestsLabel}</Label>
             <SpinButton
+              id="settings-concurrency"
               value={scanConcurrency}
               min={1}
               max={10}
@@ -192,8 +193,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </Text>
 
           <div className={styles.row} style={{ marginTop: tokens.spacingVerticalS }}>
-            <Label>{strings.GroupMemberCapLabel}</Label>
+            <Label htmlFor="settings-group-cap">{strings.GroupMemberCapLabel}</Label>
             <SpinButton
+              id="settings-group-cap"
               value={groupMemberCap}
               min={50}
               max={5000}

@@ -70,7 +70,7 @@ export const PermTable: React.FC<PermTableProps> = ({ users, onCheckAccess }) =>
                   </Text>
                 </span>
               ) : u.isGroupMember ? (
-                <span style={{ paddingLeft: '16px', color: tokens.colorNeutralForeground3 }}>
+                <span style={{ paddingLeft: `${16 + (u.depth ?? 0) * 16}px`, color: tokens.colorNeutralForeground3 }}>
                   ↳ {u.displayName}
                 </span>
               ) : (

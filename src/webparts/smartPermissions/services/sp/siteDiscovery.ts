@@ -119,8 +119,8 @@ function readSearchPage(data: any): {
 
 // Per-scan record of what site discovery actually asked for and got back, so a
 // short result set can be diagnosed from a real response instead of guesswork.
-// Always collected (site URLs only — no PII) and attached to
-// window.__smartPermissionsSiteDiscovery for copying out of DevTools.
+// Attached to window.__smartPermissionsSiteDiscovery for copying out of DevTools,
+// but only while debug mode is on (see publishDiagnostics).
 export interface SiteDiscoveryDiagnostics {
   tenantUrl: string;
   source: 'graph' | 'search';
@@ -147,6 +147,10 @@ export interface SiteDiscoveryDiagnostics {
 }
 
 function publishDiagnostics(diag: SiteDiscoveryDiagnostics): void {
+  // The record lists every site URL in the tenant: keep it (and the console output)
+  // out of normal sessions, where any script on the page could read the window global.
+  // Enable with localStorage.setItem('smartPermissionsDebug', '1').
+  if (!isDebugEnabled()) return;
   try {
     (window as any).__smartPermissionsSiteDiscovery = diag;
   } catch { /* ignore */ }

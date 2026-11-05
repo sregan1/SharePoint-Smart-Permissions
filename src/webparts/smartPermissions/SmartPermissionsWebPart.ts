@@ -12,11 +12,19 @@ import * as strings from 'SmartPermissionsWebPartStrings';
 
 export interface ISmartPermissionsWebPartProps {
   defaultView: AppView;
+  hideReport?: boolean;
+  hideExplorer?: boolean;
+  hideUserAccess?: boolean;
+  /** Site the part opens on instead of the page's own site. */
+  defaultSiteUrl?: string;
+  /** When true, Change URL is hidden so viewers can't point the part at another site. */
+  lockSiteUrl?: boolean;
 }
 
 export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmartPermissionsWebPartProps> {
   private _sp: SharePointService;
   private _excel: ExcelExportService;
+  private _isInverted = false;
   private _brandColors: IBrandColors = {
     primary:  '#0078d4',
     darkAlt:  '#106ebe',
@@ -42,6 +50,7 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       const themeProvider = this.context.serviceScope.consume(ThemeProvider.serviceKey);
       const applyTheme = (theme: IReadonlyTheme | undefined): void => {
         const p = theme?.palette;
+        this._isInverted = !!theme?.isInverted;
         if (p?.themePrimary) {
           this._brandColors = {
             primary:  p.themePrimary,
@@ -68,7 +77,15 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
         sp: this._sp,
         excel: this._excel,
         defaultView: this.properties.defaultView ?? 'home',
+        hiddenViews: [
+          this.properties.hideReport ? 'report' : undefined,
+          this.properties.hideExplorer ? 'explorer' : undefined,
+          this.properties.hideUserAccess ? 'userAccess' : undefined,
+        ].filter((v): v is AppView => !!v),
+        defaultSiteUrl: this.properties.defaultSiteUrl,
+        lockSiteUrl: !!this.properties.lockSiteUrl,
         brandColors: this._brandColors,
+        isInverted: this._isInverted,
       });
       ReactDom.render(element, this.domElement);
     } catch (err: any) {
@@ -76,7 +93,7 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
       const stack = err?.stack ?? '(no stack)';
       this.domElement.innerHTML =
         `<div style="padding:16px;font-family:Consolas,monospace;font-size:13px;` +
-        `background:#fff3f3;border:1px solid #c00;border-radius:4px;margin:8px">` +
+        `background:#fff3f3;color:#242424;border:1px solid #c00;border-radius:4px;margin:8px">` +
         `<strong style="color:#c00;font-size:14px">Smart Permissions — Startup Error</strong><br><br>` +
         `<strong>Message:</strong> ${this._escHtml(msg)}<br><br>` +
         `<strong>Stack:</strong><pre style="font-size:11px;white-space:pre-wrap;` +
@@ -116,13 +133,42 @@ export default class SmartPermissionsWebPart extends BaseClientSideWebPart<ISmar
         selectedKey: this.properties.defaultView ?? 'home',
       },
     };
+    // PropertyPaneFieldType.TextField = 3, Toggle = 5 (same stability note as above).
+    const toggle = (targetProperty: string, label: string): any => ({
+      type: 5,
+      targetProperty,
+      properties: { label, checked: !!(this.properties as any)[targetProperty] },
+    });
+    const siteUrlField: any = {
+      type: 3,
+      targetProperty: 'defaultSiteUrl',
+      properties: {
+        label: strings.PropertyPane_DefaultSiteUrlLabel,
+        description: strings.PropertyPane_DefaultSiteUrlDescription,
+        value: this.properties.defaultSiteUrl ?? '',
+      },
+    };
     return {
       pages: [{
         header: { description: strings.PropertyPane_HeaderDescription },
-        groups: [{
-          groupName: strings.PropertyPane_GroupName,
-          groupFields: [dropdownField],
-        }],
+        groups: [
+          {
+            groupName: strings.PropertyPane_GroupName,
+            groupFields: [dropdownField],
+          },
+          {
+            groupName: strings.PropertyPane_ToolsGroupName,
+            groupFields: [
+              toggle('hideReport', strings.PropertyPane_HideReport),
+              toggle('hideExplorer', strings.PropertyPane_HideExplorer),
+              toggle('hideUserAccess', strings.PropertyPane_HideUserAccess),
+            ],
+          },
+          {
+            groupName: strings.PropertyPane_SiteGroupName,
+            groupFields: [siteUrlField, toggle('lockSiteUrl', strings.PropertyPane_LockSiteUrl)],
+          },
+        ],
       }],
     };
   }

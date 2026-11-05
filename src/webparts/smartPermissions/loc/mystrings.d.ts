@@ -287,6 +287,47 @@ declare interface ISmartPermissionsWebPartStrings {
   UniquePermissionAssignmentsWord: string;
   SiteLevelAccessBannerPost: string;
   UserAccessResultsLabel: string;
+  ObjectTypeSite: string;
+  ObjectTypeLibrary: string;
+  ObjectTypeList: string;
+  ObjectTypeFolder: string;
+  ObjectTypeFile: string;
+  LeaveButton: string;
+  StayButton: string;
+  DeleteButton: string;
+  ConfirmDeleteReportBody: string;
+  OptionsChangedSinceScan: string;
+  NoResultsMatchFilters: string;
+  ScanProgressLabel: string;
+  LoadingLabel: string;
+  RetryButton: string;
+  NoLibrariesFoundStatus: string;
+  UserAccessIncompleteMessage: string;
+  AllSitesRootOnlyHint: string;
+  ClearHistoryButton: string;
+  ClearHistoryConfirmBody: string;
+  RefineUserSearchHint: string;
+  RiskSummaryTitle: string;
+  RiskBroadAccess: string;
+  RiskExternalUsers: string;
+  RiskFullControl: string;
+  RiskIncomplete: string;
+  OpenInSharePointLabel: string;
+  CopyPathLabel: string;
+  CopiedLabel: string;
+  ViewReportButton: string;
+  ViewReportLabel: string;
+  SavedReportHeading: string;
+  SavedReportBanner: string;
+  PropertyPane_ToolsGroupName: string;
+  PropertyPane_HideReport: string;
+  PropertyPane_HideExplorer: string;
+  PropertyPane_HideUserAccess: string;
+  PropertyPane_SiteGroupName: string;
+  PropertyPane_DefaultSiteUrlLabel: string;
+  PropertyPane_DefaultSiteUrlDescription: string;
+  PropertyPane_LockSiteUrl: string;
+  AccessViaColumnHeader: string;
 }
 
 declare module 'SmartPermissionsWebPartStrings' {

@@ -31,7 +31,12 @@ export class TaskQueue {
   private pending: (() => Promise<void>)[] = [];
   private idleResolvers: (() => void)[] = [];
 
-  constructor(private readonly concurrency: number) {}
+  private readonly concurrency: number;
+
+  constructor(concurrency: number) {
+    // A NaN/0/negative cap would make pump() start nothing, so drain() would never resolve.
+    this.concurrency = isFinite(concurrency) && concurrency >= 1 ? Math.floor(concurrency) : 1;
+  }
 
   add(task: () => Promise<void>): void {
     this.pending.push(task);
@@ -58,6 +63,18 @@ export class TaskQueue {
     if (this.active === 0 && this.pending.length === 0) return Promise.resolve();
     return new Promise((resolve) => this.idleResolvers.push(resolve));
   }
+}
+
+// Cancellation is an expected outcome, not a failure. Giving it the standard
+// 'AbortError' name lets views tell a user cancel from a real error.
+export function createAbortError(): Error {
+  const err = new Error('Request aborted');
+  err.name = 'AbortError';
+  return err;
+}
+
+export function isAbortError(err: any): boolean {
+  return err?.name === 'AbortError';
 }
 
 // Verbose diagnostic logging, opt-in via
@@ -136,6 +153,7 @@ export function extractAadGroupInfo(loginName: string): { id: string; isOwners: 
 // Returns true when an API error indicates the current user lacks read permission on
 // role assignments (HTTP 403 Forbidden or 401 Unauthorized).
 export function isPermissionDenied(err: any): boolean {
+  if (err?.statusCode === 403 || err?.statusCode === 401) return true;
   const msg = String(err?.message ?? '');
   return msg.includes('HTTP 403') || msg.includes('HTTP 401');
 }
@@ -147,8 +165,11 @@ export function spBitmaskToLevel(high: number, low: number): string {
   void high; // High bits not needed for the levels we distinguish
   const lo = low >>> 0; // treat as unsigned 32-bit
   if (lo & 0x02000000 || lo & 0x40000000) return 'Full Control'; // ManagePermissions | ManageWeb
-  if (lo & 0x00000800) return 'Design';                           // ManageLists
-  if (lo & 0x00000004) return 'Edit';                             // EditListItems
+  if (lo & 0x00000800) {                                          // ManageLists
+    // Edit and Design both include ManageLists; Design adds ApproveItems/customization.
+    return lo & 0x00000010 || lo & 0x00080000 ? 'Design' : 'Edit';
+  }
+  if (lo & 0x00000004) return 'Contribute';                       // EditListItems
   if (lo & 0x00000001) return 'Read';                             // ViewListItems
   return 'Limited access';
 }
@@ -298,8 +319,10 @@ export class SpApiClient {
   private isThrottleResponse(resp: SPHttpClientResponse): boolean {
     if (resp.status === 429 || resp.status === 503) return true;
     if ((resp.url ?? '').toLowerCase().includes('throttle.htm')) return true;
-    // 406 is not otherwise expected: every call here explicitly asks for JSON.
-    if (resp.status === 406) return true;
+    // Every call here explicitly asks for JSON, so a 406 whose body isn't JSON is the
+    // throttle page; a 406 that does carry JSON is a genuine error for that one endpoint
+    // and must not retry four times or count toward the circuit breaker.
+    if (resp.status === 406 && !(resp.headers.get('content-type') ?? '').includes('json')) return true;
     if (resp.status === 200 && (resp.headers.get('content-type') ?? '').includes('text/html')) {
       return true;
     }
@@ -308,7 +331,10 @@ export class SpApiClient {
 
   private noteThrottled(resp: SPHttpClientResponse, attempt: number): void {
     this.throttleEventCount++;
-    this.consecutiveThrottles++;
+    // With N workers in flight, one throttle event produces N near-simultaneous 429s.
+    // Only the first response of a window counts toward the breaker; the rest arrive
+    // while the shared gate is already closed and carry no new information.
+    if (Date.now() >= this.throttledUntil) this.consecutiveThrottles++;
     if (this.consecutiveThrottles >= THROTTLE_CIRCUIT_LIMIT) this.circuitOpen = true;
     const header = parseInt(resp.headers.get('Retry-After') ?? '', 10);
     // Fall back to exponential backoff when Retry-After is absent, and clamp:
@@ -334,7 +360,7 @@ export class SpApiClient {
     // Once the breaker is open, fail immediately without touching the network.
     if (this.circuitOpen) throw new Error(THROTTLE_ABORT_MESSAGE);
     await this.waitForThrottleGate(signal);
-    if (signal?.aborted) throw new Error('Request aborted');
+    if (signal?.aborted) throw createAbortError();
 
     let resp: SPHttpClientResponse;
     try {
@@ -360,7 +386,9 @@ export class SpApiClient {
 
     if (!resp.ok) {
       const txt = await resp.text();
-      throw new Error(`HTTP ${resp.status} — ${txt.substring(0, 300)}`);
+      const httpError: any = new Error(`HTTP ${resp.status} — ${txt.substring(0, 300)}`);
+      httpError.statusCode = resp.status;
+      throw httpError;
     }
     return resp.json();
   }

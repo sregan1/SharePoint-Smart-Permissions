@@ -10,6 +10,7 @@ import {
   Checkbox,
   MessageBar,
   MessageBarBody,
+  MessageBarActions,
   Select,
   Tooltip,
   ToggleButton,
@@ -90,6 +91,10 @@ const useStyles = makeStyles({
   },
   treeNodeSelected: {
     background: tokens.colorNeutralBackground1Selected,
+    '@media (forced-colors: active)': {
+      outline: '2px solid Highlight',
+      outlineOffset: '-2px',
+    },
   },
   optionsBar: {
     display: 'flex',
@@ -135,6 +140,15 @@ function ArrowCircleAndTriangleDown({ style }: { style?: React.CSSProperties }):
 }
 
 
+const srOnly: React.CSSProperties = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  overflow: 'hidden',
+  clip: 'rect(0,0,0,0)',
+  whiteSpace: 'nowrap',
+};
+
 // ── Folder tree node ──────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -144,6 +158,7 @@ interface TreeNodeProps {
   focusedUrl: string;
   expandedUrls: Set<string>;
   onRowClick: (node: FolderFileNode) => void;
+  onToggle: (node: FolderFileNode) => void;
   registerRef: (url: string, el: HTMLDivElement | null) => void;
   showUniqueOnly: boolean;
   filterExternalOnly: boolean;
@@ -167,6 +182,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   focusedUrl,
   expandedUrls,
   onRowClick,
+  onToggle,
   registerRef,
   showUniqueOnly,
   filterExternalOnly,
@@ -193,11 +209,16 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         data-structure-version={structureVersion}
       >
         {node.isFolder && node.hasChildren ? (
-          expanded ? (
-            <ChevronDown16Regular style={{ flexShrink: 0 }} />
-          ) : (
-            <ChevronRight16Regular style={{ flexShrink: 0 }} />
-          )
+          // The chevron is its own mouse target: clicking the row selects (and only ever
+          // expands), so an expanded folder's permissions can be inspected without
+          // collapsing it. Keyboard users expand/collapse with the arrow keys.
+          <span
+            aria-hidden="true"
+            style={{ display: 'inline-flex', flexShrink: 0, cursor: 'pointer' }}
+            onClick={(e) => { e.stopPropagation(); onToggle(node); }}
+          >
+            {expanded ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
+          </span>
         ) : (
           <span style={{ width: '16px', flexShrink: 0 }} />
         )}
@@ -213,18 +234,27 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         </Text>
 
         {node.hasUniquePermissionsBelow && node.hasExternalUsersBelow && (
-          <Tooltip content={strings.ContainsUniqueAndExternalTooltip} relationship="label">
-            <ArrowCircleAndTriangleDown style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
+          <Tooltip content={strings.ContainsUniqueAndExternalTooltip} relationship="description">
+            <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+              <ArrowCircleAndTriangleDown style={{ color: tokens.colorNeutralForeground3 }} />
+              <span style={srOnly}>{strings.ContainsUniqueAndExternalTooltip}</span>
+            </span>
           </Tooltip>
         )}
         {node.hasUniquePermissionsBelow && !node.hasExternalUsersBelow && (
-          <Tooltip content={strings.ContainsUniqueTooltip} relationship="label">
-            <ArrowCircleDown16Regular style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
+          <Tooltip content={strings.ContainsUniqueTooltip} relationship="description">
+            <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+              <ArrowCircleDown16Regular aria-hidden="true" style={{ color: tokens.colorNeutralForeground3 }} />
+              <span style={srOnly}>{strings.ContainsUniqueTooltip}</span>
+            </span>
           </Tooltip>
         )}
         {node.hasExternalUsersBelow && !node.hasUniquePermissionsBelow && (
-          <Tooltip content={strings.ContainsExternalTooltip} relationship="label">
-            <ArrowTriangleDown style={{ flexShrink: 0, color: tokens.colorNeutralForeground3 }} />
+          <Tooltip content={strings.ContainsExternalTooltip} relationship="description">
+            <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+              <ArrowTriangleDown style={{ color: tokens.colorNeutralForeground3 }} />
+              <span style={srOnly}>{strings.ContainsExternalTooltip}</span>
+            </span>
           </Tooltip>
         )}
         {node.hasUniquePermissions && (
@@ -233,14 +263,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({
           </Badge>
         )}
         {node.hasUniquePermissions && (node.hasExternalUsers || externalAccessUrls.has(node.serverRelativeUrl)) && (
-          <Tooltip content={strings.ExternalAccessDetectedTooltip} relationship="label">
-            <PersonWarning16Regular
-              style={{ flexShrink: 0, color: tokens.colorPaletteRedForeground1 }}
-            />
+          <Tooltip content={strings.ExternalAccessDetectedTooltip} relationship="description">
+            <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+              <PersonWarning16Regular
+                aria-hidden="true"
+                style={{ color: tokens.colorPaletteRedForeground1 }}
+              />
+              <span style={srOnly}>{strings.ExternalAccessDetectedTooltip}</span>
+            </span>
           </Tooltip>
         )}
         {node.isLoading && (
-          <Spinner size="extra-tiny" style={{ flexShrink: 0 }} />
+          <Spinner size="extra-tiny" aria-label={strings.LoadingLabel} style={{ flexShrink: 0 }} />
         )}
       </div>
 
@@ -273,6 +307,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 focusedUrl={focusedUrl}
                 expandedUrls={expandedUrls}
                 onRowClick={onRowClick}
+                onToggle={onToggle}
                 registerRef={registerRef}
                 showUniqueOnly={showUniqueOnly}
                 filterExternalOnly={filterExternalOnly}
@@ -287,6 +322,18 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 };
 
 // ── Main view ─────────────────────────────────────────────────────────────────
+
+// Last library picked in the Explorer, remembered per site because library URLs are site-specific.
+const lastLibraryKey = (siteUrl: string): string =>
+  `sp-smart-perms-explorerLibrary|${siteUrl.trim().replace(/\/+$/, '').toLowerCase()}`;
+
+function readLastLibrary(siteUrl: string): string {
+  try { return localStorage.getItem(lastLibraryKey(siteUrl)) ?? ''; } catch { return ''; }
+}
+
+function saveLastLibrary(siteUrl: string, libraryUrl: string): void {
+  try { localStorage.setItem(lastLibraryKey(siteUrl), libraryUrl); } catch { /* storage unavailable — skip remembering */ }
+}
 
 export interface PermissionsExplorerViewProps {
   sp: SharePointService;
@@ -337,6 +384,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const [parentPermsError, setParentPermsError] = React.useState('');
 
   const abortRef = React.useRef<AbortController | null>(null);
+  // Aborts the previous library's background prefetch and external-user scan when the
+  // user switches libraries — the generation guard only discarded their results, while
+  // the requests themselves kept consuming the tenant's throttle budget.
+  const libAbortRef = React.useRef<AbortController | null>(null);
+  const libSignal = (): AbortSignal | undefined => libAbortRef.current?.signal;
   const rawNodePermsRef = React.useRef<UserPermissionInfo[]>([]);
   const rawParentPermsRef = React.useRef<UserPermissionInfo[] | null>(null);
   const groupMemberCacheRef = React.useRef<Map<string, UserPermissionInfo[]>>(new Map());
@@ -346,6 +398,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // started and checks it before applying state — so a library switch that
   // happens mid-flight can't have a stale result bleed into the new view.
   const loadGenerationRef = React.useRef(0);
+  const selectionRef = React.useRef(0);
   // Bumped alongside every tree mutation so the render can be forced even if
   // TreeNode is ever wrapped in React.memo in the future — plain node
   // mutation + array-copy (below) works today only because TreeNode isn't
@@ -381,8 +434,14 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       );
 
       if (libs.length > 0) {
-        setSelectedLibrary(libs[0].serverRelativeUrl);
-        loadLibrary(libs[0]).catch((e) => console.error('[SmartPermissions] loadLibrary failed:', e));
+        // Last library picked on this site, else the default Shared Documents library, else the first.
+        const remembered = readLastLibrary(siteUrl);
+        const initial =
+          libs.find((l) => l.serverRelativeUrl === remembered) ??
+          libs.find((l) => /\/Shared(%20| )Documents$/i.test(l.serverRelativeUrl)) ??
+          libs[0];
+        setSelectedLibrary(initial.serverRelativeUrl);
+        loadLibrary(initial).catch((e) => console.error('[SmartPermissions] loadLibrary failed:', e));
       }
     } catch (err: any) {
       setConnectError(formatString(strings.ConnectionFailedError, err?.message ?? String(err)));
@@ -396,6 +455,8 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   const loadLibrary = async (lib: LibraryInfo): Promise<void> => {
     const myGeneration = ++loadGenerationRef.current;
+    libAbortRef.current?.abort();
+    libAbortRef.current = new AbortController();
     const isStale = (): boolean => loadGenerationRef.current !== myGeneration;
 
     setRootNodes([]);
@@ -418,7 +479,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       const nodes = await sp.getFolderContents(
         siteUrl.trim(),
         lib.serverRelativeUrl,
-        abortRef.current?.signal,
+        libSignal(),
       );
       if (isStale()) return; // user switched libraries again while this fetch was in flight
       setRootNodes(nodes);
@@ -429,7 +490,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       sp.getItemPermissions(
         siteUrl.trim(),
         { name: lib.title, serverRelativeUrl: lib.serverRelativeUrl, isFolder: true, hasChildren: false, children: [] },
-        abortRef.current?.signal,
+        libSignal(),
       ).then((probe) => {
         // A slow probe resolving after the user has already switched to another
         // library must not flag the (unrelated) library now on screen as denied.
@@ -445,7 +506,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       // Results are stored in folderCacheRef so expanding a folder skips the API call.
       // Bounded by scanConcurrency — previously fired one request per root folder
       // simultaneously with no cap, risking throttling on wide libraries.
-      const signal = abortRef.current?.signal;
+      const signal = libSignal();
       const prefetchTasks = nodes.filter((n) => n.isFolder).map((folder) => async (): Promise<undefined> => {
         try {
           const children = await sp.getFolderContents(siteUrl.trim(), folder.serverRelativeUrl, signal);
@@ -473,6 +534,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const handleLibraryChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
     const url = e.target.value;
     setSelectedLibrary(url);
+    saveLastLibrary(siteUrl, url);
     const lib = libraries.find((l) => l.serverRelativeUrl === url);
     if (lib) void loadLibrary(lib);
   };
@@ -493,7 +555,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       const children = cached ?? await sp.getFolderContents(
         siteUrl.trim(),
         node.serverRelativeUrl,
-        abortRef.current?.signal,
+        libSignal(),
       );
       if (loadGenerationRef.current !== myGeneration) return;
       if (!cached) folderCacheRef.current.set(node.serverRelativeUrl, children);
@@ -520,7 +582,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       // before the user expands them — same pattern used in loadLibrary for depth-0.
       // Bounded by scanConcurrency — previously fired one request per child folder
       // simultaneously with no cap, and each expansion multiplied it further.
-      const prefetchSignal = abortRef.current?.signal;
+      const prefetchSignal = libSignal();
       const prefetchTasks = children
         .filter((c) => c.isFolder && c.hasChildren && !folderCacheRef.current.has(c.serverRelativeUrl))
         .map((folder) => async (): Promise<undefined> => {
@@ -597,6 +659,15 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootNodes, structureVersion, expandedUrls, showUniqueOnly, filterExternalOnly]);
 
+  // If a filter (or a collapse) removes the focused node, no treeitem would have
+  // tabIndex=0 and the tree could no longer be tabbed into — fall back to the first row.
+  React.useEffect(() => {
+    if (flattenVisible.length === 0) return;
+    if (!flattenVisible.some((n) => n.serverRelativeUrl === focusedUrl)) {
+      setFocusedUrl(flattenVisible[0].serverRelativeUrl);
+    }
+  }, [flattenVisible, focusedUrl]);
+
   const toggleExpand = (node: FolderFileNode): void => {
     if (!node.isFolder || !node.hasChildren) return;
     const isOpen = expandedUrls.has(node.serverRelativeUrl);
@@ -612,7 +683,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
   const handleRowClick = (node: FolderFileNode): void => {
     setFocusedUrl(node.serverRelativeUrl);
-    if (node.isFolder && node.hasChildren) toggleExpand(node);
+    if (node.isFolder && node.hasChildren && !expandedUrls.has(node.serverRelativeUrl)) toggleExpand(node);
     handleSelectNode(node).catch((e) => console.error('[SmartPermissions] handleSelectNode failed:', e));
   };
 
@@ -675,7 +746,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     if (!uniqueNodes.length) return;
     const tasks = uniqueNodes.map((node) => async (): Promise<undefined> => {
       if (abortRef.current?.signal.aborted || loadGenerationRef.current !== generation) return undefined;
-      const hasExt = await sp.scanNodeForExternalUsers(siteUrl.trim(), node, abortRef.current?.signal);
+      const hasExt = await sp.scanNodeForExternalUsers(siteUrl.trim(), node, libSignal());
       if (loadGenerationRef.current !== generation) return undefined;
       if (hasExt === 'denied') {
         setPermissionsDenied(true);
@@ -701,15 +772,21 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         .map(async (u) => {
           const key = u.loginName || u.displayName;
           if (!groupMemberCacheRef.current.has(key)) {
-            const members = await sp.getGroupMembers(
-              siteUrl.trim(),
-              u.displayName,
-              u.loginName,
-              u.principalType,
-              abortRef.current?.signal,
-              u.groupId,
-            );
-            groupMemberCacheRef.current.set(key, members);
+            try {
+              const members = await sp.getGroupMembers(
+                siteUrl.trim(),
+                u.displayName,
+                u.loginName,
+                u.principalType,
+                abortRef.current?.signal,
+                u.groupId,
+              );
+              groupMemberCacheRef.current.set(key, members);
+            } catch {
+              // One group that can't be expanded (e.g. the Graph permission isn't approved
+              // yet) must not hide the whole permissions list — show the group unexpanded.
+              // Not cached, so it is retried once the cause is fixed.
+            }
           }
         }),
     );
@@ -729,6 +806,9 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   // ── Select node ──────────────────────────────────────────────────────────
 
   const handleSelectNode = async (node: FolderFileNode): Promise<void> => {
+    // Rapid clicks start overlapping loads; only the latest selection may write results.
+    const mySelection = ++selectionRef.current;
+    const isCurrentSelection = (): boolean => selectionRef.current === mySelection;
     const keepParentPerms = showParentPerms;
     setSelectedNode(node);
     setNodeLoading(true);
@@ -748,8 +828,11 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
         node,
         abortRef.current?.signal,
       );
+      if (!isCurrentSelection()) return;
+      // Per node: a denial on one item used to hide the group-expansion and
+      // parent-permissions controls for every other item until the library reloaded.
+      setPermissionsDenied(permissionDenied);
       if (permissionDenied) {
-        setPermissionsDenied(true);
         sp.getEffectivePermissions(siteUrl.trim(), node, abortRef.current?.signal)
           .then(setMyPermLevel)
           .catch(() => {});
@@ -764,14 +847,16 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       }
       const resolvedHasUnique = permissionDenied ? (node.hasUniquePermissions ?? false) : hasUnique;
       setNodeHasUnique(resolvedHasUnique);
-      setNodePerms(await withGroupExpansion(users));
+      const expandedUsers = await withGroupExpansion(users);
+      if (!isCurrentSelection()) return;
+      setNodePerms(expandedUsers);
       if (!resolvedHasUnique && keepParentPerms) {
         handleShowParentPerms(node).catch((e) => console.error('[SmartPermissions] handleShowParentPerms failed:', e));
       }
     } catch (err: any) {
-      setNodeError(err?.message ?? String(err));
+      if (isCurrentSelection()) setNodeError(err?.message ?? String(err));
     } finally {
-      setNodeLoading(false);
+      if (isCurrentSelection()) setNodeLoading(false);
     }
   };
 
@@ -858,6 +943,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
     return () => {
       loadGenerationRef.current++; // invalidate any in-flight generation-guarded callbacks
       abortRef.current?.abort();
+      libAbortRef.current?.abort();
     };
   }, []);
 
@@ -890,6 +976,14 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       {connectError && (
         <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
           <MessageBarBody>{connectError}</MessageBarBody>
+          <MessageBarActions>
+            <Button
+              size="small"
+              onClick={() => { handleConnect().catch((e) => console.error('[SmartPermissions] retry connect failed:', e)); }}
+            >
+              {strings.RetryButton}
+            </Button>
+          </MessageBarActions>
         </MessageBar>
       )}
       {connectStatus && !connectError && (
@@ -907,6 +1001,12 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
       {isConnected && (
         <>
+          {libraries.length === 0 && (
+            <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
+              <MessageBarBody>{strings.NoLibrariesFoundStatus}</MessageBarBody>
+            </MessageBar>
+          )}
+
           {/* Library picker */}
           <div style={{ marginBottom: tokens.spacingVerticalM }}>
             <Field label={strings.LibraryFieldLabel}>
@@ -978,17 +1078,17 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
 
           <div className={styles.twoCol}>
             {/* Tree panel */}
-            <div
-              className={styles.treePanel}
-              role="tree"
-              aria-label={strings.FoldersAndFilesLabel}
-              onKeyDown={handleTreeKeyDown}
-            >
+            <div className={styles.treePanel}>
               {treeStatus && (
-                <Body1 style={{ color: tokens.colorNeutralForeground3 }}>
+                <Body1 role="status" style={{ color: tokens.colorNeutralForeground3 }}>
                   {treeStatus}
                 </Body1>
               )}
+              <div
+                role="tree"
+                aria-label={strings.FoldersAndFilesLabel}
+                onKeyDown={handleTreeKeyDown}
+              >
               {rootNodes
                 .filter(nodeVisible)
                 .map((node) => (
@@ -1000,6 +1100,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     focusedUrl={focusedUrl}
                     expandedUrls={expandedUrls}
                     onRowClick={handleRowClick}
+                    onToggle={toggleExpand}
                     registerRef={registerNodeRef}
                     showUniqueOnly={showUniqueOnly}
                     filterExternalOnly={filterExternalOnly}
@@ -1007,6 +1108,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     structureVersion={structureVersion}
                   />
                 ))}
+              </div>
             </div>
 
             {/* Permissions panel */}
@@ -1055,7 +1157,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                     )}
                   </div>
 
-                  {nodeLoading && <Spinner size="small" />}
+                  {nodeLoading && <Spinner size="small" aria-label={strings.LoadingLabel} />}
 
                   {nodeError && (
                     <MessageBar intent="error">
@@ -1114,7 +1216,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
                   {!nodeLoading && !nodeError && !nodeHasUnique && showParentPerms && (
                     <>
                       {parentPermsLoading && (
-                        <Spinner size="small" style={{ marginTop: tokens.spacingVerticalS }} />
+                        <Spinner size="small" aria-label={strings.LoadingLabel} style={{ marginTop: tokens.spacingVerticalS }} />
                       )}
                       {parentPermsError && (
                         <MessageBar intent="error" style={{ marginTop: tokens.spacingVerticalS }}>

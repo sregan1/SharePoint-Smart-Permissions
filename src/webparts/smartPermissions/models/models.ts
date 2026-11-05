@@ -21,6 +21,8 @@ export interface UserPermissionInfo {
   /** Maps each entry in `roles` to its SharePoint RoleTypeKind, when known. */
   roleTypeKinds?: Record<string, number>;
   isGroupMember?: boolean;
+  /** Nesting level inside an expanded group: 0 or undefined = first level, 1 = inside a nested group, and so on. */
+  depth?: number;
   sourceGroup?: string; // group name if this user was expanded from a group; undefined = direct assignment
   /**
    * Numeric SharePoint group id (RoleAssignment.Member.Id), present when
@@ -30,6 +32,12 @@ export interface UserPermissionInfo {
    * or contains characters getbyname mishandles; the id is unambiguous.
    */
   groupId?: number;
+  /**
+   * User Access results only: the principals (SharePoint groups, AAD/M365 groups,
+   * "Everyone except external users", or the user directly) whose role assignments
+   * granted this access, merged into `roles`.
+   */
+  accessVia?: string[];
 }
 
 export interface PermissionEntry {
@@ -131,6 +139,8 @@ export interface StoredReport {
     durationSeconds: number;
   };
   entries: PermissionEntry[];
+  /** Signed-in user who saved the report. Absent on reports saved before history was scoped per user. */
+  ownerKey?: string;
 }
 
 export interface StoredUserAccessReport {
@@ -145,5 +155,7 @@ export interface StoredUserAccessReport {
     durationSeconds: number;
   };
   entries: PermissionEntry[];
+  /** Signed-in user who saved the report. Absent on reports saved before history was scoped per user. */
+  ownerKey?: string;
 }
 

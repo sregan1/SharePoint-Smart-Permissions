@@ -9,8 +9,9 @@ import * as permissionScan from './sp/permissionScan';
 import * as explorer from './sp/explorer';
 import * as groups from './sp/groups';
 import * as userAccess from './sp/userAccess';
+import type { UserAccessResult } from './sp/userAccess';
 
-export { isGraphPermissionError } from './sp/spCore';
+export { isGraphPermissionError, isAbortError, isDebugEnabled } from './sp/spCore';
 
 // Facade over the sp/ modules so views keep a single dependency with a stable
 // API. Implementation lives in:
@@ -25,6 +26,11 @@ export class SharePointService {
 
   constructor(context: WebPartContext) {
     this.client = new SpApiClient(context);
+  }
+
+  /** Stable lowercase key for the signed-in user, used to scope locally stored history. */
+  get currentUserKey(): string {
+    return (this.client.context.pageContext.user?.loginName ?? '').toLowerCase();
   }
 
   /** Max concurrent API requests during scans. Settable from Settings. */
@@ -152,7 +158,7 @@ export class SharePointService {
     onProgress: (msg: string) => void,
     signal?: AbortSignal,
     includeHidden = false,
-  ): Promise<{ fullSiteAccess: boolean; items: PermissionEntry[]; graphPermissionRequired: boolean; roleAssignmentsDenied: boolean }> {
+  ): Promise<UserAccessResult> {
     return userAccess.getUserAccess(this.client, siteUrl, userLoginName, onProgress, signal, includeHidden);
   }
 }

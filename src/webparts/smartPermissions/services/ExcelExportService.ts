@@ -84,6 +84,9 @@ function scanLabel(siteUrl: string, allSites?: boolean): string {
   return 'Site';
 }
 
+// Excel's hard limit on rows per worksheet.
+const MAX_SHEET_ROWS = 1048576;
+
 export class ExcelExportService {
   async exportUserAccess(
     entries: PermissionEntry[],
@@ -114,7 +117,7 @@ export class ExcelExportService {
 
     // Headers
     const headerRow = ws.getRow(8);
-    ['Type', 'Name', 'Path', 'Permission Level'].forEach((h, i) => {
+    ['Type', 'Name', 'Path', 'Permission Level', 'Access Via'].forEach((h, i) => {
       const cell = headerRow.getCell(i + 1);
       cell.value = h;
       cell.fill = argbFill(COLOR.headerFill);
@@ -151,6 +154,9 @@ export class ExcelExportService {
       roleCell.fill = argbFill(roleColor(roles, entry.uniquePermissions[0]?.roleTypeKinds));
       roleCell.alignment = { vertical: 'middle' };
 
+      row.getCell(5).value = (entry.uniquePermissions[0]?.accessVia ?? []).join(', ');
+      row.getCell(5).alignment = { vertical: 'middle', wrapText: true };
+
       row.commit();
     });
 
@@ -158,7 +164,8 @@ export class ExcelExportService {
     ws.getColumn(2).width = 40;
     ws.getColumn(3).width = 60;
     ws.getColumn(4).width = 25;
-    ws.autoFilter = { from: 'A8', to: 'D8' };
+    ws.getColumn(5).width = 40;
+    ws.autoFilter = { from: 'A8', to: 'E8' };
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer as ArrayBuffer], {
@@ -180,8 +187,12 @@ export class ExcelExportService {
   // ── CSV exports ───────────────────────────────────────────────────────────
 
   private csvEscape(v: string | number): string {
-    const s = String(v);
-    return s.includes(',') || s.includes('"') || s.includes('\n')
+    let s = String(v);
+    // Spreadsheet apps execute cells that start with = + - @ (or tab/CR) as formulas, and
+    // file, folder and group names here are controlled by any contributor on the site.
+    // Prefix an apostrophe so they open as plain text. Real numbers are left untouched.
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')
       ? `"${s.replace(/"/g, '""')}"`
       : s;
   }
@@ -229,13 +240,14 @@ export class ExcelExportService {
   exportUserAccessCsv(entries: PermissionEntry[], siteUrl: string, userDisplayName: string): void {
     const ts = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 15).replace('.', '');
     const safeName = userDisplayName.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const rows: string[][] = [['Type', 'Name', 'Path', 'Permission Level']];
+    const rows: string[][] = [['Type', 'Name', 'Path', 'Permission Level', 'Access Via']];
     for (const entry of entries) {
       rows.push([
         entry.objectType,
         entryDisplayName(entry),
         entry.serverRelativeUrl,
         (entry.uniquePermissions[0]?.roles ?? []).join('; '),
+        (entry.uniquePermissions[0]?.accessVia ?? []).join('; '),
       ]);
     }
     this.downloadCsv(rows, `SP_UserAccess_${safeName}_${ts}.csv`);
@@ -305,8 +317,6 @@ export class ExcelExportService {
   // ── Details sheet ─────────────────────────────────────────────────────────
 
   private addDetailsSheet(wb: ExcelJS.Workbook, entries: PermissionEntry[]): void {
-    const ws = wb.addWorksheet('Permissions');
-
     const headers = [
       'Type',
       'Path',
@@ -318,23 +328,46 @@ export class ExcelExportService {
       'Permission Level',
     ];
 
-    const headerRow = ws.getRow(1);
-    headers.forEach((h, i) => {
-      const cell = headerRow.getCell(i + 1);
-      cell.value = h;
-      cell.fill = argbFill(COLOR.headerFill);
-      cell.font = { bold: true, color: { argb: COLOR.headerFont } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    });
-    headerRow.commit();
+    // Creates a details sheet with its header row, frozen pane, widths and filter. A
+    // worksheet holds at most 1,048,576 rows and group expansion can exceed that, so the
+    // body below rolls over to a continuation sheet instead of failing the whole export.
+    const startSheet = (name: string): ExcelJS.Worksheet => {
+      const ws = wb.addWorksheet(name);
+      const headerRow = ws.getRow(1);
+      headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = h;
+        cell.fill = argbFill(COLOR.headerFill);
+        cell.font = { bold: true, color: { argb: COLOR.headerFont } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+      headerRow.commit();
 
-    // Freeze header row
-    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+      // Freeze header row
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
 
+      // Column widths
+      [10, 55, 35, 18, 35, 30, 16, 20].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+      // Auto-filter on header row
+      ws.autoFilter = { from: 'A1', to: 'H1' };
+      return ws;
+    };
+
+    let sheetNumber = 1;
+    let ws = startSheet('Permissions');
     let rowIndex = 2;
 
     for (const entry of entries) {
       const users = entry.uniquePermissions;
+      const rowsNeeded = Math.max(users.length, 1);
+
+      // Keep one entry's rows together on a sheet where they fit.
+      if (rowIndex + rowsNeeded - 1 > MAX_SHEET_ROWS && rowIndex > 2) {
+        sheetNumber++;
+        ws = startSheet(`Permissions ${sheetNumber}`);
+        rowIndex = 2;
+      }
 
       if (users.length === 0) {
         this.writeRow(ws, rowIndex, entry, null);
@@ -343,6 +376,12 @@ export class ExcelExportService {
       }
 
       for (const user of users) {
+        if (rowIndex > MAX_SHEET_ROWS) {
+          // A single principal list larger than a whole sheet: continue on the next one.
+          sheetNumber++;
+          ws = startSheet(`Permissions ${sheetNumber}`);
+          rowIndex = 2;
+        }
         this.writeRow(ws, rowIndex, entry, user);
         rowIndex++;
       }
@@ -356,19 +395,6 @@ export class ExcelExportService {
         };
       }
     }
-
-    // Column widths
-    ws.getColumn(1).width = 10;
-    ws.getColumn(2).width = 55;
-    ws.getColumn(3).width = 35;
-    ws.getColumn(4).width = 18;
-    ws.getColumn(5).width = 35;
-    ws.getColumn(6).width = 30;
-    ws.getColumn(7).width = 16;
-    ws.getColumn(8).width = 20;
-
-    // Auto-filter on header row
-    ws.autoFilter = { from: 'A1', to: 'H1' };
   }
 
   private writeRow(

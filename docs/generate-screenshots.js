@@ -617,13 +617,8 @@ function homePage() {
 <style>* { margin:0; padding:0; box-sizing:border-box; }</style>
 </head><body style="background:#fff;width:1000px;font-family:${font};color:#323130;">
 
-  <!-- Blue banner -->
-  <div style="background:${blue};display:flex;align-items:center;padding:0 16px;height:44px;gap:10px;">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
-    </svg>
-    <span style="color:#fff;font-size:15px;font-weight:600;font-family:${font};">SharePoint Smart Permissions</span>
-  </div>
+  <!-- Brand bar with site chip (shared by every view) -->
+  ${appBanner()}
 
   <!-- Main content -->
   <div style="padding:24px 28px;">
@@ -651,6 +646,86 @@ function homePage() {
 </body></html>`;
 }
 
+// ── App-style pages (match the real web part UI) ──────────────────────────────
+const pill = (txt, bg, color, border) =>
+  `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${bg};color:${color};${border ? 'border:1px solid ' + border + ';' : ''}font-family:${font};white-space:nowrap;">${txt}</span>`;
+const btn = (txt, primary, small) =>
+  `<span style="display:inline-block;padding:${small ? '3px 10px' : '6px 14px'};border-radius:4px;font-size:${small ? 12 : 13}px;font-weight:${primary ? 600 : 400};font-family:${font};white-space:nowrap;background:${primary ? '#0078D4' : '#fff'};color:${primary ? '#fff' : '#323130'};border:1px solid ${primary ? '#0078D4' : '#d1d1d1'};">${txt}</span>`;
+const shell = (inner, width) =>
+  `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box;}</style></head>
+<body style="background:#fff;width:${width}px;font-family:${font};color:#323130;">${appBanner()}<div style="padding:24px;">${inner}</div></body></html>`;
+const th = (txt) => `<th style="padding:8px 12px;">${txt}</th>`;
+const headRow = (cols) =>
+  `<thead><tr style="border-bottom:2px solid #C8C6C4;text-align:left;font-size:12px;color:#605E5C;">${cols.map(th).join('')}</tr></thead>`;
+
+function reportCompletePage() {
+  const rows = [
+    ['Folder', 'Executive Reports', '/sites/Marketing/Campaign Documents/Executive Reports', 'Marketing Owners, CEO-Group', 'Full Control'],
+    ['File', 'Board_Deck_Oct.pptx', '/sites/Marketing/Campaign Documents/Executive Reports/Board_Deck_Oct.pptx', 'CEO-Group', 'Full Control'],
+    ['Folder', 'Press Releases', '/sites/Marketing/Campaign Documents/Press Releases', 'Everyone except external users', 'Read'],
+    ['File', 'Annual_Report_2025.pdf', '/sites/Marketing/Marketing Assets/Annual_Report_2025.pdf', 'Everyone', 'Read'],
+  ];
+  const tr = rows.map((r) => `<tr style="border-bottom:1px solid #EDEBE9;">
+      <td style="padding:8px 12px;">${typeBadge(r[0])}</td><td style="padding:8px 12px;font-size:13px;">${r[1]}</td>
+      <td style="padding:8px 12px;font-size:12px;color:#605E5C;">${r[2]}</td>
+      <td style="padding:8px 12px;font-size:12px;">${r[3]} ${permBadge(r[4])}</td>
+      <td style="padding:8px 12px;font-size:12px;color:#0078D4;white-space:nowrap;">Open &nbsp; Copy</td></tr>`).join('');
+  return shell(`
+    <div style="padding:14px 16px;background:#DFF6DD;border-radius:4px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <strong style="font-size:15px;">Scan complete</strong>
+      ${pill('75 objects', '#DFF6DD', '#107C10')} ${pill('5 unique', '#FFF4CE', '#7D4A00')} ${pill('70 inherited', '#fff', '#323130', '#8a8886')}
+      <span style="margin-left:auto;">${btn('Export to Excel', true)}</span>
+    </div>
+    <div style="margin-bottom:6px;font-size:14px;font-weight:600;">Risk summary</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      ${btn('Everyone access (2)', true, true)} ${btn('External users (1)', false, true)} ${btn('Full Control, non-owners (3)', true, true)} ${btn('Unconfirmed (1)', false, true)}
+    </div>
+    <div style="border-top:1px solid #EDEBE9;padding-top:14px;margin-bottom:10px;font-size:13px;color:#605E5C;">Showing 4 of 5 entries with unique permissions</div>
+    <table style="width:100%;border-collapse:collapse;">${headRow(['Type', 'Name', 'Path', 'Users / Groups', ''])}<tbody>${tr}</tbody></table>`, 960);
+}
+
+function userAccessCompletePage() {
+  const rows = [
+    ['Site', 'Marketing', '/sites/Marketing', 'Marketing Visitors', 'Read', 0],
+    ['Library', 'Campaign Documents', '/sites/Marketing/Campaign Documents', 'Marketing Members', 'Edit', 0],
+    ['Folder', 'Q4 Launch', '/sites/Marketing/Campaign Documents/Q4 Launch', 'Q4 Launch Team', 'Edit', 1],
+    ['File', 'Budget_Confidential.xlsx', '/sites/Marketing/Campaign Documents/Q4 Launch/Budget_Confidential.xlsx', 'Alice Chen (direct)', 'Full Control', 2],
+    ['Library', 'Marketing Assets', '/sites/Marketing/Marketing Assets', 'Everyone except external users', 'Read', 0],
+    ['Folder', 'Brand Photos', '/sites/Marketing/Marketing Assets/Brand Photos', 'Design Team', 'Edit', 1],
+  ];
+  const tr = rows.map((r) => `<tr style="border-bottom:1px solid #EDEBE9;">
+      <td style="padding:8px 12px;">${typeBadge(r[0])}</td><td style="padding:8px 12px 8px ${12 + r[5] * 14}px;font-size:13px;">${r[1]}</td>
+      <td style="padding:8px 12px;font-size:12px;color:#605E5C;">${r[2]}</td>
+      <td style="padding:8px 12px;">${pill(r[3], '#fff', '#323130', '#8a8886')}</td>
+      <td style="padding:8px 12px;">${permBadge(r[4])}</td></tr>`).join('');
+  return shell(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">${btn('← Back')}<span style="font-size:22px;font-weight:600;">User Access</span>
+      <span style="margin-left:auto;display:flex;gap:8px;">${btn('New scan')}${btn('History (3)')}</span></div>
+    <div style="color:#0078D4;font-size:13px;margin-bottom:14px;">Connected — 18 users found</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Select a user</div>
+    <div style="width:400px;border:1px solid #d1d1d1;border-radius:4px;padding:7px 10px;font-size:13px;margin-bottom:16px;">Alice Chen</div>
+    <div style="padding:12px 16px;background:#EFF6FC;border:1px solid #B3D6F2;border-radius:4px;font-size:13px;margin-bottom:14px;">This user has site-level access. Only locations with <strong>unique permission assignments</strong> appear below — all other content is accessible through the site-level permission shown at the top of the list.</div>
+    <div style="font-size:13px;color:#605E5C;margin-bottom:10px;">6 accessible location(s) found.</div>
+    <div style="margin-bottom:10px;display:flex;gap:8px;justify-content:flex-end;">${btn('Export to Excel')}${btn('Export to CSV')}</div>
+    <table style="width:100%;border-collapse:collapse;">${headRow(['Type ▲', 'Name', 'Path', 'Access via', 'Permission Level'])}<tbody>${tr}</tbody></table>`, 1100);
+}
+
+function reportHistoryPage() {
+  const rows = [
+    ['Jul 1, 2026, 9:02 AM', 214, 18, true], ['Jun 1, 2026, 9:00 AM', 208, 15, true], ['May 1, 2026, 9:01 AM', 201, 14, false],
+    ['Apr 1, 2026, 9:03 AM', 197, 13, false], ['Mar 3, 2026, 8:58 AM', 190, 12, false],
+  ];
+  const cb = (on) => `<span style="display:inline-block;width:14px;height:14px;border:1px solid ${on ? '#0078D4' : '#605E5C'};border-radius:2px;background:${on ? '#0078D4' : '#fff'};color:#fff;font-size:11px;line-height:12px;text-align:center;">${on ? '✓' : ''}</span>`;
+  const tr = rows.map((r) => `<tr style="border-bottom:1px solid #EDEBE9;font-size:13px;"><td style="padding:10px 8px;">${cb(r[3])}</td><td style="padding:10px 8px;">${r[0]}</td>
+      <td style="padding:10px 8px;">/sites/Marketing</td><td style="padding:10px 8px;">Full site</td><td style="padding:10px 8px;">${r[1]}</td><td style="padding:10px 8px;">${r[2]}</td>
+      <td style="padding:10px 8px;text-align:right;white-space:nowrap;">${btn('View', false, true)} ${btn('Export', true, true)} ${btn(`<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"#605E5C\" style=\"vertical-align:-1px\"><path d=\"M9 3v1H4v2h16V4h-5V3H9zM5 8l1 13h12l1-13H5z\"/></svg>`, false, true)}</td></tr>`).join('');
+  return shell(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">${btn('← Back')}<span style="font-size:22px;font-weight:600;">Permissions Report</span>
+      <span style="margin-left:auto;display:flex;gap:8px;">${btn('Clear history')}${btn('Compare selected (2/2)', true)}</span></div>
+    <div style="font-size:13px;color:#605E5C;margin-bottom:12px;">Tick two reports and select <strong>Compare selected</strong> to see what changed between scans.</div>
+    <table style="width:100%;border-collapse:collapse;">${headRow(['', 'Date / Time ▼', 'Site', 'Scope', 'Objects', 'Unique', ''])}<tbody>${tr}</tbody></table>`, 960);
+}
+
 // ── Runner ────────────────────────────────────────────────────────────────────
 async function main() {
   const browser = await puppeteer.launch({
@@ -662,6 +737,9 @@ async function main() {
   // README / docs screenshots
   const docsShots = [
     ['01_home.png', homePage, { width: 1000, height: 620 }],
+    ['04_report_complete.png', reportCompletePage, { width: 960, height: 520 }],
+    ['07_user_access_complete.png', userAccessCompletePage, { width: 1100, height: 640 }],
+    ['10_report_history.png', reportHistoryPage, { width: 960, height: 440 }],
   ];
 
   for (const [filename, htmlFn, vp] of docsShots) {
