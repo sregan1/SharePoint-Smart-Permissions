@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.7.2] — 2026-11-11
+
+### Changed
+
+- **Permissions Explorer — library permissions on load**
+  The permissions panel now shows the selected library's own permissions as
+  soon as it loads, instead of an empty "Select a folder or file" message.
+- **Permissions Explorer — "Show parent permissions" is on by default**
+  Inherited items show where their permissions come from without an extra
+  click. The checkbox is still there to turn it off.
+
+### Fixed
+
+- **Folders starting with an underscore were hidden**
+  The Permissions Explorer, Permissions Report, and User Access tools skipped
+  every folder whose name began with `_`, so real folders such as
+  `_Sales Manager` never appeared and any unique permissions on them were
+  missed. Only SharePoint's own system folders are skipped now: `Forms`,
+  `_cts`, `_w`, `_t`, `_private`, `_catalogs`, `_layouts`, and `_vti_*`
+  (matched case-insensitively).
+- **`Forms` folder shown in the Permissions Explorer**
+  The Explorer tree listed `Forms` while the report and User Access scans
+  skipped it. All three tools now hide it consistently.
+
+---
+
 ## [1.7.1] — 2026-11-05
 
 ### Added

@@ -7,6 +7,21 @@ export function odata(s: string): string {
   return s.replace(/'/g, "''");
 }
 
+// Folders SharePoint creates and manages itself. They are skipped when walking
+// a library so audits only show user content. Matching is case-insensitive.
+// Any other folder — including user folders that merely start with "_"
+// (e.g. "_Sales Manager") — is NOT filtered.
+//   Forms     — library views/templates folder at the library root
+//   _cts      — content type folders
+//   _w, _t    — web preview and thumbnail folders in picture libraries
+//   _private, _catalogs, _layouts — site-level system folders
+//   _vti_*    — FrontPage/versioning folders (e.g. _vti_history)
+const SYSTEM_FOLDER_NAMES = ['forms', '_cts', '_w', '_t', '_private', '_catalogs', '_layouts'];
+export function isSystemFolder(name: string): boolean {
+  const n = name.toLowerCase();
+  return SYSTEM_FOLDER_NAMES.indexOf(n) !== -1 || n.indexOf('_vti_') === 0;
+}
+
 // API bases for a folder/file/list addressed by server-relative path. The
 // *ByServerRelativePath(decodedUrl=...) forms plus URI-encoding handle names
 // containing &, #, % and other characters that break the legacy

@@ -377,7 +377,7 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
   const [nodeLoading, setNodeLoading] = React.useState(false);
   const [nodeError, setNodeError] = React.useState('');
   const [expandGroups, setExpandGroups] = React.useState(false);
-  const [showParentPerms, setShowParentPerms] = React.useState(false);
+  const [showParentPerms, setShowParentPerms] = React.useState(true);
   const [parentPermsLoading, setParentPermsLoading] = React.useState(false);
   const [parentPerms, setParentPerms] = React.useState<UserPermissionInfo[] | null>(null);
   const [parentPermsName, setParentPermsName] = React.useState('');
@@ -486,17 +486,16 @@ export const PermissionsExplorerView: React.FC<PermissionsExplorerViewProps> = (
       setFocusedUrl(nodes[0]?.serverRelativeUrl ?? '');
       if (nodes.length === 0) setTreeStatus(strings.LibraryEmptyStatus);
 
-      // Proactively check whether role-assignment reads are permitted for this library.
-      sp.getItemPermissions(
-        siteUrl.trim(),
-        { name: lib.title, serverRelativeUrl: lib.serverRelativeUrl, isFolder: true, hasChildren: false, children: [] },
-        libSignal(),
-      ).then((probe) => {
-        // A slow probe resolving after the user has already switched to another
-        // library must not flag the (unrelated) library now on screen as denied.
-        if (isStale()) return;
-        if (probe.permissionDenied) setPermissionsDenied(true);
-      }).catch(() => { /* ignore probe errors */ });
+      // Show the library's own permissions straight away instead of an empty panel.
+      // This also covers the role-assignment denial check that used to be a separate probe.
+      handleSelectNode({
+        name: lib.title,
+        serverRelativeUrl: lib.serverRelativeUrl,
+        isFolder: true,
+        isLibraryRoot: true,
+        hasChildren: false,
+        children: [],
+      }).catch((e) => console.error('[SmartPermissions] select library root failed:', e));
 
       // Background scan for external users on root-level nodes.
       scanExternalUsers(nodes, myGeneration);

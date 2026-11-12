@@ -1,7 +1,7 @@
 import { FolderFileNode, UserPermissionInfo } from '../../models/models';
 import {
-  SpApiClient, valueArray, folderApi, fileApi, isPermissionDenied, spBitmaskToLevel,
-  toPermissionInfoList,
+  SpApiClient, valueArray, folderApi, fileApi, listApi, isPermissionDenied, spBitmaskToLevel,
+  toPermissionInfoList, isSystemFolder,
 } from './spCore';
 
 // ── Real-time audit (Permissions Explorer) ──────────────────────────────────
@@ -15,7 +15,7 @@ export async function getFolderContents(client: SpApiClient,
 
     const toNodes = (folders: any[], filesArr: any[], withUnique: boolean): FolderFileNode[] => {
       const nodes: FolderFileNode[] = [];
-      for (const sub of folders.filter((f: any) => !f.Name.startsWith('_'))) {
+      for (const sub of folders.filter((f: any) => !isSystemFolder(f.Name))) {
         nodes.push({
           name: sub.Name,
           serverRelativeUrl: sub.ServerRelativeUrl,
@@ -82,9 +82,13 @@ export async function getItemPermissions(client: SpApiClient,
     node: FolderFileNode,
     signal?: AbortSignal,
   ): Promise<{ hasUnique: boolean; users: UserPermissionInfo[]; permissionDenied?: boolean }> {
-    const base = node.isFolder
-      ? `${folderApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`
-      : `${fileApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`;
+    // A library root has no list item, so ListItemAllFields can't report its permissions —
+    // query the list itself.
+    const base = node.isLibraryRoot
+      ? listApi(siteUrl, node.serverRelativeUrl)
+      : node.isFolder
+        ? `${folderApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`
+        : `${fileApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`;
 
     try {
       const itemData = await client.getJson(`${base}?$select=HasUniqueRoleAssignments`);
@@ -184,9 +188,11 @@ export async function getEffectivePermissions(client: SpApiClient,
     node: FolderFileNode,
     signal?: AbortSignal,
   ): Promise<string> {
-    const base = node.isFolder
-      ? `${folderApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`
-      : `${fileApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`;
+    const base = node.isLibraryRoot
+      ? listApi(siteUrl, node.serverRelativeUrl)
+      : node.isFolder
+        ? `${folderApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`
+        : `${fileApi(siteUrl, node.serverRelativeUrl)}/ListItemAllFields`;
     try {
       const data = await client.getJson(`${base}?$select=EffectiveBasePermissions`);
       if (signal?.aborted) return '';

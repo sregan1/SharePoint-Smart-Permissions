@@ -3,7 +3,7 @@ import { UserPermissionInfo, PermissionEntry, ObjectType } from '../../models/mo
 import {
   SpApiClient, TaskQueue, odata, valueArray, rdbArray, isPermissionDenied, isGraphPermissionError,
   isSystemRole, isSystemLibrary, folderApi, fileApi, listApi, isLibraryTemplate, roleAccessTier,
-  extractAadGroupInfo, isAbortError, debugLog,
+  extractAadGroupInfo, isAbortError, debugLog, isSystemFolder,
 } from './spCore';
 
 export interface UserAccessResult {
@@ -595,9 +595,7 @@ async function walkFoldersForUser(client: SpApiClient,
       }
     }
 
-    const visibleFolders = subFolders.filter(
-      (f: any) => !f.Name.startsWith('_') && f.Name.toLowerCase() !== 'forms',
-    );
+    const visibleFolders = subFolders.filter((f: any) => !isSystemFolder(f.Name));
 
     if (uniquePermsLoaded) {
       const uniqueFolders = visibleFolders.filter(

@@ -1,6 +1,6 @@
 # SharePoint Smart Permissions — User Guide
 
-**Version 1.7.1**
+**Version 1.7.2**
 **Applies to:** SharePoint Online
 
 ---
@@ -240,7 +240,7 @@ The Permissions Explorer lets you browse a document library interactively — fo
 2. The web part automatically connects to the site and loads the available document libraries (including Site Pages and picture libraries). Libraries an admin has excluded from search indexing are marked **"(hidden from search)"** in the dropdown.
 3. Use the **Library** dropdown to select the library you want to browse. The Explorer opens on **Shared Documents** the first time. After that, it reopens on the last library you picked for that site (stored in your browser).
 4. The **left panel** shows the folder and file tree. Click any item to select it.
-5. The **right panel** shows the permissions for the selected item.
+5. The **right panel** shows the permissions for the selected item. When a library loads, the panel shows the **library's own permissions** until you select something else.
 
 The tree is fully keyboard accessible: **Tab** into it, then use **Up/Down** arrows to move between items, **Right** to expand a folder, **Left** to collapse it (or jump to the parent), **Home/End** to jump to the first or last item, and **Enter** or **Space** to select the focused item.
 
@@ -251,7 +251,7 @@ When you select an item, the right panel shows:
 - The **item name** and a badge indicating whether it has **Unique permissions** (amber) or **Inherited** permissions (blue)
 - An **options bar** at the top of the panel (always visible) with:
   - **Expand SharePoint group members** — reveals the individual users inside each SharePoint group
-  - **Show parent permissions** — visible only for inherited items; shows where the permissions come from
+  - **Show parent permissions** — on by default and visible only for inherited items; shows where the permissions come from
 - For **inherited items**, a blue callout banner — with a chain-link icon — reads *"This item inherits permissions from its parent."*
 - For **unique items**, a permissions table listing every user and group with access
 
@@ -271,7 +271,7 @@ Toggling this option refreshes the permissions panel in place — if you were al
 
 ### Show Parent Permissions
 
-For items that **inherit** permissions, check **Show parent permissions** to immediately see where those permissions come from. The panel will display the permissions of the nearest ancestor that has unique permissions, labelled *"Inherited from: [name]"*.
+For items that **inherit** permissions, **Show parent permissions** is on by default so you immediately see where those permissions come from. Uncheck it if you only want the inherited banner. The panel will display the permissions of the nearest ancestor that has unique permissions, labelled *"Inherited from: [name]"*.
 
 ### Finding Items of Interest Quickly
 

@@ -3,7 +3,7 @@ import {
 } from '../../models/models';
 import {
   SpApiClient, TaskQueue, valueArray, isPermissionDenied, isSystemLibrary, isLibraryTemplate,
-  folderApi, fileApi, listApi, toPermissionInfoList,
+  folderApi, fileApi, listApi, toPermissionInfoList, isSystemFolder,
 } from './spCore';
 import { getAllSites } from './siteDiscovery';
 import { getGroupMembers } from './groups';
@@ -428,11 +428,7 @@ async function walkFolder(client: SpApiClient,
     // unknown/incomplete rather than presenting that as a confirmed result.
     const branchIncomplete = !uniquePermsLoaded;
 
-    const visibleFolders = subFolders.filter(
-      (f: any) =>
-        !f.Name.startsWith('_') &&
-        f.Name.toLowerCase() !== 'forms',
-    );
+    const visibleFolders = subFolders.filter((f: any) => !isSystemFolder(f.Name));
 
     for (const subfolder of visibleFolders) {
       if (signal?.aborted) break;

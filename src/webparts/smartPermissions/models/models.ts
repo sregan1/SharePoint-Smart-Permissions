@@ -66,6 +66,8 @@ export interface FolderFileNode {
   serverRelativeUrl: string;
   isFolder: boolean;
   hasChildren: boolean;
+  /** True for the synthetic node representing the library itself (not a real tree row). */
+  isLibraryRoot?: boolean;
   hasUniquePermissions?: boolean;
   hasUniquePermissionsBelow?: boolean;
   hasExternalUsers?: boolean;
